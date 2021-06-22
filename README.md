@@ -7,7 +7,7 @@ for a long time,and I sure there are many developers like me out there who misse
 Spark runs on top of Hadoop, then why do we need Spark? Spark abstracts the hadoop  distributed processing. We work on data as though it were on a single node, but under the hood, the data processing occurs on multiple nodes on your spark cluster. The most interesting thing for me is it allows me to use sql with columnnar storage - parquet, with csv, etc.. and allows me to harness the power of hadoop without going into the details of hadoop/map-reducce.
 
 # AWS Glue Catalog:
-WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue crawler to perform ETL, to pull the data and create metadata. But i like to use boto3 api to create glue metadata in glue catalog to map data in S3. This S3 data can be accessed via sql - using redshift spectrum, accesed via AWS EMR/pyspark/spark-sql, or via  Aas Athena/MEsos, etc.  
+WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue crawler to perform ETL, to pull the data and create metadata in glue catalog. I like to use boto3 api to create glue metadata in glue catalog to map data in S3. This S3 data can be accessed via sql - using redshift spectrum, accesed via AWS EMR/pyspark/spark-sql, or via  Aws Athena/Mesos(the sql engine), etc.  
 
-It easy to create table in Glue catalog, I will try and see if i can access this table mapped on S3 using sql via juyyter notebook running on local pc
+It easy to create table in Glue catalog, I will try and see if we can access this table mapped on S3 using sql via jupyter notebook running on a local pc - not so sure on this
 
