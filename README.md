@@ -9,5 +9,9 @@ Spark runs on top of Hadoop, then why do we need Spark? Spark abstracts the hado
 # AWS Glue Catalog:
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue crawler to perform ETL, to pull the data and create metadata in glue catalog. I like to use boto3 api to create glue metadata in glue catalog to map data in S3. This S3 data can be accessed via sql - using redshift spectrum, accesed via AWS EMR/pyspark/spark-sql, or via  Aws Athena/Mesos(the sql engine), etc.  
 
-It easy to create table in Glue catalog via boto3, I will try and see if we can access this table mapped on S3 using sql via jupyter notebook running on a local pc - not so sure on this
+It's easy to create table in Glue catalog via boto3, I will try and see if we can access this table mapped on S3 using sql via jupyter notebook running on a local pc - not so sure on this
 
+
+# Interactive Jupyter Notebook
+Under aws-glue there are 2 ipynb files. Onc for plain spark-sql and another 
+one for aws-glue, this is a work in progress. Both these files are to used with jupyter notebook
