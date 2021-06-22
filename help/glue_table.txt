@@ -1,0 +1,86 @@
+{
+	"StorageDescriptor": {
+		"cols": {
+			"FieldSchema": [
+				{
+					"name": "origin",
+					"type": "string",
+					"comment": ""
+				},
+				{
+					"name": "destination",
+					"type": "string",
+					"comment": ""
+				},
+				{
+					"name": "departure",
+					"type": "string",
+					"comment": ""
+				},
+				{
+					"name": "departure_delay",
+					"type": "string",
+					"comment": ""
+				},
+				{
+					"name": "arrival",
+					"type": "string",
+					"comment": ""
+				},
+				{
+					"name": "arrival_delay",
+					"type": "string",
+					"comment": ""
+				},
+				{
+					"name": "air_time",
+					"type": "string",
+					"comment": ""
+				},
+				{
+					"name": "distance",
+					"type": "string",
+					"comment": ""
+				}
+			]
+		},
+		"location": "s3://pp-database/sampledb/flights/airlines=20304/date=20140401/flight_number=6225/part-00000-cbd603d2-1c21-43c3-9afa-bd7b88265a34.c000.snappy.parquet",
+		"inputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+		"outputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
+		"compressed": "false",
+		"numBuckets": "-1",
+		"SerDeInfo": {
+			"name": "",
+			"serializationLib": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe",
+			"parameters": {
+				"serialization.format": "1"
+			}
+		},
+		"bucketCols": [],
+		"sortCols": [],
+		"parameters": {
+			"sizeKey": "1963",
+			"UPDATED_BY_CRAWLER": "test",
+			"CrawlerSchemaSerializerVersion": "1.0",
+			"recordCount": "2",
+			"averageRecordSize": "237",
+			"CrawlerSchemaDeserializerVersion": "1.0",
+			"compressionType": "none",
+			"classification": "parquet",
+			"typeOfData": "file"
+		},
+		"SkewedInfo": {},
+		"storedAsSubDirectories": "false"
+	},
+	"parameters": {
+		"sizeKey": "1963",
+		"UPDATED_BY_CRAWLER": "test",
+		"CrawlerSchemaSerializerVersion": "1.0",
+		"recordCount": "2",
+		"averageRecordSize": "237",
+		"CrawlerSchemaDeserializerVersion": "1.0",
+		"compressionType": "none",
+		"classification": "parquet",
+		"typeOfData": "file"
+	}
+}

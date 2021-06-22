@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GlueTables",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetTable",
+        "glue:GetTables",
+        "glue:GetDatabase",
+        "glue:GetDataBases",
+	    "glue:CreateDatabase",
+	    "glue:CreateTable",
+	    "glue:DeleteDatabase"
+      ],
+      "Resource": [
+                    "arn:aws:glue:us-east-1:*:catalog",
+                    "arn:aws:glue:us-east-1:*:database/sample_db",
+                    "arn:aws:glue:us-east-1:*:table/sample_db/*",
+                    "arn:aws:glue:us-east-1:*:userDefinedFunction/sample_db/*"
+                  ]
+    }
+  ]
+}
