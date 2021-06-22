@@ -13,5 +13,6 @@ It's easy to create table in Glue catalog via boto3, I will try and see if we ca
 
 
 # Interactive Jupyter Notebook
-Under aws-glue there are 2 ipynb files. Onc for plain spark-sql and another 
-one for aws-glue, this is a work in progress. Both these files are to used with jupyter notebook
+Under aws-glue there are 2 ipynb files. 
+- plain spark-sql 
+- aws-glue, this is a work in progress
