@@ -15,4 +15,4 @@ It's easy to create table in Glue catalog via boto3, I will try and see if we ca
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
 - plain spark-sql 
-- aws-glue -  this [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) seems to be nicely written and easy to use with pandas dataframe
+- aws-glue -  using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) seems to be nicely written and easy to use with pandas dataframe
