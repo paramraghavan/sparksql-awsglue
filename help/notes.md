@@ -25,11 +25,15 @@
 
 # Create table over an existing parquet file in glue ***
 - https://stackoverflow.com/questions/61056274/create-table-over-an-existing-parquet-file-in-glue
+- https://sparkbyexamples.com/spark/spark-read-write-parquet-file-from-amazon-s3/#:~:text=Spark%20Read%20Parquet%20file%20from,file%20we%20have%20written%20before.
+- Copy hadoop.dll in folder C:\Users\padma\spark\spark-sql\tools\spark-3.1.2-bin-hadoop2.7 to C:\Windows\System32 directory path
 - awswrangler, pip install awswrangler
+
 
 # glue and jupyter-notebook
 - https://towardsai.net/p/programming/pyspark-aws-s3-read-write-operations ***
 - https://aws-data-wrangler.readthedocs.io/en/stable/stubs/awswrangler.catalog.create_parquet_table.html *
+- https://aws-data-wrangler.readthedocs.io/en/stable/ **
 
 # Spark Performance Tuning – Best Guidelines & Practices
 Use DataFrame/Dataset over RDD.
