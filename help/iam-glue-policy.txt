@@ -11,7 +11,11 @@
         "glue:GetDataBases",
 	    "glue:CreateDatabase",
 	    "glue:CreateTable",
-	    "glue:DeleteDatabase"
+	    "glue:DeleteDatabase",
+	    "glue:BatchCreatePartition",
+	    "glue:GetPartitions",
+	    "glue:UpdateTable",
+	    "glue:DeleteTable"
       ],
       "Resource": [
                     "arn:aws:glue:us-east-1:*:catalog",
