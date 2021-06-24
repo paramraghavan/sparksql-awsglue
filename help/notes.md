@@ -35,6 +35,7 @@
 - https://aws-data-wrangler.readthedocs.io/en/stable/stubs/awswrangler.catalog.create_parquet_table.html *
 - https://aws-data-wrangler.readthedocs.io/en/stable/ **
 - https://dheerajinampudi.medium.com/getting-started-on-aws-data-wrangler-and-athena-7b446c834076 **
+- https://luminousmen.com/post/schema-on-read-vs-schema-on-write **
 
 # Spark Performance Tuning – Best Guidelines & Practices
 Use DataFrame/Dataset over RDD.
