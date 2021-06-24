@@ -13,7 +13,7 @@ It's easy to create table metadata in Glue catalog via boto3, I will try and see
 
 # Schema on read/write
 - RDMS - schema on write, here we define the columns, data format, relationships of columns, etc. before the actual data upload.
-- AWS Glue - schema on read, with glue we can create the schema on read, this allows for  fast data ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
+- AWS Glue - schema on read, with glue we can create the schema at the tiem were consume/read data, this allows for  fast data ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
 
 
 # Interactive Jupyter Notebook
