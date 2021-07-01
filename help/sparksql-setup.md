@@ -92,7 +92,7 @@ AWS CLI
   python -m pip aws
   install aws cli msi executable
 
-- aws configure
+- run  'aws configure' from command line
 AWS Access Key ID [None]: accesskey
 AWS Secret Access Key [None]: secretkey
 Default region name [None]: 
