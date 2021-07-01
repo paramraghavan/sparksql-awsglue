@@ -14,7 +14,7 @@ via sql - using redshift spectrum, accessed via AWS EMR/pyspark/spark-sql, or vi
 Aws Athena/Mesos(the sql engine), etc.  
 
 It's easy to create table metadata in Glue catalog via boto3 glue api, you can use DDL SQL to create table, add partitions etc.
-We will access this table mapped on S3 using sql via jupyter notebook running on a local pc using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) to the rescue.
+We will access this table mapped on S3 using sql via jupyter notebook running on a local pc using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html).
 
 # Schema on read/write
 - [Schema on read/write](https://luminousmen.com/post/schema-on-read-vs-schema-on-write)
