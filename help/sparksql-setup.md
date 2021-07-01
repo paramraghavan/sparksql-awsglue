@@ -55,7 +55,7 @@ Follow Janani Ravi Getting started Spark2 - see chapter  Demo: Installing Spark 
 https://bigdata-madesimple.com/guide-to-install-spark-and-use-pyspark-from-jupyter-in-windows/
 Use hadoop 2.7.1
 
-Did not setup bash profile in windows, copies bunch of files for winutils.exe
+Did not setup bash profile in windows, copied bunch of files for winutils.exe
 
 
 # How to start jupyter notebook with pyspark
