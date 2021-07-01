@@ -85,3 +85,16 @@ print(f'sparkContext: {spark.sparkContext}')
 # pyspark jupyter project location
 - spark-2-getting-started/02/demos/code
 
+
+AWS CLI
+------------------
+- Install aws cli
+  python -m pip aws
+  install aws cli msi executable
+
+- aws configure
+AWS Access Key ID [None]: accesskey
+AWS Secret Access Key [None]: secretkey
+Default region name [None]: 
+Default output format [None]
+
