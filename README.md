@@ -16,7 +16,7 @@ We will access this table mapped on S3 using sql via jupyter notebook running on
 # Schema on read/write
 - [Schema on read/write](https://luminousmen.com/post/schema-on-read-vs-schema-on-write)
 - RDMS - schema on write, here we define the columns, data format, relationships of columns, etc. before the actual data upload.
-- AWS Glue - schema on read, with glue we can create the schema at the tiem were consume/read data, this allows for  fast data ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
+- AWS Glue - schema on read, with glue we can create the schema at the time we consume/read data, this allows for  fast data ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
 
 
 # Interactive Jupyter Notebook
