@@ -7,9 +7,14 @@ for a long time,and I sure there are many developers like me out there who misse
 Spark runs on top of Hadoop, then why do we need Spark? Spark abstracts the hadoop  distributed processing. We work on data as though it were on a single node, but under the hood, the data processing occurs on multiple nodes on your spark cluster. The most interesting thing for me is it allows me to use sql with columnnar storage - parquet, with csv, etc.. and allows me to harness the power of hadoop without going into the details of hadoop/map-reducce.
 
 # AWS Glue Catalog:
-WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue crawler to perform ETL, to pull the data and create metadata in glue catalog. I like to use boto3 api to create glue metadata in glue catalog to map data in S3. This S3 data can be accessed via sql - using redshift spectrum, accesed via AWS EMR/pyspark/spark-sql, or via  Aws Athena/Mesos(the sql engine), etc.  
+WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
+crawler to perform ETL, to pull the data and create metadata in glue catalog. I like to use boto3 api to 
+create glue metadata in glue catalog to map data in S3. This S3 data can be accessed 
+via sql - using redshift spectrum, accessed via AWS EMR/pyspark/spark-sql, or via  
+Aws Athena/Mesos(the sql engine), etc.  
 
-It's easy to create table metadata in Glue catalog via boto3, I will try and see if we can access this table mapped on S3 using sql via jupyter notebook running on a local pc - [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) to the rescue.
+It's easy to create table metadata in Glue catalog via boto3 glue api, you can use DDL SQL to create table, add partitions etc.
+We will access this table mapped on S3 using sql via jupyter notebook running on a local pc using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) to the rescue.
 
 # Schema on read/write
 - [Schema on read/write](https://luminousmen.com/post/schema-on-read-vs-schema-on-write)
