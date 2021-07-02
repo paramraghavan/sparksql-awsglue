@@ -67,3 +67,8 @@ df.write.parquet("output/proto.parquet")
 
 # how-spark-read-a-large-file-petabyte-when-file-can-not-be-fit-in-sparks-main
 - https://stackoverflow.com/questions/46638901/how-spark-read-a-large-file-petabyte-when-file-can-not-be-fit-in-sparks-main
+
+# spark caching
+- https://medium.com/swlh/caching-spark-dataframe-how-when-79a8c13254c0
+- https://jaceklaskowski.gitbooks.io/mastering-spark-sql/content/spark-sql-caching-and-persistence.html
+- https://stackoverflow.com/questions/26870537/what-is-the-difference-between-cache-and-persist

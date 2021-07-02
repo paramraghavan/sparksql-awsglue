@@ -21,6 +21,28 @@ We will access this table mapped on S3 using sql via jupyter notebook running on
 - RDMS - schema on write, here we define the columns, data format, relationships of columns, etc. before the actual data upload.
 - AWS Glue - schema on read, with glue we can create the schema at the tiem were consume/read data, this allows for  fast data ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
 
+# Spark sql
+- CreateTableView based on dataframe - createOrReplaceTempView creates (or replaces if that view name already exists) a lazily evaluated "view" 
+that you can then use like a hive table in Spark SQL. It does not persist to memory unless you cache or persist the 
+dataset that underpins the view.
+  
+- Caching - Spark will read the parquet, csv,etc.., execute the query only once and then cache it.
+  Then the code in the loop will use the cached, pre-calculated DataFrame. Imagine that 
+  you are working with a lot of data, and you run a series of queries and actions on it 
+  without using caching. It runs again and again without you even noticing.
+  This can add hours to the job running time or even make the job fail.
+   You can also use SQL’s CACHE TABLE [tableName] to cache tableName table in memory. 
+   Unlike cache and persist operators, CACHE TABLE is an eager operation which is executed as soon
+   as the statement is executed - sql("CACHE TABLE [tableName]"). You could however use LAZY keyword
+  to make caching lazy - sql("CACHE LAZY TABLE [tableName]")
+- Cache vs Persist - The only difference between cache() and persist() is ,using Cache technique we 
+  can save intermediate results in memory only when needed while in Persist() we can save the intermediate
+  results in 5 storage levels(MEMORY_ONLY, MEMORY_AND_DISK, MEMORY_ONLY_SER, MEMORY_AND_DISK_SER,
+  DISK_ONLY). Without passing argument, persist() and cache() are the same - results in memory.
+   
+-  Explain Plan/Query Execution Plan - The best way to make sure everything has run as expected is to look
+   at the execution plan. You can see in the following execution plan the keywords InMemoryTableScan and 
+   InMemoryRelation which indicate that we are working on a cached DataFrame. dataframe_object.exaplain()
 
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
