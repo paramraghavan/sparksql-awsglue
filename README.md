@@ -42,7 +42,7 @@ dataset that underpins the view.
    
 -  Explain Plan/Query Execution Plan - The best way to make sure everything has run as expected is to look
    at the execution plan. You can see in the following execution plan the keywords InMemoryTableScan and 
-   InMemoryRelation which indicate that we are working on a cached DataFrame. dataframe_object.exaplain()
+   InMemoryRelation which indicate that we are working on a cached DataFrame. dataframe_object.explain()
 
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
