@@ -93,6 +93,21 @@ dataset that underpins the view.
 -  Explain Plan/Query Execution Plan - The best way to make sure everything has run as expected is to look
    at the execution plan. You can see in the following execution plan the keywords InMemoryTableScan and 
    InMemoryRelation which indicate that we are working on a cached DataFrame. dataframe_object.exaplain()
+   
+# Parquet file Gzip vs Snappy
+GZIP compression uses more CPU resources than Snappy or LZO, but provides a higher compression ratio. GZip is often a good choice for cold data, which is accessed infrequently. Snappy or LZO are a better choice for hot data, which is accessed frequently. Snappy often performs better than LZO. ref: google search
+Use Snappy if you can handle higher disk usage for the performance benefits (lower CPU + Splittable).
+> When Spark switched from GZIP to Snappy by default, this was the reasoning:
+
+Based on our tests, gzip decompression is very slow (< 100MB/s), making queries decompression bound. Snappy can decompress at ~ 500MB/s on a single core.
+- Snappy:
+ - Storage Space: High
+ - CPU Usage: Low
+ - Splittable: Yes (1)
+GZIP:
+ - Storage Space: Medium
+ - CPU Usage: Medium
+ - Splittable: No
 
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
