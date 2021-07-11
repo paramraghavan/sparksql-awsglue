@@ -36,7 +36,9 @@ be able to do optimization when it has to [shuffle](https://medium.com/swlh/reve
 >
 > More on ***[Spark Partitioning](https://sparkbyexamples.com/spark/spark-partitioning-understanding/)***
 >
-
+> **Note:** When you want to reduce the number of partitions, It is recommended to use PySpark coalesce() over repartition() 
+> as it uses fewer resources due to less number of shuffles it takes.
+>
 
 # pyspark sparksql-awsglue
 Working wiith pyspark/spark-sql and aws glue using jupyter notebook/windows
