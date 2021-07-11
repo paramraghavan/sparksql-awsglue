@@ -29,7 +29,7 @@ Spark does not provide a distributed file storage system, so it is mainly used f
 **Spark Characteristics**
 - Spark does lazy load all the way, until it needs to perform an action
 - Action - example count, sum
-- Transformation - filter, cache etc are all lazy
+- Transformation - filter(where clause), cache etc are all lazy
 - The Dataframes returned/read by spark are all immutable.
 
 **Cache:**
