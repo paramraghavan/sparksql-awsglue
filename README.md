@@ -19,6 +19,12 @@ of data assigned to it
  tightly integrated libraries for SQL (Spark SQL), machine learning (MLlib), stream processing (Spark streaming),
  and graph processing (GraphX). [More Apache Spark](https://aws.amazon.com/blogs/aws/new-apache-spark-on-amazon-emr/)
  
+ > **Spark vs Hadoop performance**
+ > By using a directed acyclic graph (DAG) execution engine, Spark can create a more efficient query plan for data transformations. Also, Spark uses in-memory, fault-tolerant resilient distributed datasets (RDDs), keeping intermediates, inputs, and outputs in memory instead of on disk. These two elements of functionality can result in better performance for certain workloads when compared to Hadoop MapReduce, which will force jobs into a sequential map-reduce framework and incurs an I/O cost from writing intermediates out to disk. Spark’s performance enhancements are particularly applicable for iterative workloads, which are common in machine learning and low-latency querying use cases.
+> 
+
+
+
 **Spark AWS options:**
 - EMR
 - Databricks
@@ -51,7 +57,7 @@ be able to do optimization when it has to [shuffle](https://medium.com/swlh/reve
 Working wiith pyspark/spark-sql and aws glue using jupyter notebook/windows
 
 I happened to attend one of the data conferences few years back when I came to know the power of spark-sql. I have been working with relational databases and sql
-for a long time,and I sure there are many developers like me out there who missed the hadoop boat while working on rdbms based projects. I have spend some time scouring the web, reading up on pluralsight, googled into various websites and  cobbled up a spark/sql on jupyter notebook running on windows, so thought it will be useful for folks like me  who want to get into big data via spark-sql.
+for a long time,and I sure there are many developers like me out there who missed the hadoop boat while working on rdbms based projects. I have spend some time searching the web, reading up on pluralsight, googled into various websites and  cobbled up a spark/sql on jupyter notebook running on windows, so thought it will be useful for folks like me  who want to get into big data via spark-sql.
 
 Spark runs on top of Hadoop, then why do we need Spark? Spark abstracts the hadoop  distributed processing. We work on data as though it were on a single node, but under the hood, the data processing occurs on multiple nodes on your spark cluster. The most interesting thing for me is it allows me to use sql with columnnar storage - parquet, with csv, etc.. and allows me to harness the power of hadoop without going into the details of hadoop/map-reducce.
 
@@ -69,7 +75,7 @@ We will access this table mapped on S3 using sql via jupyter notebook running on
 # Schema on read/write
 - [Schema on read/write](https://luminousmen.com/post/schema-on-read-vs-schema-on-write)
 - RDMS - schema on write, here we define the columns, data format, relationships of columns, etc. before the actual data upload.
-- AWS Glue - schema on read, with glue we can create the schema at the tiem were consume/read data, this allows for  fast data ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
+- AWS Glue - schema on read, with glue we can create the schema at the time were consume/read data, this allows for  fast data ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
 
 # Spark sql
 - CreateTableView based on dataframe - createOrReplaceTempView creates (or replaces if that view name already exists) a lazily evaluated "view" 
@@ -92,7 +98,7 @@ dataset that underpins the view.
    
 -  Explain Plan/Query Execution Plan - The best way to make sure everything has run as expected is to look
    at the execution plan. You can see in the following execution plan the keywords InMemoryTableScan and 
-   InMemoryRelation which indicate that we are working on a cached DataFrame. dataframe_object.exaplain()
+   InMemoryRelation which indicate that we are working on a cached DataFrame.dataframe_object.explain()
    
 # Parquet file Gzip vs Snappy
 GZIP compression uses more CPU resources than Snappy or LZO, but provides a higher compression ratio. GZip is often a good choice for cold data, which is accessed infrequently. Snappy or LZO are a better choice for hot data, which is accessed frequently. Snappy often performs better than LZO. ref: google search
