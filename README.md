@@ -3,6 +3,9 @@
 Driver is idle waiting for requests for executor tasks, Executor usually run in itʼs own JVM. Each executor has slots, these process tasks 
 send by the Driver to the executor. Slots run in their own threads.
 
+![image](https://user-images.githubusercontent.com/52529498/125184695-e88d3880-e1ed-11eb-9d07-5f7b97c18d94.png)
+
+
  Similar to Apache Hadoop, Spark is an open-source, distributed processing system commonly used for 
  big data workloads. However, Spark has several notable differences from Hadoop MapReduce. Spark has an
  optimized directed acyclic graph (DAG) execution engine and actively caches data in-memory, 
