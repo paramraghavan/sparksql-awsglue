@@ -1,3 +1,16 @@
+# What is Apache Spark
+[Apache Spark](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark.html) has a Driver and multiple Executors, they run in their own JVM
+Driver is idle waiting for requests for executor tasks, Executor usually run in itʼs own JVM. Each executor has slots, these process tasks 
+send by the Driver to the executor. Slots run in their own threads.
+
+ Similar to Apache Hadoop, Spark is an open-source, distributed processing system commonly used for big data workloads. However, Spark has several notable differences from Hadoop MapReduce. Spark has an optimized directed acyclic graph (DAG) execution engine and actively caches data in-memory, which can boost performance, especially for certain algorithms and interactive queries. Spark natively supports applications written in **Scala, Python, and Java**. It also includes several tightly integrated libraries for SQL (Spark SQL), machine learning (MLlib), stream processing (Spark streaming), and graph processing (GraphX).[More Apache Spark](https://aws.amazon.com/blogs/aws/new-apache-spark-on-amazon-emr/)
+ 
+**AWS options:**
+- EMR
+- Databricks
+
+
+
 # pyspark sparksql-awsglue
 Working wiith pyspark/spark-sql and aws glue using jupyter notebook/windows
 
