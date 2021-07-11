@@ -30,7 +30,7 @@ of DF is enabled. The actual caching happens when an action is performed - show
 or count etc.
 Cache should be used carefully because when cache is used the catalyst 
 optimizer may not be able to perform its optimization. The optimizer may also not 
-be able to do optimization when it has to shuffle - because of narrow DF to wider 
+be able to do optimization when it has to [shuffle](https://medium.com/swlh/revealing-apache-spark-shuffling-magic-b2c304306142) - because of narrow DF to wider 
 DF - wider operation like groupby
 
 # pyspark sparksql-awsglue
