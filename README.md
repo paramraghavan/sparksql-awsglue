@@ -101,13 +101,13 @@ Use Snappy if you can handle higher disk usage for the performance benefits (low
 
 Based on our tests, gzip decompression is very slow (< 100MB/s), making queries decompression bound. Snappy can decompress at ~ 500MB/s on a single core.
 - Snappy:
- - Storage Space: High
- - CPU Usage: Low
- - Splittable: Yes (1)
-GZIP:
- - Storage Space: Medium
- - CPU Usage: Medium
- - Splittable: No
+  - Storage Space: High
+  - CPU Usage: Low
+  - Splittable: Yes (1)
+- GZIP:
+  - Storage Space: Medium
+  - CPU Usage: Medium
+  - Splittable: No
 
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
