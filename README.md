@@ -1,6 +1,13 @@
 # What is Apache Spark
 [Apache Spark](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark.html) has a driver and multiple Executors, each of these run in their own JVM. Driver is idle waiting for requests for executor tasks, Executor usually run in itʼs own JVM. Each executor has slots, these process tasks send by the Driver to the executor. Slots run in their own threads.
 
+- the Driver must  decide how to partition the data so that it 
+can be distributed for parallel processing
+- the Driver is assigning a Partition of data to each task - in this 
+way each Task knows which piece of data it is to process.
+- Once started, each Task will fetch from the original data source the Partition
+of data assigned to it
+
 ![image](https://user-images.githubusercontent.com/52529498/125184695-e88d3880-e1ed-11eb-9d07-5f7b97c18d94.png)
 
 
