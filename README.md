@@ -19,7 +19,7 @@ of data assigned to it
  tightly integrated libraries for SQL (Spark SQL), machine learning (MLlib), stream processing (Spark streaming),
  and graph processing (GraphX). [More Apache Spark](https://aws.amazon.com/blogs/aws/new-apache-spark-on-amazon-emr/)
  
-**AWS options:**
+**Spark AWS options:**
 - EMR
 - Databricks
 
