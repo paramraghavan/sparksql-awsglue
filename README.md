@@ -103,11 +103,14 @@ Based on our tests, gzip decompression is very slow (< 100MB/s), making queries 
 - Snappy:
   - Storage Space: High
   - CPU Usage: Low
-  - Splittable: Yes (1)
+  - Splittable: Yes (1), If you need your compressed data to be splittable, then use BZip2, LZO, and Snappy formats which are splittable, but GZip is not.
+  
 - GZIP:
   - Storage Space: Medium
   - CPU Usage: Medium
   - Splittable: No
+ 
+ ref: https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats
 
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
