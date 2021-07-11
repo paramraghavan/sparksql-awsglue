@@ -15,6 +15,23 @@ send by the Driver to the executor. Slots run in their own threads.
 - EMR
 - Databricks
 
+**Note:**
+Spark does not provide a distributed file storage system, so it is mainly used for computation, on top of Hadoop. Spark does not need Hadoop to run, but can be used with Hadoop since it can create distributed datasets from files stored in the HDFS.
+
+**Spark Characteristics**
+- Spark does lazy load all the way, until it needs to perform an action
+- Action - example count, sum
+- Transformation - filter, cache etc are all lazy
+- The Dataframes returned/read by spark are all immutable.
+
+**Cache:**
+Cache is applied to DF using- .cache, a flag is enabled for spark to know caching 
+of DF is enabled. The actual caching happens when an action is performed - show 
+or count etc.
+Cache should be used carefully because when cache is used the catalyst 
+optimizer may not be able to perform its optimization. The optimizer may also not 
+be able to do optimization when it has to shuffle - because of narrow DF to wider 
+DF - wider operation like groupby
 
 # pyspark sparksql-awsglue
 Working wiith pyspark/spark-sql and aws glue using jupyter notebook/windows
@@ -23,6 +40,7 @@ I happened to attend one of the data conferences few years back when I came to k
 for a long time,and I sure there are many developers like me out there who missed the hadoop boat while working on rdbms based projects. I have spend some time scouring the web, reading up on pluralsight, googled into various websites and  cobbled up a spark/sql on jupyter notebook running on windows, so thought it will be useful for folks like me  who want to get into big data via spark-sql.
 
 Spark runs on top of Hadoop, then why do we need Spark? Spark abstracts the hadoop  distributed processing. We work on data as though it were on a single node, but under the hood, the data processing occurs on multiple nodes on your spark cluster. The most interesting thing for me is it allows me to use sql with columnnar storage - parquet, with csv, etc.. and allows me to harness the power of hadoop without going into the details of hadoop/map-reducce.
+
 
 # AWS Glue Catalog:
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
