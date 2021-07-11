@@ -33,8 +33,11 @@ of DF is enabled. The actual caching happens when an action is performed - show
 or count etc.
 Cache should be used carefully because when cache is used the catalyst 
 optimizer may not be able to perform its optimization. The optimizer may also not 
-be able to do optimization when it has to [shuffle](https://medium.com/swlh/revealing-apache-spark-shuffling-magic-b2c304306142) - because of narrow DF to wider 
-DF - wider operation like groupby
+be able to do optimization when it has to [shuffle](https://medium.com/swlh/revealing-apache-spark-shuffling-magic-b2c304306142) - because of narrow DF to wider DF - wider operation like groupby.
+
+[Spark Partitioning](https://sparkbyexamples.com/spark/spark-partitioning-understanding/)
+
+
 
 # pyspark sparksql-awsglue
 Working wiith pyspark/spark-sql and aws glue using jupyter notebook/windows
