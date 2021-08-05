@@ -37,6 +37,10 @@
 - https://dheerajinampudi.medium.com/getting-started-on-aws-data-wrangler-and-athena-7b446c834076 **
 - https://luminousmen.com/post/schema-on-read-vs-schema-on-write **
 
+# glue DynamicFrame, DataFrame. RDD
+- https://aws-blog.de/2021/06/what-i-wish-somebody-had-explained-to-me-before-i-started-to-use-aws-glue.html
+
+
 # Spark Performance Tuning – Best Guidelines & Practices
 Use DataFrame/Dataset over RDD.
 Use coalesce() over repartition()
@@ -72,3 +76,36 @@ df.write.parquet("output/proto.parquet")
 - https://medium.com/swlh/caching-spark-dataframe-how-when-79a8c13254c0
 - https://jaceklaskowski.gitbooks.io/mastering-spark-sql/content/spark-sql-caching-and-persistence.html
 - https://stackoverflow.com/questions/26870537/what-is-the-difference-between-cache-and-persist
+
+Use Case 1
+-------------
+
+I have a spark data frame in a AWS glue job with 4 million records
+I need to write it as a SINGLE parquet file in AWS s3
+- Current code
+
+file_spark_df.write.parquet("s3://"+target_bucket_name)
+Issue the above code creates 100+ files each 17.8 to 18.1 MB in size , guess its some default break down size
+
+- Question : How do I create just one file ? for one spark data frame ?
+
+Use coalesce(1) to write into one file : file_spark_df.coalesce(1).write.parquet("s3_path")
+
+Coalesce vs repartition
+-----------------------------
+<pre>
+Difference between coalesce and repartition
+
+coalesce uses existing partitions to minimize the amount of data that's shuffled.
+repartition creates new partitions and does a full shuffle. coalesce results in 
+partitions with different amounts of data (sometimes partitions that have much different sizes) 
+and repartition results in roughly equal sized partitions.
+
+Is coalesce or repartition faster?
+
+coalesce may run faster than repartition, but unequal sized partitions are
+generally slower to work with than equal sized partitions. You'll usually need to repartition datasets
+after filtering a large data set. I've found repartition to be faster overall because Spark is 
+built to work with equal sized partitions.
+ref: https://stackoverflow.com/questions/31610971/spark-repartition-vs-coalesce
+</pre>
