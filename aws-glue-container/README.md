@@ -11,9 +11,9 @@ Steps to use Glue Docker Image in Windows
 - docker pull amazon/aws-glue-libs:glue_libs_1.0.0_image_01
 - updated Dockerfile
 - docker build -t docker-aws-glue-libs, customize the image, amazon/aws-glue-libs:glue_libs_1.0.0_image_01
-- run the custom container
+- run the custom container, runs the container in background, u can connect using VSCode or jupyter notebook
   - docker run -itd -p 8888:8888 -p 4040:4040 -v %UserProfile%\.aws:/root/.aws:ro -v %UserProfile%\github\sparksql-awsglue\aws-glue-container\jobs:/home/jobs --name glue  docker-aws-glue-libs
-- run the default container
+- run the default container, runs the container in background, u can connect using VSCode or jupyter notebook
   - docker run -itd -p 8888:8888 -p 4040:4040 -v %UserProfile%\.aws:/root/.aws:ro -v %UserProfile%\github\sparksql-awsglue\aws-glue-container\jobs:/home/jobs --name glue amazon/aws-glue-libs:glue_libs_1.0.0_image_01
 
 Connecting VSCode to our Glue environment
@@ -30,6 +30,7 @@ Steps to run inside container
   - export PYSPARK_DRIVER_PYTHON=python3.6
   - spark-2.4.3-bin-spark-2.4.3-bin-hadoop2.8/bin/spark-submit jobs/glue_job.py
   - spark-2.4.3-bin-spark-2.4.3-bin-hadoop2.8/bin/pyspark
+  - python3.6
   - End the execution of the container by executing the following command in the operating system terminal: 
     docker stop glue
     
@@ -42,6 +43,13 @@ Steps to run inside container
   - spark.sql('Refresh table flights'), possible the underlying files have been updated. You can explicitly invalidate the cache in Spark by running 'REFRESH TABLE tableName' command in SQL or by recreating the Dataset/DataFrame involved.
   - spark.sql('Refresh database')
   - GlueContext read csv, https://stackoverflow.com/questions/52904510/how-to-load-a-csv-txt-file-into-aws-glue-job
+
+awswrangler
+--------------
+- Here using awswrangler to create glue table. We can use glue api also to create glue tables
+- We could use aws wrangler to create table 
+- Once you convert dataframe to pandas data frame, awswrangler can save the pandas dataframe stores data on to a Data Lake, and updates partitions as well
+- When we add new data with newer partitions, these new partitions can be added via Glue API or via spark SQL or via awswrangler like above
 
 Docker commamnd ADD
 -------------------------
