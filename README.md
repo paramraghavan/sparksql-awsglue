@@ -120,6 +120,14 @@ Based on our tests, gzip decompression is very slow (< 100MB/s), making queries 
 
 ## [Developing AWS Glue ETL jobs locally using a container](https://github.com/paramraghavan/sparksql-awsglue/tree/main/aws-glue-container)
 
+# Redshift Spectrum vs Glue
+Developers describe Amazon Redshift Spectrum as "Exabyte-Scale In-Place Queries of S3 Data". With Redshift Spectrum, you can extend the analytic power of Amazon Redshift beyond data stored on local disks in your data warehouse to query vast amounts of unstructured data in your Amazon S3 “data lake” -- without having to load or transform any data. On the other hand, AWS Glue is detailed as "Fully managed extract, transform, and load (ETL) service". A fully managed extract, transform, and load (ETL) service that makes it easy for customers to prepare and load their data for analytics.
+
+Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" tools.
+
+**ref:** https://stackshare.io/stackups/amazon-redshift-spectrum-vs-aws-glue
+
+
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
 - [spark-sql](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/spark-sql-parquet.ipynb) 
