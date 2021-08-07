@@ -28,7 +28,7 @@ Steps to run inside container
   - cd /home
   - export PYSPARK_PYTHON=python3.6
   - export PYSPARK_DRIVER_PYTHON=python3.6
-  - spark-2.4.3-bin-spark-2.4.3-bin-hadoop2.8/bin/spark-submit jobs/glue_job.py
+  - spark-2.4.3-bin-spark-2.4.3-bin-hadoop2.8/bin/spark-submit jobs/[glue_job.py](https://github.com/paramraghavan/sparksql-awsglue/blob/main/aws-glue-container/jobs/glue_job.py)
   - spark-2.4.3-bin-spark-2.4.3-bin-hadoop2.8/bin/pyspark
   - python3.6
   - End the execution of the container by executing the following command in the operating system terminal: 
