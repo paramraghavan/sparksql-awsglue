@@ -118,6 +118,8 @@ Based on our tests, gzip decompression is very slow (< 100MB/s), making queries 
  
  ref: https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats
 
+# [Developing AWS Glue ETL jobs locally using a container](https://github.com/paramraghavan/sparksql-awsglue/tree/main/aws-glue-container)
+
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
 - [spark-sql](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/spark-sql-parquet.ipynb) 
