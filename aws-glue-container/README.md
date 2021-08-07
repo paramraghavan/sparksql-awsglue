@@ -9,7 +9,7 @@ Docker Image AWS Glue References
 Steps to use Glue Docker Image in Windows 
 --------------------------------------------
 - docker pull amazon/aws-glue-libs:glue_libs_1.0.0_image_01
-- updated Dockerfile
+- [Updated Dockerfile](https://github.com/paramraghavan/sparksql-awsglue/blob/main/aws-glue-container/Dockerfile)
 - docker build -t docker-aws-glue-libs, customize the image, amazon/aws-glue-libs:glue_libs_1.0.0_image_01
 - run the custom container, runs the container in background, u can connect using VSCode or jupyter notebook
   - docker run -itd -p 8888:8888 -p 4040:4040 -v %UserProfile%\.aws:/root/.aws:ro -v %UserProfile%\github\sparksql-awsglue\aws-glue-container\jobs:/home/jobs --name glue  docker-aws-glue-libs
@@ -28,7 +28,7 @@ Steps to run inside container
   - cd /home
   - export PYSPARK_PYTHON=python3.6
   - export PYSPARK_DRIVER_PYTHON=python3.6
-  - spark-2.4.3-bin-spark-2.4.3-bin-hadoop2.8/bin/spark-submit jobs/glue_job.py
+  - spark-2.4.3-bin-spark-2.4.3-bin-hadoop2.8/bin/spark-submit jobs/[glue_job.py](https://github.com/paramraghavan/sparksql-awsglue/blob/main/aws-glue-container/jobs/glue_job.py)
   - spark-2.4.3-bin-spark-2.4.3-bin-hadoop2.8/bin/pyspark
   - python3.6
   - End the execution of the container by executing the following command in the operating system terminal: 
