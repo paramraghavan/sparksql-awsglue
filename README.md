@@ -1,3 +1,10 @@
+# Working with pyspark/spark-sql/aws-glue using jupyter notebook/windows
+
+I happened to attend one of the data conferences few years back when I came to know the power of spark-sql. I have been working with relational databases and sql
+for a long time,and I sure there are many developers like me out there who missed the hadoop boat while working on rdbms based projects. I have spend some time searching the web, reading up on pluralsight, googled into various websites and  cobbled up a spark/sql on jupyter notebook running on windows, so thought it will be useful for folks like me  who want to get into big data via spark-sql.
+
+Spark runs on top of Hadoop, then why do we need Spark? Spark abstracts the hadoop  distributed processing. We work on data as though it were on a single node, but under the hood, the data processing occurs on multiple nodes on your spark cluster. The most interesting thing for me is it allows me to use sql with columnnar storage - parquet, with csv, etc.. and allows me to harness the power of hadoop without going into the details of hadoop/map-reduce.
+
 # Apache Spark ?
 [Apache Spark](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark.html) has two main components - single driver and multiple Executors, each of these run in their own JVM. Driver is idle waiting for requests for executor tasks, Executor usually run in itʼs own JVM. Each executor has slots, these process tasks send by the Driver to the executor. Slots run in their own threads.
 
@@ -52,15 +59,6 @@ be able to do optimization when it has to [shuffle](https://medium.com/swlh/reve
 > **Note:** When you want to reduce the number of partitions, It is recommended to use PySpark coalesce() over repartition() 
 > as it uses fewer resources due to less number of shuffles it takes.
 >
-
-# pyspark sparksql-awsglue
-Working wiith pyspark/spark-sql and aws glue using jupyter notebook/windows
-
-I happened to attend one of the data conferences few years back when I came to know the power of spark-sql. I have been working with relational databases and sql
-for a long time,and I sure there are many developers like me out there who missed the hadoop boat while working on rdbms based projects. I have spend some time searching the web, reading up on pluralsight, googled into various websites and  cobbled up a spark/sql on jupyter notebook running on windows, so thought it will be useful for folks like me  who want to get into big data via spark-sql.
-
-Spark runs on top of Hadoop, then why do we need Spark? Spark abstracts the hadoop  distributed processing. We work on data as though it were on a single node, but under the hood, the data processing occurs on multiple nodes on your spark cluster. The most interesting thing for me is it allows me to use sql with columnnar storage - parquet, with csv, etc.. and allows me to harness the power of hadoop without going into the details of hadoop/map-reducce.
-
 
 # AWS Glue Catalog:
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
