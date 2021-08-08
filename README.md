@@ -30,8 +30,6 @@ of data assigned to it
  > By using a directed acyclic graph (DAG) execution engine, Spark can create a more efficient query plan for data transformations. Also, Spark uses in-memory, fault-tolerant resilient distributed datasets (RDDs), keeping intermediates, inputs, and outputs in memory instead of on disk. These two elements of functionality can result in better performance for certain workloads when compared to Hadoop MapReduce, which will force jobs into a sequential map-reduce framework and incurs an I/O cost from writing intermediates out to disk. Spark’s performance enhancements are particularly applicable for iterative workloads, which are common in machine learning and low-latency querying use cases.
 > 
 
-
-
 **Spark AWS options:**
 - EMR
 - Databricks
@@ -59,6 +57,23 @@ be able to do optimization when it has to [shuffle](https://medium.com/swlh/reve
 > **Note:** When you want to reduce the number of partitions, It is recommended to use PySpark coalesce() over repartition() 
 > as it uses fewer resources due to less number of shuffles it takes.
 >
+
+**Transformation Wide vs Narrow**
+- Wide transformation
+
+ ![image](https://user-images.githubusercontent.com/52529498/128626899-bd3061ae-f551-4b05-a05b-0d49bd552683.png)
+
+In wide transformation, all the elements that are required to compute the records in the single partition may live in many partitions of parent RDD. The partition may live in many partitions of parent RDD. Wide transformations examples are groupBy, aggregate(), join(), etc...
+
+- Narrow transformation
+
+![image](https://user-images.githubusercontent.com/52529498/128626719-cf37b126-c772-41f0-946c-0948ed8b4ffe.png)
+
+In Narrow transformation, all the elements that are required to compute the records in single partition live in the single partition of parent RDD. A limited subset of partition is used to calculate the result. Some examples of narrow transformation are filter(), union(), etc..
+
+**ref:** https://sparkbyexamples.com/apache-spark-rdd/spark-rdd-transformations/#narrow-transformation
+
+
 
 # AWS Glue Catalog:
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
