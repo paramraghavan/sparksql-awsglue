@@ -32,7 +32,7 @@ spark.sql("use sample_db")
 # Read from flighta table airlines > 20000 and convert date to int data type
 #####################################################
 from pyspark.sql.functions import col
-flight_df = spark.read.csv('s3a://pp-database/flights.csv',header=True,inferSchema=True).filter(col("airlines") > 20000)
+flight_df = spark.read.csv('s3a://bucket/flights.csv',header=True,inferSchema=True).filter(col("airlines") > 20000)
 flight_df.printSchema
 flight_df.schema
 flight_df.dtypes
@@ -69,7 +69,7 @@ smry_flight_df = flight_df.groupBy('airlines', 'date').count()
 partitions_types = { 'airlines': 'string',\
                     'date': 'int'}
 
-glue_helper.create_glue_table_parquet(flight_df, 'sample_db', 'flights_001', 's3://pp-database/tables/flights_001', partitions_types)
+glue_helper.create_glue_table_parquet(flight_df, 'sample_db', 'flights_001', 's3://bucket/tables/flights_001', partitions_types)
 ######################################################################################
 
 
@@ -78,7 +78,7 @@ importlib.reload(glue_helper)
 
 # write as parquet file to s3 airlines > 20000, using default mode, append
 from glue import helper as glue_helper
-glue_helper.write_parquet_to_s3(flight_df, 's3a://pp-database/tables/flights_001', ['airlines', 'date'])
+glue_helper.write_parquet_to_s3(flight_df, 's3a://bucket/tables/flights_001', ['airlines', 'date'])
 
 # Add partitions partitions, 
 data_collect = smry_flight_df.collect()
