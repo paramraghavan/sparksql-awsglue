@@ -107,16 +107,3 @@ Spark Sql update partitions
 - https://docs.databricks.com/spark/2.x/spark-sql/language-manual/alter-table-partition.html
 - https://docs.aws.amazon.com/athena/latest/ug/alter-table-add-partition.html **
 
-Python for each
------------
-- https://stackoverflow.com/questions/47304818/pyspark-foreach-with-arguments
-<pre>
-def f(x,arg1,arg2,arg3): 
-    print(x*arg1+arg2+arg3)
-
-from functools import partial
-
-sc.parallelize([1, 2, 3, 4, 5]).foreach(
-    partial(f, arg1=11, arg2=21, arg3=31)
- )
-</pre>
