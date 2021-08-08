@@ -64,10 +64,10 @@ be able to do optimization when it has to [shuffle](https://medium.com/swlh/reve
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
 crawler to perform ETL, to pull the data and create metadata in glue catalog. I like to use boto3 api to 
 create glue metadata in glue catalog to map data in S3 - other ways are - package awswrangler 
-and DDL sql. This S3 data can be accessed via sql - using redshift spectrum, accessed via AWS EMR/pyspark/spark-sql, or via  
+and DDL sql. S3 data can be accessed via sql - using redshift spectrum, accessed via AWS EMR/pyspark/spark-sql, or via  
 Aws Athena/Mesos(the sql engine), etc.  
 
-It's easy to create table metadata in Glue catalog via boto3 glue api. Oneo can use DDL SQL or the package awswrangler to create table, add partitions etc. We will access this table mapped on S3 using sql via jupyter notebook running on a local pc using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html).
+It's easy to create table metadata in Glue catalog via boto3 glue api. One can use DDL SQL or the package awswrangler to create table, add partitions etc. We will access this table mapped on S3 using sql via jupyter notebook running on a local pc using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html).
 
 # Schema on read/write
 - [Schema on read/write](https://luminousmen.com/post/schema-on-read-vs-schema-on-write)
