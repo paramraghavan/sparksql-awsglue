@@ -151,4 +151,4 @@ Under aws-glue there are 2 ipynb files.
 - [Transformation by Example](https://sparkbyexamples.com/apache-spark-rdd/spark-rdd-transformations/)
 - [Apache Spark Interview Questions](https://www.mygreatlearning.com/blog/spark-interview-questions/)
 - [Interview Questions](https://www.zeolearn.com/interview-questions/spark)
-- [Window functions](https://learnsql.com/blog/sql-window-functions-examples/)
+- [Window functions](https://docs.oracle.com/cd/E17952_01/mysql-8.0-en/window-functions-usage.html)
