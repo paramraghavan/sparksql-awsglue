@@ -1,11 +1,5 @@
 # Developing AWS Glue ETL jobs locally using a container
 
-Docker Image AWS Glue References
---------------------
-- **https://medium.com/dataengineerbr/how-to-run-aws-glue-jobs-on-your-own-computer-using-docker-vscode-and-jupyter-notebook-780c9305d804**
-- https://aws.amazon.com/blogs/big-data/developing-aws-glue-etl-jobs-locally-using-a-container
-- https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-etl-glue-data-catalog-hive.html
-
 Steps to use Glue Docker Image in Windows 
 --------------------------------------------
 - docker pull amazon/aws-glue-libs:glue_libs_1.0.0_image_01
@@ -75,6 +69,14 @@ In this case, a file named /tmp/bar.go will be added to the container's filesyst
 - https://github.com/DataChefHQ/BlogProjects/tree/main/spark_on_fargate
 - https://medium.com/towards-data-engineering/running-pyspark-on-eks-fargate-part-2-cc077d99bd5
 - https://docs.docker.com/engine/reference/commandline/run/, docker run
+
+
+Docker Image AWS Glue References
+--------------------------------
+
+- **https://medium.com/dataengineerbr/how-to-run-aws-glue-jobs-on-your-own-computer-using-docker-vscode-and-jupyter-notebook-780c9305d804**
+- https://aws.amazon.com/blogs/big-data/developing-aws-glue-etl-jobs-locally-using-a-container
+- https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-etl-glue-data-catalog-hive.html
 
 Apache spark-sql aws fargate
 -----------------------------------
