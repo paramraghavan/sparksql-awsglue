@@ -1,4 +1,5 @@
 # Developing AWS Glue ETL jobs locally using a container
+Running this docker image you can experience using glue with spark-sql as you would do within glue configured EMR cluster using spark-sql or Zepplin.
 
 Steps to use Glue Docker Image in Windows 
 --------------------------------------------
