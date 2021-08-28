@@ -40,7 +40,8 @@ Steps to run inside container
 
 awswrangler
 --------------
-- Here using awswrangler to create glue table. We can use glue api also to create glue tables
+- Here using awswrangler to create glue table. 
+- We can use glue api also to create glue tables as well as sql - ALTER TABLe ADD PARTITION as new partitions are added.
 - Once you convert dataframe to pandas data frame, awswrangler can save the pandas dataframe stores data on to a Data Lake, and updates partitions as well
 - When we add new data with newer partitions, these new partitions can be added via Glue API or via spark SQL or via awswrangler like above
 
