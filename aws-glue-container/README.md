@@ -44,7 +44,7 @@ awswrangler
 - Once you convert dataframe to pandas data frame, awswrangler can save the pandas dataframe stores data on to a Data Lake, and updates partitions as well
 - When we add new data with newer partitions, these new partitions can be added via Glue API or via spark SQL or via awswrangler like above
 
-Docker commamnd ADD
+Docker command ADD
 -------------------------
 - https://www.ctl.io/developers/blog/post/dockerfile-add-vs-copy/
 <pre>
