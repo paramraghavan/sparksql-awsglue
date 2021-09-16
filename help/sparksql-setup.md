@@ -99,3 +99,11 @@ AWS Secret Access Key [None]: secretkey
 Default region name [None]: 
 Default output format [None]
 
+You may have more than one user account configure to use aws cli, if you want to find out what is the default aws 
+user id aws cli is using, run the following, this shows you are logged in as aws user user-admin.
+
+aws iam get-account-summary
+result:
+An error occurred (AccessDenied) when calling the GetAccountSummary operation: User: arn:aws:iam::123456789:user/user-admin is 
+not authorized to perform: iam:GetAccountSummary on resource: *
+
