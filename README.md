@@ -142,7 +142,7 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 # Glue Catalog, Athena, Redshift, Redshift Spectrum
 - Glue is used as data catalog and the schema's are maintained and managed via DDL scripts. The DDL scripts are executed via Zepplin or the table creation  scripts  is part of CI/CD. On execution of DDL script for creation of Glue catalog tables, glue in turns maps the parquet/csv columns in the raw file to table schema. The column names should be exact match between auto mapped tables(internal table/schema) in glue catalog and the tables/columns created via ddl scripts. **Note** you can use/setup the Glue crawler to all of this as well.
 - Glue catalog needs to use sql engine to query the tables cataloged in Glue. Athena - presto sql engine, spark sql , Redshift/Redshift Spectrum and zepellin
-- Redshift spectrum is used to read AWS S3 files(external files) as table and are accessed in Redshift as views - views are used here to format string to date, date data type is not supported by Redshift.
+- Redshift spectrum is used to read AWS S3 files(external files) as table and are accessed in Redshift as views - views are used to format string to date, date data type is not supported by Redshift spectrum????.
 - Redshift external files  in S3 bucket are mapped as table in glue The glue catalog is accessed as view from Redshift using Redshift spectrum. When new files are added to S3, these new partitions have to added to the glue catalog to the associated schema.
 - Tableau reports use Redshift views.
 - Athena can also be used to access  database/tables in glue catalog. Athena, Redshift a can be accessed via jdbc driver like we access Postgres sql db.
