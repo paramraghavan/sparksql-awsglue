@@ -95,7 +95,7 @@ that you can then use like a hive table in Spark SQL. It does not persist to mem
 dataset that underpins the view.
   
 - Caching - Spark will read the parquet, csv,etc.., execute the query only once and then cache it.
-  Then the code in the loop will use the cached, pre-calculated DataFrame. Imagine that 
+  when the code is in the loop, it will use the cached, pre-calculated DataFrame. Imagine that 
   you are working with a lot of data, and you run a series of queries and actions on it 
   without using caching. It runs again and again without you even noticing.
   This can add hours to the job running time or even make the job fail.
