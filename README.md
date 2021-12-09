@@ -153,7 +153,7 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 - https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-external-tables.html
 - https://aws.amazon.com/premiumsupport/knowledge-center/redshift-spectrum-external-table/
 
-# [EMR Spark submit](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
+# [EMR Spark submit - How does it work?](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
 
 
 
