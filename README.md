@@ -157,7 +157,7 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 
 # [EMR Spark submit - How does it work?](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
 
-
+# [setup spark sql on windows](https://github.com/paramraghavan/sparksql-awsglue/blob/main/help/sparksql-setup.md)
 
 # Interactive Jupyter Notebook
 Under aws-glue there are 2 ipynb files. 
