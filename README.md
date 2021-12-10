@@ -42,7 +42,7 @@ Spark does not provide a distributed file storage system, so it is mainly used f
 **Spark Characteristics**
 - Spark does lazy load all the way, until it needs to perform an action
 - Action - Common actions include operations that collect the results of tasks - count, sum etc... and ship them to the driver, save an RDD, or count the number of elements in a RDD.
-- Transformation - are operations that generate a new RDD- resilient distributed dataset. Common transformations include perations that filter, sort and group by key, cache etc are all lazy
+- Transformation - are operations that generate a new RDD- resilient distributed dataset. Common transformations include operations that filter, sort and group by key, cache etc are all lazy
 - The Dataframes returned/read by spark are all immutable.
 
 **Cache:**
