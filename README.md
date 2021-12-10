@@ -15,6 +15,8 @@ way each Task knows which piece of data it is to process.
 - Once started, each Task will fetch from the original data source the Partition
 of data assigned to it
 
+The driver is the application code that defines the transformations and actions applied to the data set. At its core, the driver has instantiated an object of the SparkContext class. This object allows the driver to acquire a connection to the cluster, request resources, split the application actions into tasks, and schedule and launch tasks in the executors.
+
 ![image](https://user-images.githubusercontent.com/52529498/125184695-e88d3880-e1ed-11eb-9d07-5f7b97c18d94.png)
 
 
@@ -39,8 +41,8 @@ Spark does not provide a distributed file storage system, so it is mainly used f
 
 **Spark Characteristics**
 - Spark does lazy load all the way, until it needs to perform an action
-- Action - example count, sum
-- Transformation - filter(sql example where clause), cache etc are all lazy
+- Action - Common actions include operations that collect the results of tasks - count, sum etc... and ship them to the driver, save an RDD, or count the number of elements in a RDD.
+- Transformation - are operations that generate a new RDD- resilient distributed dataset. Common transformations include perations that filter, sort and group by key, cache etc are all lazy
 - The Dataframes returned/read by spark are all immutable.
 
 **Cache:**
