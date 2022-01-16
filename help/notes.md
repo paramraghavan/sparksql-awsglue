@@ -107,3 +107,5 @@ after filtering a large data set. I've found repartition to be faster overall be
 built to work with equal sized partitions.
 ref: https://stackoverflow.com/questions/31610971/spark-repartition-vs-coalesce
 </pre>
+
+- https://stackoverflow.com/questions/46386505/pyspark-difference-between-pyspark-sql-functions-col-and-pyspark-sql-functions-l
