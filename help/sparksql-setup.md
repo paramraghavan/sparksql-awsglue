@@ -10,8 +10,8 @@
    - Add to path --> set PATH=%SPARK_HOME%\bin:%PATH%
    - my JAVA_HOME, set JAVA_HOME=C:\Program Files\Java\jdk1.8.0_291
 # Install winutils.exe
-- Please locate winutils.exe http://github.com/steveloughran/winutils
-- Copy the bin folder from here, https://github.com/steveloughran/winutils/tree/master/hadoop-2.7.1 into
+-  Locate winutils.exe based on the your Hadoop version selection in http://github.com/steveloughran/winutils
+- For the  Apache Hadoop 2.7 we had chosen above, copy the bin folder from here, https://github.com/steveloughran/winutils/tree/master/hadoop-2.7.1 into
 hadoop\bin folder in the SPARK_HOME folder
 - create HADOOP_HOME environment variable using a value of %SPARK_HOME%\hadoop.
   set HADOOP_HOME=%SPARK_HOME%\hadoop
