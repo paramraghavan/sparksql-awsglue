@@ -25,6 +25,9 @@ hadoop\bin folder in the SPARK_HOME folder
 - Start "jupyter notebook" and hit enter. This would open a jupyter notebook from your browser. 
    From Jupyter notebook--> New --> Select Python3
 
+# start pyspark shell
+- at anaconda prompt or dos shell type **pyspark**
+
 # Cell 1, Run 
 - import findspark
 - findspark.init()
