@@ -1,5 +1,4 @@
-# python code to create glue catalog without using crawler
-- https://acloud.guru/forums/aws-certified-big-data-specialty/discussion/-LkvnxZXAHoMrkFl-_xl/Manually%20create%20glue%20schema%20without%20crawler
+# [python code to create glue catalog without using crawler](https://acloud.guru/forums/aws-certified-big-data-specialty/discussion/-LkvnxZXAHoMrkFl-_xl/Manually%20create%20glue%20schema%20without%20crawler)
 
 # Glue
 - https://docs.aws.amazon.com/cli/latest/reference/glue/create-table.html
