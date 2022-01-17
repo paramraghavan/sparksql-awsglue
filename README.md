@@ -78,7 +78,7 @@ In Narrow transformation, all the elements that are required to compute the reco
 # UDF user defined functions
 PySpark UDF (a.k.a User Defined Function) is the most useful feature of Spark SQL & DataFrame that is used to extend the PySpark build in capabilities. **Note**: UDF’s are the most expensive operations hence use them only you have no choice and when essential.
 
-- ref: https://sparkbyexamples.com/pyspark/pyspark-udf-user-defined-function/
+[Ref](https://sparkbyexamples.com/pyspark/pyspark-udf-user-defined-function/)
 
 # Spark functions vs UDF performance ?
 **UDF function:**
@@ -109,7 +109,16 @@ Use the higher-level standard Column-based functions with Dataset operators when
 
 What actually happens behind the screens, is that the Catalyst can’t process and optimize UDFs at all, and it treats them as BlackBox, which results in losing many optimizations like Predicate pushdown, Constant folding and many others.
 
-ref: https://stackoverflow.com/questions/38296609/spark-functions-vs-udf-performance
+[Ref](https://stackoverflow.com/questions/38296609/spark-functions-vs-udf-performance)
+
+
+# Spark predicate pushdown
+The basic idea of predicate pushdown is that certain parts of SQL queries (the predicates) can be “pushed” to where the data lives.  This optimization can drastically reduce query/processing time by filtering out data earlier rather than later. Depending on the processing framework, predicate pushdown can optimize your query by doing things like filtering data before it is transferred over the network, filtering data before loading into memory, or skipping reading entire files or chunks of files.
+
+A “predicate” (in mathematics and functional programming) is a function that returns a boolean (true or false). In SQL queries predicates are usually encountered in the WHERE clause and are used to filter data.
+
+
+[Ref](https://phpfog.com/what-is-predicate-pushdown/) 
 
 # AWS Glue Catalog:
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
@@ -164,7 +173,7 @@ Based on our tests, gzip decompression is very slow (< 100MB/s), making queries 
   - CPU Usage: Medium
   - Splittable: No
  
- ref: https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats
+ [Ref](https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats)
 
 ## [Developing AWS Glue ETL jobs locally using a container](https://github.com/paramraghavan/sparksql-awsglue/tree/main/aws-glue-container#readme)
 
