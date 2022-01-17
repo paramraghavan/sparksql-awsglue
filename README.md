@@ -75,7 +75,9 @@ In Narrow transformation, all the elements that are required to compute the reco
 
 **ref:** https://sparkbyexamples.com/apache-spark-rdd/spark-rdd-transformations/#narrow-transformation
 
-
+# UDF user defined functions
+- https://sparkbyexamples.com/pyspark/pyspark-udf-user-defined-function/
+- 
 
 # AWS Glue Catalog:
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
