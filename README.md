@@ -80,6 +80,18 @@ PySpark UDF (a.k.a User Defined Function) is the most useful feature of Spark SQ
 
 PySpark UDF’s are similar to UDF on traditional databases. In PySpark, you create a function in a Python syntax and wrap it with PySpark SQL udf() or register it as udf and use it on DataFrame and SQL respectively. Before you create any UDF, do your research to check if the similar function you wanted is already available in [Spark SQL Functions](https://sparkbyexamples.com/spark/spark-sql-functions/). PySpark SQL provides several predefined common functions and many more new functions are added with every release. hence, It is best to check before you reinventing the wheel.
 
+
+Now convert this function convertCase() to UDF by passing the function to PySpark SQL udf(), this function is available at **org.apache.spark.sql.functions.udf** package. Make sure you import this package before using it.
+<pre>
+""" Converting function to UDF """
+convertUDF = udf(lambda z: convertCase(z),StringType())
+
+
+""" Converting function to UDF  StringType() is by default hence not required """
+convertUDF = udf(lambda z: convertCase(z)) 
+
+</pre>
+
 [Ref](https://sparkbyexamples.com/pyspark/pyspark-udf-user-defined-function/)
 
 # Spark functions vs UDF performance ?
