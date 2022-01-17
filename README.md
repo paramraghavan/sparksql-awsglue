@@ -81,7 +81,33 @@ PySpark UDF (a.k.a User Defined Function) is the most useful feature of Spark SQ
 - ref: https://sparkbyexamples.com/pyspark/pyspark-udf-user-defined-function/
 
 # Spark functions vs UDF performance ?
+**UDF function:**
 
+<pre>
+concat_s = udf(lambda s: s+ 's')
+udfData = dataDF.select(concat_s(dataDF.first_name).alias('name'))
+udfData.count()
+</pre>
+
+**Spark Function:**
+<pre>
+spfData = dataDF.select(concat(dataDF.first_name, lit('s')).alias('name'))
+spfData.count()
+</pre>
+Ran both multiple times, the udf usually took about 1.1 - 1.4 s, and the Spark concat function always took under 0.15 s.
+
+When executing Spark-SQL native functions, the data will stays in tungsten backend. However, in Spark UDF scenario, the data will be moved out from tungsten into JVM (Scala scenario) or JVM and Python Process (Python scenario) to do the actual process, and then move back into tungsten. As a result of that:
+- Inevitably, there would be a overhead / penalty on :
+  - Deserialize the input from tungsten.
+  - Serialize the output back into tungsten.
+- Even using Scala, the first-class citizen in Spark, it will increase the memory footprint within JVM, and which may likely involve more GC within JVM. This issue exactly what tungsten "Off-Heap Memory Management" feature try to address.
+
+Spark added a Python API in version 0.7, with support for user-defined functions. These user-defined functions operate one-row-at-a-time, and thus suffer from high serialization and invocation overhead. However the newly vectorized udfs seem to be improving the performance a lot.
+
+Still
+Use the higher-level standard Column-based functions with Dataset operators whenever possible before reverting to using your own custom UDF functions since UDFs are a BlackBox for Spark and so it does not even try to optimize them.
+
+What actually happens behind the screens, is that the Catalyst can’t process and optimize UDFs at all, and it treats them as BlackBox, which results in losing many optimizations like Predicate pushdown, Constant folding and many others.
 
 ref: https://stackoverflow.com/questions/38296609/spark-functions-vs-udf-performance
 
