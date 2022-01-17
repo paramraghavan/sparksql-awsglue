@@ -76,8 +76,10 @@ In Narrow transformation, all the elements that are required to compute the reco
 **ref:** https://sparkbyexamples.com/apache-spark-rdd/spark-rdd-transformations/#narrow-transformation
 
 # UDF user defined functions
-- https://sparkbyexamples.com/pyspark/pyspark-udf-user-defined-function/
-- 
+PySpark UDF (a.k.a User Defined Function) is the most useful feature of Spark SQL & DataFrame that is used to extend the PySpark build in capabilities. **Note**: UDF’s are the most expensive operations hence use them only you have no choice and when essential.
+
+- ref: https://sparkbyexamples.com/pyspark/pyspark-udf-user-defined-function/
+
 
 # AWS Glue Catalog:
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
