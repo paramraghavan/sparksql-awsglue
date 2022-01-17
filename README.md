@@ -80,6 +80,10 @@ PySpark UDF (a.k.a User Defined Function) is the most useful feature of Spark SQ
 
 - ref: https://sparkbyexamples.com/pyspark/pyspark-udf-user-defined-function/
 
+# Spark functions vs UDF performance ?
+
+
+ref: https://stackoverflow.com/questions/38296609/spark-functions-vs-udf-performance
 
 # AWS Glue Catalog:
 WE have tons of data stored in S3, the glue helps us to add a metadata on top our S3 data. You can use glue 
