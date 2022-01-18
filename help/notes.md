@@ -109,3 +109,8 @@ ref: https://stackoverflow.com/questions/31610971/spark-repartition-vs-coalesce
 </pre>
 
 - https://stackoverflow.com/questions/46386505/pyspark-difference-between-pyspark-sql-functions-col-and-pyspark-sql-functions-l
+
+## Error
+- com.amazonaws.services.s3.model.MultiObjectDeleteException: Status Code: 0, AWS Service: null, AWS Request ID: null, AWS Error Code: null, AWS Error Message: One or more objects could not be deleted, 
+  S3 Extended Request ID: null. On executing "flights_sml.write.mode("overwrite").parquet("s3a://pp-database/tables/flights")"
+  **FIX* added delete permissions for s3 resources "s3:Delete*"  
