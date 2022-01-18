@@ -100,6 +100,12 @@ convertUDF = udf(lambda z: convertCase(z),StringType())
 
 """ Converting function to UDF  StringType() is by default hence not required """
 convertUDF = udf(lambda z: convertCase(z)) 
+
+
+df.select(col("Seqno"), \
+    convertUDF(col("Name")).alias("Name") ) \
+   .show(truncate=False)
+
 </pre>
 
 ## SQL and udf
@@ -120,6 +126,7 @@ spark.sql("select Seqno, convertUDF(Name) as Name from NAME_TABLE") \
 **UDF function:**
 
 <pre>
+from pyspark.sql.functions import udf
 concat_s = udf(lambda s: s+ 's')
 udfData = dataDF.select(concat_s(dataDF.first_name).alias('name'))
 udfData.count()
@@ -127,6 +134,7 @@ udfData.count()
 
 **Spark Function:**
 <pre>
+from pyspark.sql.functions import lit, concat
 spfData = dataDF.select(concat(dataDF.first_name, lit('s')).alias('name'))
 spfData.count()
 </pre>
