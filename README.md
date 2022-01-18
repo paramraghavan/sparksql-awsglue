@@ -238,6 +238,9 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 - Tableau reporting - exposing the files in S3 using glue catalog + Redshift Spectrum + Red Shift view – looks like this is the easiest way for tableau to consume files in S3 as tables. You could access glue catalog via Athena, but looks like tableau has to manage tokens and these tokens have to renewed every x interval of time
 - Redshift accesses the tables in Glue catalog as external tables. These glue tables which are to be accessed by Redshift  are tagged as external scheme
 
+**Ref:**
+- https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-external-tables.html
+- https://aws.amazon.com/premiumsupport/knowledge-center/redshift-spectrum-external-table/
 
 # Conversion Between PySpark and Pandas DataFrames
 Converting a PySpark DataFrame to Pandas is quite trivial thanks to toPandas()method however, this is probably one of the most costly operations that must be used sparingly, especially when dealing with fairly large volume of data.
@@ -249,10 +252,6 @@ On the other hand, Spark DataFrames are distributed across the nodes of the Spar
 It is important to understand that when toPandas() method is executed over a Spark DataFrame, all the rows which are distributed across the nodes of the cluster will be collected into the driver program that needs to have sufficient memory to fit the data.
 
 toPandas() is an expensive operation that should be used carefully in order to minimize the performance impact on our Spark applications. In case where this is required and especially when the dataframe is fairly large, you need to consider PyArrow optimization when converting Spark to Pandas DataFrames. [See here for more details](https://towardsdatascience.com/how-to-efficiently-convert-a-pyspark-dataframe-to-pandas-8bda2c3875c3)
-
-**Ref:**
-- https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-external-tables.html
-- https://aws.amazon.com/premiumsupport/knowledge-center/redshift-spectrum-external-table/
 
 # [EMR Spark submit - How does it work?](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
 
