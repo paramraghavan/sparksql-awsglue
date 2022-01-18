@@ -1,6 +1,6 @@
 import boto3
 
-boto3.__version__
+boto3.__version__msck
 import os, time
 
 
@@ -246,7 +246,7 @@ def apply_msck_repair(database, table):
     data_catalog_table = table
     db = database  # glue data_catalog db, not Postgres DB
     # this supposed to update all partitions for data_catalog_table, so glue job
-    # can upload new file data into DB
+    # can upload new file data partition added to S3 into DB
     q = "MSCK REPAIR TABLE " + data_catalog_table
     # output of the query goes to s3 file normally
     output = "s3://pp-query-results/results/"
