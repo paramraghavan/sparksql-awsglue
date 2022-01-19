@@ -1,0 +1,56 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Athena",
+      "Effect": "Allow",
+      "Action": [
+        "athena:StartQueryExecution",
+        "athena:GetQueryExecution",
+        "athena:GetQueryResults"
+      ],
+      "Resource": [
+                    "arn:aws:athena:us-east-1:*:workgroup/primary"
+                  ]
+    },
+    {
+        "Effect": "Allow",
+        "Action": [
+            "s3:GetBucketLocation",
+            "s3:CreateBucket",
+            "s3:DeleteBucket",
+            "s3:ListBucket",
+            "s3:PutObject",
+            "s3:GetObject",
+            "s3:DeleteObject"
+        ],
+        "Resource": [
+            "arn:aws:s3:::aws-athena-query-results*"
+        ]
+    },
+    {
+      "Sid": "GlueTables",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetTable",
+        "glue:GetTables",
+        "glue:GetDatabase",
+        "glue:GetDataBases",
+	    "glue:CreateDatabase",
+	    "glue:CreateTable",
+	    "glue:DeleteDatabase",
+	    "glue:BatchCreatePartition",
+	    "glue:GetPartitions",
+	    "glue:UpdateTable",
+	    "glue:DeleteTable",
+	    "glue:BatchDeletePartition"
+      ],
+      "Resource": [
+                    "arn:aws:glue:us-east-1:*:catalog",
+                    "arn:aws:glue:us-east-1:*:database/sample_db",
+                    "arn:aws:glue:us-east-1:*:table/sample_db/*",
+                    "arn:aws:glue:us-east-1:*:userDefinedFunction/sample_db/*"
+                  ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import boto3
 
-boto3.__version__msck
+boto3.__version
 import os, time
 
 
