@@ -31,6 +31,7 @@ hadoop\bin folder in the SPARK_HOME folder
   > bin\spark-submit --verbose sample.py arg1 arg2
   > 
   > spark-submit --verbose aws-glue/spark-submit-example.py
+    >> make sure you have started jupyter notebook, open aws-glue.ipynb, enable pyspark and intiailize SparkContext
 
 - **Errors**
   - Python was not found; run without arguments to install from the Microsoft Store, or disable this shortcut from Settings. **Fix** Go to -> "start" and type "Manage App Execution Aliases". Go to it and turn off App Installer "Python"
