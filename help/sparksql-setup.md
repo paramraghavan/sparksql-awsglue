@@ -29,6 +29,7 @@ hadoop\bin folder in the SPARK_HOME folder
 - To start a PySpark shell, run the **pyspark** at anaconda prompt or dos shell. Once your are in the PySpark shell use the sc and sqlContext names and type exit() to return back to the Command Prompt.
 - To run a standalone Python script, run the spark-submit utility and specify the path of your Python script as well as any arguments your Python script needs in the Command Prompt. For example, to run the sample.py script with aruguments arg1, arg2, you can run the following command:
   > bin\spark-submit --verbose sample.py arg1 arg2
+  > 
   > spark-submit --verbose aws-glue/spark-submit-example.py
 
 - **Errors**
