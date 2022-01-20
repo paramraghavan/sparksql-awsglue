@@ -157,10 +157,59 @@ What actually happens behind the screens, is that the [Catalyst](https://blog.bi
 
 
 # Spark predicate pushdown
-The basic idea of predicate pushdown is that certain parts of SQL queries (the predicates) can be “pushed” to where the data lives - if you can “push down” parts of the query to where the data is stored, and thus filter out most of the data, then you can greatly reduce network traffic.  This optimization can drastically reduce query/processing time by filtering out data earlier rather than later. Depending on the processing framework, predicate pushdown can optimize your query by doing things like filtering data before it is transferred over the network, filtering data before loading into memory, or skipping reading entire files or chunks of files.
+A predicate is a condition on a query that returns true or false, typically located in the WHERE clause. A predicate push down filters the data in
+the database query - if you can “push down” parts of the query to where the data is stored, and thus filter out most of the data, then you can
+greatly reduce network traffic, reducing the number of entries retrieved from the database and improving query performance. By default the Spark
+Dataset API will automatically push down valid WHERE clauses to the database. Depending on the processing framework, predicate pushdown can optimize your query by doing things like filtering data
+before it is transferred over the network, filtering data before loading into memory, or skipping reading entire files or chunks of files.
 
-A “predicate” (in mathematics and functional programming) is a function that returns a boolean (true or false). In SQL queries predicates are usually encountered in the WHERE clause and are used to filter data. [Pushdown predicate and spark sql](https://docs.datastax.com/en/dse/6.0/dse-dev/datastax_enterprise/spark/sparkPredicatePushdown.html#:~:text=To%20push%20down%20the%20correct,can%20generate%20the%20correct%20predicate.)
+A “predicate” (in mathematics and functional programming) is a function that returns a boolean (true or false).
+In SQL queries predicates are usually encountered in the WHERE clause and are used to filter data.
+[Pushdown predicate and spark sql](https://docs.datastax.com/en/dse/6.0/dse-dev/datastax_enterprise/spark/sparkPredicatePushdown.html#:~:text=To%20push%20down%20the%20correct,can%20generate%20the%20correct%20predicate.)
 
+
+## Hints to make predicate pushdown to work
+1. Partition key columns can be pushed down as long as:
+    - All partition key columns are included in the filter.
+    - No more than one equivalence predicate per column.
+    - Use an IN clause to specify multiple restrictions for a particular column.
+    
+2. When creating Spark SQL queries that use comparison operators, making sure the predicates are pushed down to the database correctly is 
+   critical to retrieving the correct data with the best performance. For example, given a CQL table with the following schema:
+  <pre>
+    CREATE TABLE test.common (
+        year int,
+        birthday timestamp,
+        userid uuid,
+        likes text,
+        name text,
+        PRIMARY KEY (year, birthday, userid)
+    )
+  </pre>  
+ Suppose you want to write a query that selects all entries where the birthday is earlier than a given date:
+<pre>
+SELECT * FROM test.common WHERE birthday < '2001-1-1';
+</pre>
+
+Note that the Filter directive is treating the birthday column, a CQL TIMESTAMP, as a string. The query optimizer looks at this comparison
+and needs to make the types match before generating a predicate. In this case the optimizer decides to cast the birthday column as a string to
+match the string '2001-1-1', but cast functions cannot be pushed down. The predicate isn't pushed down, and it doesn't appear in PushedFilters.
+A full table scan will be performed at the database layer, with the results returned to Spark for further processing.
+
+To push down the correct predicate for this query, use the cast method to specify that the predicate is comparing the birthday column to a 
+TIMESTAMP, so the types match and the optimizer can generate the correct predicate.
+
+<pre>
+EXPLAIN SELECT * FROM test.common WHERE birthday < cast('2001-1-1' as TIMESTAMP);
+
+== Physical Plan ==
+*Scan org.apache.spark.sql.cassandra.CassandraSourceRelation [year#0,birthday#1,userid#2,likes#3,name#4] 
+<b>PushedFilters: [*LessThan(birthday,2001-01-01 00:00:00.0)], </b>
+ReadSchema: struct<year:int,birthday:timestamp,userid:string,likes:string,name:string>
+Time taken: 0.034 seconds, Fetched 1 row(s)
+</pre>
+Note the PushedFilters indicating that the LessThan predicate will be pushed down for the column data in birthday. 
+This should speed up the query as a full table scan will be avoided.
 
 [Ref](https://phpfog.com/what-is-predicate-pushdown/) 
 
