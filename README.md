@@ -159,7 +159,7 @@ What actually happens behind the screens, is that the [Catalyst](https://blog.bi
 # Spark predicate pushdown
 The basic idea of predicate pushdown is that certain parts of SQL queries (the predicates) can be “pushed” to where the data lives - if you can “push down” parts of the query to where the data is stored, and thus filter out most of the data, then you can greatly reduce network traffic.  This optimization can drastically reduce query/processing time by filtering out data earlier rather than later. Depending on the processing framework, predicate pushdown can optimize your query by doing things like filtering data before it is transferred over the network, filtering data before loading into memory, or skipping reading entire files or chunks of files.
 
-A “predicate” (in mathematics and functional programming) is a function that returns a boolean (true or false). In SQL queries predicates are usually encountered in the WHERE clause and are used to filter data.
+A “predicate” (in mathematics and functional programming) is a function that returns a boolean (true or false). In SQL queries predicates are usually encountered in the WHERE clause and are used to filter data. [Pushdown predicate and spark sql](https://docs.datastax.com/en/dse/6.0/dse-dev/datastax_enterprise/spark/sparkPredicatePushdown.html#:~:text=To%20push%20down%20the%20correct,can%20generate%20the%20correct%20predicate.)
 
 
 [Ref](https://phpfog.com/what-is-predicate-pushdown/) 
