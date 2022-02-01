@@ -322,6 +322,7 @@ Redshift blocks
   you have to run the vaccum process - this will sort the table and remove rows that are marked as deleted. 
   Analyze will collect table statistics for optimal query planning.
 - use vaccum to reclaim the blocks 
+- run analyze command typically adter the ETL process completes
 
 </pre>
 
