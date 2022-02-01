@@ -287,6 +287,9 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 - Tableau reporting - exposing the files in S3 using glue catalog + Redshift Spectrum + Red Shift view – looks like this is the easiest way for tableau to consume files in S3 as tables. You could access glue catalog via Athena, but looks like tableau has to manage tokens and these tokens have to renewed every x interval of time
 - Redshift accesses the tables in Glue catalog as external tables. These glue tables which are to be accessed by Redshift  are tagged as external scheme
 
+# Redshift Architecture
+![img.png](img.png)
+
 **Ref:**
 - https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-external-tables.html
 - https://aws.amazon.com/premiumsupport/knowledge-center/redshift-spectrum-external-table/
