@@ -297,6 +297,34 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 # Redshift Spectrum
 ![img_3.png](img_3.png)
 
+# Redshift Notes
+<pre>
+The copy command is a redshift sql command to copy file(s) from s3 to redshift table, copy command automatically analyzes and compresses the data on 
+first load into an empty table.
+
+Analyze compression is a built-in command that will find the optimal compression for each column on an existing table.
+
+Sortkey columns, data is stored in blocks or zones in the sortkey order
+Sortkey are less benefcial on small tables, as it does not prune a lot of blocks are there are not too many blocks in the first place.
+Add columns to sortkey that are frequently filtered, with lowest cardinality columns first
+Columns added to sortkey column after a high-cardinality column are not effective
+More than 4 sortkey columns will marginally improve query speed.
+Sortkey column helps redshift is identifying the stored blocks/zones.
+Small size  table in datawarehouse like redshift is about 3 millon rows
+Data distribution:
+- ALL, for small dimensional tables
+- Even, for fact tables 
+- Key, data stored in blocks based on key hash, used for joins for large tables
+
+Redshift blocks
+- these are 1 mb blocks
+- these blocks are immutable, so whenever changes happens to data in these block, this block is marked for logical delete, 
+  you have to run the vaccum process - this will sort the table and remove rows that are marked as deleted. 
+  Analyze will collect table statistics for optimal query planning.
+- use vaccum to reclaim the blocks 
+
+</pre>
+
 **Ref:**
 - https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-external-tables.html
 - https://aws.amazon.com/premiumsupport/knowledge-center/redshift-spectrum-external-table/
