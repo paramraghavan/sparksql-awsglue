@@ -288,7 +288,7 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 - Redshift accesses the tables in Glue catalog as external tables. These glue tables which are to be accessed by Redshift  are tagged as external scheme
 
 # Redshift Architecture
-![img.png](img.png)
+![img_2.png](img_2.png)
 
 **Ref:**
 - https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-external-tables.html
