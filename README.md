@@ -297,6 +297,9 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 # Redshift Spectrum
 ![img_3.png](img_3.png)
 
+# Redshift setup
+![img_4.png](img_4.png)
+
 # Redshift Notes
 <pre>
 The copy command is a redshift sql command to copy file(s) from s3 to redshift table, copy command automatically analyzes and compresses the data on 
