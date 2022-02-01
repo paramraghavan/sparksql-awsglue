@@ -290,6 +290,9 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 # Redshift Architecture
 ![img_2.png](img_2.png)
 
+# Columnar Storage
+![img_1.png](img_1.png)
+
 **Ref:**
 - https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-external-tables.html
 - https://aws.amazon.com/premiumsupport/knowledge-center/redshift-spectrum-external-table/
