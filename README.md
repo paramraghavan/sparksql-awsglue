@@ -208,6 +208,7 @@ EXPLAIN SELECT * FROM test.common WHERE birthday < cast('2001-1-1' as TIMESTAMP)
 ReadSchema: struct<year:int,birthday:timestamp,userid:string,likes:string,name:string>
 Time taken: 0.034 seconds, Fetched 1 row(s)
 </pre>
+
 Note the PushedFilters indicating that the LessThan predicate will be pushed down for the column data in birthday. 
 This should speed up the query as a full table scan will be avoided.
 
@@ -292,6 +293,9 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 
 # Columnar Storage
 ![img_1.png](img_1.png)
+
+# Redshift Spectrum
+![img_3.png](img_3.png)
 
 **Ref:**
 - https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-external-tables.html
