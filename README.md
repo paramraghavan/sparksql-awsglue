@@ -221,12 +221,14 @@ create glue metadata in glue catalog to map data in S3 - other ways are - packag
 and DDL sql. S3 data can be accessed via sql - using redshift spectrum, accessed via AWS EMR/pyspark/spark-sql, or via  
 Aws Athena/Mesos(the sql engine), etc.  
 
-It's easy to create table metadata in Glue catalog via boto3 glue api. One can use DDL SQL or the package awswrangler to create table, add partitions etc. We will access this table mapped on S3 using sql via jupyter notebook running on a local pc using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html).
+It's easy to create table metadata in Glue catalog via boto3 glue api. One can use DDL SQL or the package awswrangler to create table,
+add partitions etc. We will access this table mapped on S3 using sql via jupyter notebook running on a local pc using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html).
 
 # Schema on read/write
 - [Schema on read/write](https://luminousmen.com/post/schema-on-read-vs-schema-on-write)
 - RDMS - schema on write, here we define the columns, data format, relationships of columns, etc. before the actual data upload.
-- AWS Glue - schema on read, with glue we can create the schema at the time were consume/read data, this allows for  fast data ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
+- AWS Glue - schema on read, with glue we can create the schema at the time were consume/read data, this allows for  fast data
+ingestion because data shouldn't follow any internal schema — it's just copying/moving files. This type of data handling is more flexible in case of big data, unstructured data, or frequent schema changes.
 
 # Spark sql
 - CreateTableView based on dataframe - createOrReplaceTempView creates (or replaces if that view name already exists) a lazily evaluated "view" 
@@ -252,15 +254,18 @@ dataset that underpins the view.
    InMemoryRelation which indicate that we are working on a cached DataFrame.dataframe_object.explain()
    
 # Parquet file Gzip vs Snappy
-GZIP compression uses more CPU resources than Snappy or LZO, but provides a higher compression ratio. GZip is often a good choice for cold data, which is accessed infrequently. Snappy or LZO are a better choice for hot data, which is accessed frequently. Snappy often performs better than LZO. ref: google search
-Use Snappy if you can handle higher disk usage for the performance benefits (lower CPU + Splittable).
+GZIP compression uses more CPU resources than Snappy or LZO, but provides a higher compression ratio. GZip is often a good choice for cold data,
+which is accessed infrequently. Snappy or LZO are a better choice for hot data, which is accessed frequently. Snappy often performs better
+than LZO. ref: google search Use Snappy if you can handle higher disk usage for the performance benefits (lower CPU + Splittable).
 > When Spark switched from GZIP to Snappy by default, this was the reasoning:
 
-Based on our tests, gzip decompression is very slow (< 100MB/s), making queries decompression bound. Snappy can decompress at ~ 500MB/s on a single core.
+Based on our tests, gzip decompression is very slow (< 100MB/s), making queries decompression bound. Snappy can 
+decompress at ~ 500MB/s on a single core.
 - Snappy:
   - Storage Space: High
   - CPU Usage: Low
-  - Splittable: Yes (1), If you need your compressed data to be splittable, then use BZip2, LZO, and Snappy formats which are splittable, but GZip is not.
+  - Splittable: Yes (1), If you need your compressed data to be splittable, then use BZip2, LZO, and Snappy
+  formats which are splittable, but GZip is not.
   
 - GZIP:
   - Storage Space: Medium
@@ -272,21 +277,37 @@ Based on our tests, gzip decompression is very slow (< 100MB/s), making queries 
 ## [Developing AWS Glue ETL jobs locally using a container](https://github.com/paramraghavan/sparksql-awsglue/tree/main/aws-glue-container#readme)
 
 # Redshift Spectrum vs Glue
-Developers describe Amazon Redshift Spectrum as "Exabyte-Scale In-Place Queries of S3 Data". With Redshift Spectrum, you can extend the analytic power of Amazon Redshift beyond data stored on local disks in your data warehouse to query vast amounts of unstructured data in your Amazon S3 “data lake” -- without having to load or transform any data. On the other hand, AWS Glue is detailed as "Fully managed extract, transform, and load (ETL) service". A fully managed extract, transform, and load (ETL) service that makes it easy for customers to prepare and load their data for analytics.
+Developers describe Amazon Redshift Spectrum as "Exabyte-Scale In-Place Queries of S3 Data". With Redshift Spectrum, yo
+u can extend the analytic power of Amazon Redshift beyond data stored on local disks in your data warehouse to query vast
+amounts of unstructured data in your Amazon S3 “data lake” -- without having to load or transform any data. On the other hand, 
+AWS Glue is detailed as "Fully managed extract, transform, and load (ETL) service". A fully managed extract, transform, and
+load (ETL) service that makes it easy for customers to prepare and load their data for analytics.
 
 Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" tools.
 
 **ref:** https://stackshare.io/stackups/amazon-redshift-spectrum-vs-aws-glue
 
 # Glue Catalog, Athena, Redshift, Redshift Spectrum
-- Glue is used as data catalog and the schema's are maintained and managed via DDL scripts. The DDL scripts are executed via Zepplin or the table creation  scripts  is part of CI/CD. On execution of DDL script for creation of Glue catalog tables, glue in turns maps the parquet/csv columns in the raw file to table schema. The column names should be exact match between auto mapped tables(internal table/schema) in glue catalog and the tables/columns created via ddl scripts. **Note** you can use/setup the Glue crawler to all of this as well.
-- Glue catalog needs to use sql engine to query the tables cataloged in Glue. Athena - presto sql engine, spark sql , Redshift/Redshift Spectrum and zepellin
-- Redshift spectrum is used to read AWS S3 files(external files) as table and are accessed in Redshift as views - views are used to format string to date, date data type is not supported by Redshift spectrum????.
-- Redshift external files  in S3 bucket are mapped as table in glue(by default for external tables data catalog is managed in Athena). The glue catalog is accessed as view from Redshift using Redshift spectrum. When new files are added to S3, these new partitions have to added to the glue catalog to the associated schema.
+- Glue is used as data catalog and the schema's are maintained and managed via DDL scripts. The DDL scripts are executed via
+ Zepplin or the table creation  scripts  is part of CI/CD. On execution of DDL script for creation of Glue catalog tables, 
+ glue in turns maps the parquet/csv columns in the raw file to table schema. The column names should be exact match between 
+ auto mapped tables(internal table/schema) in glue catalog and the tables/columns created via ddl scripts. **Note** you can
+ use/setup the Glue crawler to all of this as well.
+- Glue catalog needs to use sql engine to query the tables cataloged in Glue. Athena - presto sql engine, spark sql , 
+ Redshift/Redshift Spectrum and zepellin
+- Redshift spectrum is used to read AWS S3 files(external files) as table and are accessed in Redshift as views - views
+ are used to format string to date, date data type is not supported by Redshift spectrum????.
+- Redshift external files  in S3 bucket are mapped as table in glue(by default for external tables data catalog is 
+ managed in Athena). The glue catalog is accessed as view from Redshift using Redshift spectrum. When new files are
+ added to S3, these new partitions have to added to the glue catalog to the associated schema.
 - Tableau reports use Redshift views.
-- Athena can also be used to access  database/tables in glue catalog. Athena, Redshift a can be accessed via jdbc driver like we access Postgres sql db.
-- Tableau reporting - exposing the files in S3 using glue catalog + Redshift Spectrum + Red Shift view – looks like this is the easiest way for tableau to consume files in S3 as tables. You could access glue catalog via Athena, but looks like tableau has to manage tokens and these tokens have to renewed every x interval of time
-- Redshift accesses the tables in Glue catalog as external tables. These glue tables which are to be accessed by Redshift  are tagged as external scheme
+- Athena can also be used to access  database/tables in glue catalog. Athena, Redshift a can be accessed via jdbc
+ driver like we access Postgres sql db.
+- Tableau reporting - exposing the files in S3 using glue catalog + Redshift Spectrum + Red Shift view – looks
+ like this is the easiest way for tableau to consume files in S3 as tables. You could access glue catalog via Athena, but 
+ looks like tableau has to manage tokens and these tokens have to renewed every x interval of time
+- Redshift accesses the tables in Glue catalog as external tables. These glue tables which are to be accessed by Redshift 
+ are tagged as external scheme
 
 # Redshift Architecture
 ![img_2.png](img_2.png)
@@ -302,14 +323,14 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 
 # Redshift Notes
 <pre>
-The copy command is a redshift sql command to copy file(s) from s3 to redshift table, copy command automatically analyzes and compresses the data on 
-first load into an empty table.
+The copy command is a redshift sql command to copy file(s) from s3 to redshift table, copy command automatically 
+ analyzes and compresses the data on first load into an empty table.
 
 Analyze compression is a built-in command that will find the optimal compression for each column on an existing table.
 
 Sortkey columns, data is stored in blocks or zones in the sortkey order
-Sortkey are less benefcial on small tables, as it does not prune a lot of blocks are there are not too many blocks in the first place.
-Add columns to sortkey that are frequently filtered, with lowest cardinality columns first
+Sortkey are less benefcial on small tables, as it does not prune a lot of blocks are there are not too many blocks 
+in the first place. Add columns to sortkey that are frequently filtered, with lowest cardinality columns first
 Columns added to sortkey column after a high-cardinality column are not effective
 More than 4 sortkey columns will marginally improve query speed.
 Sortkey column helps redshift is identifying the stored blocks/zones.
@@ -321,9 +342,9 @@ Data distribution:
 
 Redshift blocks
 - these are 1 mb blocks
-- these blocks are immutable, so whenever changes happens to data in these block, this block is marked for logical delete, 
-  you have to run the vaccum process - this will sort the table and remove rows that are marked as deleted. 
-  Analyze will collect table statistics for optimal query planning.
+- these blocks are immutable, so whenever changes happens to data in these block, this block is marked for
+  logical delete, you have to run the vaccum process - this will sort the table and remove rows that are 
+  marked as deleted. Analyze will collect table statistics for optimal query planning.
 - use vaccum to reclaim the blocks 
 - run analyze command typically adter the ETL process completes
 
@@ -334,15 +355,26 @@ Redshift blocks
 - https://aws.amazon.com/premiumsupport/knowledge-center/redshift-spectrum-external-table/
 
 # Conversion Between PySpark and Pandas DataFrames
-Converting a PySpark DataFrame to Pandas is quite trivial thanks to toPandas()method however, this is probably one of the most costly operations that must be used sparingly, especially when dealing with fairly large volume of data.
+Converting a PySpark DataFrame to Pandas is quite trivial thanks to toPandas()method however, this is 
+ probably one of the most costly operations that must be used sparingly, especially when dealing with
+ fairly large volume of data.
 
-**Why is it so costly?** Pandas DataFrames are stored in-memory which means that the operations over them are faster to execute however, their size is limited by the memory of a single machine. 
+**Why is it so costly?** Pandas DataFrames are stored in-memory which means that the operations 
+ over them are faster to execute however, their size is limited by the memory of a single machine. 
 
-On the other hand, Spark DataFrames are distributed across the nodes of the Spark Cluster which is consisted of at least one machine and thus the size of the DataFrames is limited by the size of the cluster. When there is a need to store more data, you simply need to scale up your cluster by adding more nodes (and/or adding more memory to the nodes).
+On the other hand, Spark DataFrames are distributed across the nodes of the Spark Cluster which is 
+ consisted of at least one machine and thus the size of the DataFrames is limited by the size of the cluster. 
+ When there is a need to store more data, you simply need to scale up your cluster by adding more 
+ nodes (and/or adding more memory to the nodes).
 
-It is important to understand that when toPandas() method is executed over a Spark DataFrame, all the rows which are distributed across the nodes of the cluster will be collected into the driver program that needs to have sufficient memory to fit the data.
+It is important to understand that when toPandas() method is executed over a Spark DataFrame, 
+ all the rows which are distributed across the nodes of the cluster will be collected into the driver
+ program that needs to have sufficient memory to fit the data.
 
-toPandas() is an expensive operation that should be used carefully in order to minimize the performance impact on our Spark applications. In case where this is required and especially when the dataframe is fairly large, you need to consider PyArrow optimization when converting Spark to Pandas DataFrames. [See here for more details](https://towardsdatascience.com/how-to-efficiently-convert-a-pyspark-dataframe-to-pandas-8bda2c3875c3)
+toPandas() is an expensive operation that should be used carefully in order to minimize the performance 
+ impact on our Spark applications. In case where this is required and especially when the dataframe is 
+ fairly large, you need to consider PyArrow optimization when converting Spark to Pandas DataFrames.
+ [See here for more details](https://towardsdatascience.com/how-to-efficiently-convert-a-pyspark-dataframe-to-pandas-8bda2c3875c3)
 
 # [EMR Spark submit - How does it work?](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
 
