@@ -32,8 +32,33 @@ Spark recommends 2-3 tasks per CPU core in your cluster. For example, if you hav
 recommended partition number is 2000 to 3000. Sometimes, depends on the distribution and skewness of your source data,
 you need to tune around to find out the appropriate partitioning strategy.
 
+![image](https://user-images.githubusercontent.com/52529498/152910275-db1dcde1-d292-4ec1-981a-614e0ff0777a.png)
 
+if we consider a RDD or a DataFrame of 10 millions rows. It can be divided into 60 partitions across 4 executors (15 partitions per executor).
+With 16 CPU core per executor, each task will process one partition.
 
+# How data is distributed across partitions ?
+The way data will be distributed across partitions depends on a object called Partitioner. In Apache Spark, there are two 
+main Partitioners :
+
+- HashPartitioner is the default partitioner used by Spark. HashPartitioner will distribute evenly data across all the partitions. 
+If you don’t provide a specific partition key (a column in case of a dataframe), data will be associated with a key. That will
+produce a (K,V) pair and the destination partition will be attributed by the following algorithm:
+<pre>
+partitionId = hash(Key) % NumberOfPartition
+</pre>
+Even with hash partitioning, data is not necessarily evenly distributed (specially when the number of partitions is not very high)
+
+- RangePartitioner will distribute data across partitions based on a specific range. The RangePartitioner will use a column 
+(for a dataframe) that will be used as partition key. This key will will be sampled (for performance issues) and based on the 
+ number of values and the target number of partitions, data will be distributed based on this key.
+ 
+ 
+ # Dataframe repartition
+ If you call Dataframe.repartition() without specifying a number of partitions, or during a shuffle, you have to know that Spark will
+ produce a new dataframe with X partitions (X equals the value of “spark.sql.shuffle.partitions” parameter which is 200 by default).
+ This can result in a dataframe with lots of empty partitions, specially if you are dealing with small data (or not big enough!),
+ and scheduling issues.
 
 
 Reference
