@@ -24,7 +24,7 @@ The driver is the application code that defines the transformations and actions 
  big data workloads. However, Spark has several notable differences from Hadoop MapReduce. Spark has an
  optimized directed acyclic graph (DAG) execution engine and actively caches data in-memory, 
  which can boost performance, especially for certain algorithms and interactive queries. 
- Spark natively supports applications written in **Scala, Python, and Java**. It also includes several
+ Spark natively supports applications wr    itten in **Scala, Python, and Java**. It also includes several
  tightly integrated libraries for SQL (Spark SQL), machine learning (MLlib), stream processing (Spark streaming),
  and graph processing (GraphX). [More Apache Spark](https://aws.amazon.com/blogs/aws/new-apache-spark-on-amazon-emr/)
  
