@@ -400,8 +400,7 @@ transformations (map, filter etc) pipelined in the stage.
 ![image](https://user-images.githubusercontent.com/52529498/153115604-416dd3f1-7c95-4bf2-847a-58b33198264c.png)
 
  - Visualization of RDD being partitioned
- 
-
+ ![image](https://user-images.githubusercontent.com/52529498/153117770-96e17215-bcfa-42a1-a75d-1e8351125391.png)
 
 
 ref: https://medium.com/@thejasbabu/spark-under-the-hood-partition-d386aaaa26b7
