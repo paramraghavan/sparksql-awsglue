@@ -22,7 +22,7 @@ Schema version 0
 df1 is saved as parquet format in data/partition-date=2020-01-01.
 </pre>
 
-- Dataframe 2, a new dataframe df3 is added attr1
+- Dataframe 2, a new dataframe df2 is added attr1
 <pre>
 Schema version 1
 1) id bigint
