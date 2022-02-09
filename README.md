@@ -377,6 +377,19 @@ toPandas() is an expensive operation that should be used carefully in order to m
  [See here for more details](https://towardsdatascience.com/how-to-efficiently-convert-a-pyspark-dataframe-to-pandas-8bda2c3875c3)
 
 # [EMR Spark submit - How does it work?](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
+When you submit a Spark job, the driver implicitly converts the code containing transformations and actions performed on the RDDs into a logical
+Directed Acyclic Graph (DAG). The driver program also performs certain optimizations like pipelining transformations and then it converts
+the **logical DAG into physical execution plan** with set of stages.
+
+If suppose we read a file in Spark, the entire content of the file is partitioned into multiple smaller chunks. When we apply a
+transformation, the transformation is applied to each of its partition. Spark spawns a single Task for a single partition,
+which will run inside the executor JVM. Each stage contains as many tasks as partitions of the RDD and will perform the
+transformations (map, filter etc) pipelined in the stage.
+
+- transformation grouped into stages
+
+
+
 
 # [setup spark sql on windows](https://github.com/paramraghavan/sparksql-awsglue/blob/main/help/sparksql-setup.md)
 
