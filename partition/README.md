@@ -60,6 +60,10 @@ Even with hash partitioning, data is not necessarily evenly distributed (special
  This can result in a dataframe with lots of empty partitions, specially if you are dealing with small data (or not big enough!),
  and scheduling issues.
 
+ repartition() shuffles the data between the executors and divides the data into number of partitions. But this might be an expensive
+ operation since it shuffles the data between executors and involves network traffic. Ideal place to partition is at the data source,
+ while fetching the data. Things can speed up greatly when data is partitioned the right way but can dramatically slow down when
+ done wrong, especially due the Shuffle operation.
 
 Reference
 ---------
