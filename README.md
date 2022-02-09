@@ -377,19 +377,34 @@ toPandas() is an expensive operation that should be used carefully in order to m
  [See here for more details](https://towardsdatascience.com/how-to-efficiently-convert-a-pyspark-dataframe-to-pandas-8bda2c3875c3)
 
 # [EMR Spark submit - How does it work?](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
-When you submit a Spark job, the driver implicitly converts the code containing transformations and actions performed on the RDDs into a logical
-Directed Acyclic Graph (DAG). The driver program also performs certain optimizations like pipelining transformations and then it converts
-the **logical DAG into physical execution plan** with set of stages.
+ 
+Spark is a distributed computing engine and its main abstraction is a resilient distributed dataset (RDD), which can be viewed as 
+a distributed collection. RDDs are collections of objects. Under the hood, **these objects are stored in partitions.** When performing 
+computations on RDDs, these partitions can be operated on in parallel. Understanding how Spark deals with partitions allow us to control
+ the application parallelism which leads to better cluster utilization — fewer costs and better execution time.
+ 
+When you submit a Spark job, the driver implicitly converts the code containing transformations and actions performed on the RDDs 
+into a logical Directed Acyclic Graph (DAG). The driver program also performs certain optimizations like pipelining transformations and
+then it converts the **logical DAG into physical execution plan with set of stages.** A Stage is a combination of transformations which does not
+cause any shuffling, pipelining as many narrow transformations (eg: map, filter etc) as possible.
 
+ - transformation grouped into stages
+ ![image](https://user-images.githubusercontent.com/52529498/153113302-ee307a6a-88e9-4539-bdcc-20057539dc9e.png)
+ 
 If suppose we read a file in Spark, the entire content of the file is partitioned into multiple smaller chunks. When we apply a
-transformation, the transformation is applied to each of its partition. Spark spawns a single Task for a single partition,
-which will run inside the executor JVM. Each stage contains as many tasks as partitions of the RDD and will perform the
+transformation, the transformation is applied to each of its partition. **Spark spawns a single Task for a single partition,
+which will run inside the executor JVM.** Each stage contains as many tasks as partitions of the RDD and will perform the
 transformations (map, filter etc) pipelined in the stage.
 
-- transformation grouped into stages
+- Relationship between Tasks and Partitions in RDD
+![image](https://user-images.githubusercontent.com/52529498/153115604-416dd3f1-7c95-4bf2-847a-58b33198264c.png)
+
+ - Visualization of RDD being partitioned
+ 
 
 
 
+ref: https://medium.com/@thejasbabu/spark-under-the-hood-partition-d386aaaa26b7
 
 # [setup spark sql on windows](https://github.com/paramraghavan/sparksql-awsglue/blob/main/help/sparksql-setup.md)
 
