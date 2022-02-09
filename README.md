@@ -419,3 +419,4 @@ Under aws-glue there are 2 ipynb files.
 - [Apache Spark Interview Questions](https://www.mygreatlearning.com/blog/spark-interview-questions/)
 - [Interview Questions](https://www.zeolearn.com/interview-questions/spark)
 - [Window functions](https://docs.oracle.com/cd/E17952_01/mysql-8.0-en/window-functions-usage.html)
+- https://medium.com/@thejasbabu/spark-under-the-hood-partition-d386aaaa26b7
