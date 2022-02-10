@@ -67,6 +67,7 @@ The data is saved as parquet format in data/partition-date=2020-01-03.
   - https://sparkbyexamples.com/spark/spark-merge-two-dataframes-with-different-columns/
      PySpark examples of how to merge two DataFrames with different columns can be done by adding
     missing columns to the DataFrame’s and finally union them using unionByName()
+  - [merge dataframe with differnt columns](https://stackoverflow.com/questions/68844904/merge-two-spark-dataframes-with-different-columns-to-get-all-columns)
 
 
 ref: https://kontext.tech/column/spark/381/schema-merging-evolution-with-parquet-in-spark-and-hive
