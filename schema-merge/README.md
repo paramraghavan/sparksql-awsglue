@@ -43,5 +43,30 @@ The data is saved as parquet format in data/partition-date=2020-01-03.
 
 - The Spark application will need to read data from these three folders with schema merging
 
+- [How to handle the schema change with no data type conflict](https://medium.com/@11amitvishwas/how-to-handle-the-schema-change-1e3965e9bcbe)
+- [Spark merge dataframe with mismatching schemas](https://stackoverflow.com/questions/39869084/spark-merge-dataframe-with-mismatching-schemas-without-extra-disk-io)
+- Scenario merge table 1 and table2, where table2 has new column added:
+
+  - table1, for example Emp1
+    ![img.png](img.png)
+
+  - table2, for example Emp2
+    ![img_4.png](img_4.png)
+
+  - write table, Emp1 to table anmed DyanmicTable
+    ![img_8.png](img_8.png)
+
+  - merge Emp1 and  Emp2
+    ![img_7.png](img_7.png)
+
+  - View merged table
+    ![img_3.png](img_3.png)
+
+  If the merge can't take place because the two dataframes share a column with conflicting type or nullability, then the right thing is to
+  raise a TypeError (because that's a conflict you probably want to know about).
+  - https://sparkbyexamples.com/spark/spark-merge-two-dataframes-with-different-columns/
+     PySpark examples of how to merge two DataFrames with different columns can be done by adding
+    missing columns to the DataFrame’s and finally union them using unionByName()
+
 
 ref: https://kontext.tech/column/spark/381/schema-merging-evolution-with-parquet-in-spark-and-hive
