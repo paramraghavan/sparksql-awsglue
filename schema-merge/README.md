@@ -71,3 +71,8 @@ The data is saved as parquet format in data/partition-date=2020-01-03.
 
 
 ref: https://kontext.tech/column/spark/381/schema-merging-evolution-with-parquet-in-spark-and-hive
+
+
+# Drop Duplicates
+
+- [Drop Duplicates](https://sparkbyexamples.com/pyspark/pyspark-distinct-to-drop-duplicates/)
