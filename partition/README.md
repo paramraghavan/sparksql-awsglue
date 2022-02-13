@@ -69,3 +69,24 @@ Reference
 ---------
 - https://kontext.tech/column/spark/296/data-partitioning-in-spark-pyspark-in-depth-walkthrough
 - https://medium.com/datalex/on-spark-performance-and-partitioning-strategies-72992bbbf150
+
+Coalesce vs repartition
+-----------------------------
+<pre>
+Difference between coalesce and repartition
+
+coalesce uses existing partitions to minimize the amount of data that's shuffled.
+repartition creates new partitions and does a full shuffle. coalesce results in
+partitions with different amounts of data (sometimes partitions that have much different sizes)
+and repartition results in roughly equal sized partitions.
+
+Is coalesce or repartition faster?
+
+coalesce may run faster than repartition, but unequal sized partitions are
+generally slower to work with than equal sized partitions. You'll usually need to repartition datasets
+after filtering a large data set. I've found repartition to be faster overall because Spark is
+built to work with equal sized partitions.
+ref: https://stackoverflow.com/questions/31610971/spark-repartition-vs-coalesce
+</pre>
+
+- https://stackoverflow.com/questions/46386505/pyspark-difference-between-pyspark-sql-functions-col-and-pyspark-sql-functions-l
