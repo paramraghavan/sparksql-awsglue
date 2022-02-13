@@ -84,7 +84,8 @@ When we use dropDuplicates on the dataframe, it changes the partitions to defaul
 df = df.dropDuplicates()
 df.rdd.getNumPartitions() --> returns 200
 
-This behaviour causes problem for me, as it will lead to out of memory as the number of partition goes down from 800 to 200
+This behaviour causes problem for me, as it will lead to out of memory as the number of partition goes down from
+ 800 to 200
 
 - Fix:
 This happens because dropDuplicates requires a shuffle. If you want to get a specific number of partitions you
