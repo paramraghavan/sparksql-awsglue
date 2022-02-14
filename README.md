@@ -44,6 +44,7 @@ Spark does not provide a distributed file storage system, so it is mainly used f
 - Action - Common actions include operations that collect the results of tasks - count, sum etc... and ship them to the driver, save an RDD, or count the number of elements in a RDD.
 - Transformation - are operations that generate a new RDD- resilient distributed dataset. Common transformations include operations that filter, sort and group by key, cache etc are all lazy
 - The Dataframes returned/read by spark are all immutable.
+- The Spark DataFrame was designed to behave a lot like a SQL table (a table with variables in the columns and observations in the rows). Not only are they easier to understand, DataFrames are also more optimized for complicated operations than RDDs.
 
 **Cache:**
 Cache is applied to DF using- .cache, a flag is enabled for spark to know caching 
