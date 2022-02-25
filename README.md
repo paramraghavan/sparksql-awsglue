@@ -324,15 +324,20 @@ Amazon Redshift Spectrum and AWS Glue can be primarily classified as "Big Data" 
 
 # Redshift Notes
 <pre>
-The copy command is a redshift sql command to copy file(s) from s3 to redshift table, copy command automatically 
- analyzes and compresses the data on first load into an empty table.
+The copy command is a redshift sql command to copy file(s) from s3 to redshift table, 
+copy command automatically analyzes and compresses the data on first load into
+an empty table.
 
-Analyze compression is a built-in command that will find the optimal compression for each column on an existing table.
+Analyze compression is a built-in command that will find the optimal compression
+ for each column on an existing table.
 
 Sortkey columns, data is stored in blocks or zones in the sortkey order
-Sortkey are less benefcial on small tables, as it does not prune a lot of blocks are there are not too many blocks 
-in the first place. Add columns to sortkey that are frequently filtered, with lowest cardinality columns first
-Columns added to sortkey column after a high-cardinality column are not effective
+Sortkey are less benefcial on small tables, as it does not prune a
+lot of blocks as there are not too many blocks in the first place. 
+Add columns to sortkey that are frequently filtered, with lowest
+cardinality columns first
+Columns added to sortkey column after a high-cardinality column
+are not effective
 More than 4 sortkey columns will marginally improve query speed.
 Sortkey column helps redshift is identifying the stored blocks/zones.
 Small size  table in datawarehouse like redshift is about 3 millon rows
