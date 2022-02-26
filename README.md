@@ -432,4 +432,5 @@ Under aws-glue there are 2 ipynb files.
 - https://sparkbyexamples.com/spark/spark-performance-tuning/
 - https://www.unraveldata.com/common-reasons-spark-applications-slow-fail-part-1/
 - https://www.unraveldata.com/common-failures-slowdowns-part-ii/ 
+- https://www.linkedin.com/pulse/spark-sql-3-common-joins-explained-ram-ghadiyaram/ 
 - https://stackoverflow.com/questions/43984068/does-spark-sql-autobroadcastjointhreshold-work-for-joins-using-datasets-join-op
