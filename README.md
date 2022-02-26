@@ -427,3 +427,7 @@ Under aws-glue there are 2 ipynb files.
 - [Window functions](https://docs.oracle.com/cd/E17952_01/mysql-8.0-en/window-functions-usage.html)
 - https://medium.com/@thejasbabu/spark-under-the-hood-partition-d386aaaa26b7
 - [Pandas vs SQL](https://towardsdatascience.com/pandas-vs-sql-compared-with-examples-3f14db65c06f)
+ 
+# Spark Performance Tuning & Best Practices
+- https://sparkbyexamples.com/spark/spark-performance-tuning/
+- https://www.unraveldata.com/common-reasons-spark-applications-slow-fail-part-1/
