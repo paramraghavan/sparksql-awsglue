@@ -1,6 +1,6 @@
 import boto3
 
-boto3.__version
+boto3.__version__
 import os, time
 
 
