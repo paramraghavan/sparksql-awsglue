@@ -28,4 +28,4 @@ Ref:
 -------------------
 - https://sparkbyexamples.com/pyspark/pyspark-broadcast-variables/
 - https://stackoverflow.com/questions/43984068/does-spark-sql-autobroadcastjointhreshold-work-for-joins-using-datasets-join-op
-- [pySpark data frame join](https://sparkbyexamples.com/pyspark/pyspark-join-explained-with-examples)
+- [pySpark dataframe join](https://sparkbyexamples.com/pyspark/pyspark-join-explained-with-examples)
