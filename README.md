@@ -435,5 +435,6 @@ Under aws-glue there are 2 ipynb files.
 - https://www.linkedin.com/pulse/spark-sql-3-common-joins-explained-ram-ghadiyaram/ 
 - [Shuffle/Hash Join](https://www.waitingforcode.com/apache-spark-sql/shuffle-join-spark-sql/read){:target="_blank"} 
 - [Sort Merge join](https://www.waitingforcode.com/apache-spark-sql/sort-merge-join-spark-sql/read){:target="_blank"}
-- [Broadcast join](https://www.waitingforcode.com/apache-spark-sql/broadcast-join-spark-sql/read){:target="_blank"}
+- [Broadcast join](https://www.waitingforcode.com/apache-spark-sql/broadcast-join-spark-sql/read)
+- <a href="https://www.waitingforcode.com/apache-spark-sql/broadcast-join-spark-sql/read" target="_blank">Broadcast join]</a> 
 - https://stackoverflow.com/questions/43984068/does-spark-sql-autobroadcastjointhreshold-work-for-joins-using-datasets-join-op
