@@ -13,6 +13,14 @@ PySpark does the following:
 - Spark broadcasts the common data (reusable) needed by tasks within each stage, one instance broadcast 
 variable/table is available on the executor node.
 
+# Scenario
+I have a big table which is 10 gb's and smaller table about 11/12 mb's. Do i need to set my spark.sql.autoBroadcastJoinThreshold = 12 mb
+in order for sending the whole table / Dataset to all worker nodes?. Note default value for spark.sql.autoBroadcastJoinThreshold is **10 mb**.
+
+First of all spark.sql.autoBroadcastJoinThreshold and broadcast hint are separate mechanisms. Even if autoBroadcastJoinThreshold is 
+disabled setting broadcast hint will take precedence. With default settings:
+
+print(spark.conf.get("spark.sql.autoBroadcastJoinThreshold")) --> 10485760
 
 
 
@@ -20,3 +28,4 @@ Ref:
 -------------------
 - https://sparkbyexamples.com/pyspark/pyspark-broadcast-variables/
 - https://stackoverflow.com/questions/43984068/does-spark-sql-autobroadcastjointhreshold-work-for-joins-using-datasets-join-op
+- (pySpark data frame join)[https://sparkbyexamples.com/pyspark/pyspark-join-explained-with-examples]
