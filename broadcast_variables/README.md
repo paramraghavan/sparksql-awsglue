@@ -10,6 +10,13 @@ PySpark does the following:
 
 - PySpark breaks the job into stages.
 - Later Stages are also broken into tasks
-- Spark broadcasts the common data (reusable) needed by tasks within each stage.
+- Spark broadcasts the common data (reusable) needed by tasks within each stage, one instance broadcast 
+variable/table is available on the executor node.
 
-ref: https://sparkbyexamples.com/pyspark/pyspark-broadcast-variables/
+
+
+
+Ref: 
+-------------------
+- https://sparkbyexamples.com/pyspark/pyspark-broadcast-variables/
+- https://stackoverflow.com/questions/43984068/does-spark-sql-autobroadcastjointhreshold-work-for-joins-using-datasets-join-op
