@@ -36,6 +36,9 @@ hadoop\bin folder in the SPARK_HOME folder
 - **Errors**
   - Python was not found; run without arguments to install from the Microsoft Store, or disable this shortcut from Settings. **Fix** Go to -> "start" and type "Manage App Execution Aliases". Go to it and turn off App Installer "Python"
   - MAke sure python.exe is in the PATH of Enviroment variable
+  - cannot run program python3 createprocess error=2
+  >Fix:
+  >set PYSPARK_PYTHON=python
   
 
 - **Note** SPARK_HOME enviroment variable is already set.
