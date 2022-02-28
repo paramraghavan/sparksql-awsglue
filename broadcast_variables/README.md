@@ -48,9 +48,10 @@ You can see that the first two tables in accordance with the join keys were re-s
 in the corresponding partition. After partitioning the data in each partition, sorting and then the corresponding partition within the record to
  connect, as shown below:
 
+![image](https://user-images.githubusercontent.com/52529498/155909404-7bfcbbc7-7ce2-478d-825d-b749dad3bc46.png)
 
 
-
+https://www.waitingforcode.com/apache-spark-sql/sort-merge-join-spark-sql/read
 
 Ref: 
 -------------------
