@@ -433,7 +433,9 @@ Under aws-glue there are 2 ipynb files.
 - https://www.unraveldata.com/common-reasons-spark-applications-slow-fail-part-1/
 - https://www.unraveldata.com/common-failures-slowdowns-part-ii/ 
 - https://www.linkedin.com/pulse/spark-sql-3-common-joins-explained-ram-ghadiyaram/ 
+- **[Spark Join Stratergies](https://towardsdatascience.com/strategies-of-spark-join-c0e7b4572bcf)** 
 - [Shuffle/Hash Join](https://www.waitingforcode.com/apache-spark-sql/shuffle-join-spark-sql/read) 
+- https://www.hadoopinrealworld.com/how-does-shuffle-hash-join-work-in-spark/
 - [Sort Merge join](https://www.waitingforcode.com/apache-spark-sql/sort-merge-join-spark-sql/read)
 - [Broadcast join](https://www.waitingforcode.com/apache-spark-sql/broadcast-join-spark-sql/read)
 - https://stackoverflow.com/questions/43984068/does-spark-sql-autobroadcastjointhreshold-work-for-joins-using-datasets-join-op
