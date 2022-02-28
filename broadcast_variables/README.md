@@ -50,8 +50,15 @@ in the corresponding partition. After partitioning the data in each partition, s
 
 ![image](https://user-images.githubusercontent.com/52529498/155909404-7bfcbbc7-7ce2-478d-825d-b749dad3bc46.png)
 
-
 https://www.waitingforcode.com/apache-spark-sql/sort-merge-join-spark-sql/read
+
+
+# Shuffle Join
+Shuffle Hash Join, as the name indicates works by shuffling both datasets. So the same keys from both sides end up in the same partition 
+or task. Once the data is shuffled, the smallest of the two will be hashed into buckets and a hash join is performed within the partition.
+
+Shuffle Hash Join is different from Broadcast Hash Join because the entire dataset is not broadcasted instead both datasets are shuffled 
+and then the smallest side data is hashed and bucketed and hash joined with the bigger side in all the partitions.
 
 Ref: 
 -------------------
