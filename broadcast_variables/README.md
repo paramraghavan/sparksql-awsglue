@@ -22,7 +22,14 @@ disabled setting broadcast hint will take precedence. With default settings:
 
 print(spark.conf.get("spark.sql.autoBroadcastJoinThreshold")) --> 10485760
 
+Setting the broadcast hint on the smaller table, now the smaller table is broadcasted to the executor nodes. The job was taking an hour or so,
+once we used the broadcast function, the total time reduced to 20 minutes. Driver node 60 gb, 5 executor nodes 60 gb  and it can scale upto
+10 executor nodes.
 
+# Note
+Furthermore broadcasting large objects is unlikely provide any performance boost, and in practice will often degrade
+performance and result in stability issue. Remember that broadcasted object has to be first fetch to driver, then 
+send to each executor/worker, and finally loaded into memory.
 
 Ref: 
 -------------------
