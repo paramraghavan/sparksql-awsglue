@@ -55,6 +55,7 @@ https://www.waitingforcode.com/apache-spark-sql/sort-merge-join-spark-sql/read
 
 Ref: 
 -------------------
+- **[Spark Join Stratergies](https://towardsdatascience.com/strategies-of-spark-join-c0e7b4572bcf)** 
 - https://sparkbyexamples.com/pyspark/pyspark-broadcast-variables/
 - https://stackoverflow.com/questions/43984068/does-spark-sql-autobroadcastjointhreshold-work-for-joins-using-datasets-join-op
 - [pySpark dataframe join](https://sparkbyexamples.com/pyspark/pyspark-join-explained-with-examples)
