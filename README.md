@@ -411,8 +411,8 @@ transformations (map, filter etc) pipelined in the stage.
 
 ref: https://medium.com/@thejasbabu/spark-under-the-hood-partition-d386aaaa26b7
 
-# Runing pyspark on windows
--  [setup spark sql on windows](https://github.com/paramraghavan/sparksql-awsglue/blob/main/help/sparksql-setup.md)
+# Running pyspark on windows
+- [setup pysaprk/sparksql on windows](https://github.com/paramraghavan/sparksql-awsglue/blob/main/help/sparksql-setup.md)
 - pyspark with interactive Jupyter Notebook
   - Under aws-glue there are 2 ipynb files. 
     - [spark-sql](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/spark-sql-parquet.ipynb) 
