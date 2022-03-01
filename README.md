@@ -411,12 +411,12 @@ transformations (map, filter etc) pipelined in the stage.
 
 ref: https://medium.com/@thejasbabu/spark-under-the-hood-partition-d386aaaa26b7
 
-# [setup spark sql on windows](https://github.com/paramraghavan/sparksql-awsglue/blob/main/help/sparksql-setup.md)
-
-# Interactive Jupyter Notebook
-Under aws-glue there are 2 ipynb files. 
-- [spark-sql](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/spark-sql-parquet.ipynb) 
-- [aws-glue](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/aws-glue.ipynb) -  using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) seems to be nicely written and easy to use with pandas dataframe
+# Runing pyspark on windows
+-  [setup spark sql on windows](https://github.com/paramraghavan/sparksql-awsglue/blob/main/help/sparksql-setup.md)
+- pyspark with interactive Jupyter Notebook
+  - Under aws-glue there are 2 ipynb files. 
+    - [spark-sql](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/spark-sql-parquet.ipynb) 
+    - [aws-glue](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/aws-glue.ipynb) -  using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) seems to be nicely written and easy to use with pandas dataframe
 
 # Notes
 - [difference between s3n, s3a and s3](https://stackoverflow.com/questions/33356041/technically-what-is-the-difference-between-s3n-s3a-and-s3)
