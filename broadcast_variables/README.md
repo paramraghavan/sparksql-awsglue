@@ -37,10 +37,6 @@ Broadcast Join conditions are the following:
 
 
 # Sort Merge Join -SMJ
-The two implementations described above are more applicable to tables of a certain size, but when both tables are very large, it is clear
-that whatever of them will apply a lot of pressure on the memory. This is because the join is taken when the two are hash join, is the side of
-the data completely loaded into memory, the use of hash code to take bond values equal to the record to connect.
-
 When the two tables are very large, Spark SQL uses a new algorithm to join the table, that is, Sort Merge Join. This method does not have to
  load all the data and then into the start hash join, but need to sort the data before the join, as shown below:
 
