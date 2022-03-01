@@ -37,3 +37,23 @@ rely on a single node. This is how peer to peer protocol works:
 - You can’t make changes to the broadcasted relation, after broadcast. Even if you do, they won’t be available to 
   the worker nodes(because the copy is already shipped).
   
+
+## Shuffle hash join
+![img_3.png](img_3.png)
+
+Shuffle Hash Join, as the name indicates works by shuffling both datasets - Step #1. So the same keys from both sides end up in 
+the same partition or task. Once the data is shuffled, the smallest of the two will be hashed into buckets, Step #2.  Step #3 - a hash 
+join is performed with the bigger partition within the same task.
+
+Shuffle Hash Join is different from Broadcast Hash Join because the entire dataset is not broadcasted instead both 
+datasets are shuffled and then the smallest side data is hashed and bucketed and hash joined with the bigger 
+side in all the partitions.
+
+**Things to Note:**
+- Only supported for ‘=’ join.
+- The join keys don’t need to be sortable
+- Supported for all join types except full outer joins.
+- It’s an expensive join in a way that involves both shuffling and hashing(Hash Join as explained above). Maintaining a hash table 
+  requires memory and computation
+  
+## Shuffle sort-merge join
