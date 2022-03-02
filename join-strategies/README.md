@@ -44,7 +44,7 @@ rely on a single node. This is how peer to peer protocol works:
 ## Shuffle hash join
 ![img_3.png](img_3.png)
 
-Shuffle happens because we have some kind of operation - join , group by, which involves **joining data across partitions.** 
+Shuffle happens because we have some kind of operation - join, etc.., which involves **joining data across partitions.** 
 
 Shuffle Hash Join - the data is stored in different executors. With Shuffle join rows having the same value of join key are brought
 into one executor and merged together here. As the name indicates works by shuffling both datasets - Step #1. So the same keys from 
