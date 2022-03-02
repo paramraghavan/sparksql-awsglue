@@ -26,8 +26,8 @@ rely on a single node. This is how peer to peer protocol works:
 
 **Things to Note:**
 
-- The broadcasted relation/hashmap should fit completely into the memory of each executor as well as the driver. The hashmap is created in the Driver, 
-   driver will send it to the executors.
+- The broadcasted relation/hashmap should fit completely into the memory of each executor 
+   as well as the driver. The hashmap is created in the Driver, driver will send it to the executors.
 - Only supported for ‘=’ join.
 - Supported for all join types(inner, left, right) except full outer joins.
 - When the broadcast size is small, it is usually faster than other join strategies.
@@ -36,18 +36,25 @@ rely on a single node. This is how peer to peer protocol works:
   when explicitly specified to use broadcast join or change the default threshold).
 - You can’t make changes to the broadcasted relation, after broadcast. Even if you do, they won’t be available to 
   the worker nodes(because the copy is already shipped).
-  
+- this disables auto broadcast,spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1),
+= When we disable auto broadcast Spark will use standard SortMergeJoin
+- When we disable auto broadcast Spark will use standard SortMergeJoin, but it can be forced to use BroadcastHashJoin 
+  with broadcast hint, df1.join(broadcast(df2), df1.id==df2.id, "inner").explain()
 
 ## Shuffle hash join
 ![img_3.png](img_3.png)
+Shuffle happens because we have some kind of operation - join , group by, which involves joing data across partitions. 
 
-Shuffle Hash Join, as the name indicates works by shuffling both datasets - Step #1. So the same keys from both sides end up in 
-the same partition or task. Once the data is shuffled, the smallest of the two will be hashed into buckets, Step #2.  Step #3 - a hash 
-join is performed with the bigger partition within the same task.
+Shuffle Hash Join - the data is stored in different executors. With Shuffle join rows having the same value of join key are brought
+into one executor and merged together here. As the name indicates works by shuffling both datasets - Step #1. So the same keys from 
+both sides end up in the same executor. Once the data is shuffled, the smallest of the two will be hashed into buckets, Step #2.
+Step #3 - a hash join is performed with the bigger partition within the same task.
 
 Shuffle Hash Join is different from Broadcast Hash Join because the entire dataset is not broadcasted instead both 
 datasets are shuffled and then the smallest side data is hashed and bucketed and hash joined with the bigger 
 side in all the partitions.
+
+
 
 **Things to Note:**
 - Only supported for ‘=’ join.
@@ -57,3 +64,65 @@ side in all the partitions.
   requires memory and computation
   
 ## Shuffle sort-merge join
+
+![img_4.png](img_4.png)
+
+Step #1, first step is to sort the table/relation based on join key
+Step 2#. Apply merge algorithm on the both the sorted table/dataset
+
+![img_5.png](img_5.png)
+
+**3 Phases**
+- Shuffle Phase: Both large tables will be repartitioned as per the Join keys across the partitions in the cluster.
+- Sort Phase: Sort the data within each partition parallelly.
+- Merge Phase: Join the sorted and partitioned data. It is merging of the dataset by iterating over the elements
+  and joining the rows having the same value for the Join keys.
+
+Shuffle sort-merge, as the name indicates works by shuffling both datasets - Step #1. So the same keys from both sides end up in 
+the same partition/executor/worker node. Then perform sort-merge join operation at the partition level in the executor/worker nodes.
+Shuffle Hash Join’s performance is the best when the data is distributed evenly with the key you are joining and you 
+have an adequate number of keys for parallelism.
+
+# When to use each join
+- When the side of the table is relatively small, we choose to **broadcast** it out to avoid shuffle, improve performance. 
+  But because the broadcast table is first to collect to the driver segment, and then distributed to each executor redundant, 
+  so when the table is relatively large, the use of broadcast progress will be the driver and executor side caused greater pressure.
+  When one of the data frames is small and fits in the memory, it will be broadcasted to all the executors, and a Hash Join 
+  will be performed.
+
+- shuffle hash join, When the table is relatively large, the use of broadcast may cause driver- and executor-side memory issues. 
+  In this case, the Shuffle Hash Join will be used. It is an expensive join as it involves both shuffling and hashing. Also,
+  it requires memory and computation for maintaining a hash table. If you want to use the Shuffle Hash Join, spark.sql.join.
+  preferSortMergeJoin needs to be set to false, and the cost to build a hash map is less than sorting the data. The Sort-merge
+  Join is the default Join and is preferred over Shuffle Hash Join.
+
+- Shuffle sort-merge is used when both  the relationships/table are large
+
+
+![img_6.png](img_6.png)
+
+
+
+
+# EQUI JOIN :
+EQUI JOIN creates a JOIN for equality or matching column(s) values of the relative tables. EQUI JOIN also create JOIN by using JOIN with ON and
+then providing the names of the columns with their relative tables to check equality using equal sign (=).
+<pre>
+Syntax :
+SELECT column_list  
+FROM table1, table2....
+WHERE table1.column_name =
+table2.column_name;  
+</pre>
+
+#NON EQUI JOIN :
+NON EQUI JOIN performs a JOIN using comparison operator other than equal(=) sign like >, <, >=, <= with conditions.
+<pre>
+Syntax:
+SELECT *  
+FROM table_name1, table_name2  
+WHERE table_name1.column [> |  < |  >= | <= ] table_name2.column;
+</pre>
+
+
+re: https://blog.clairvoyantsoft.com/apache-spark-join-strategies-e4ebc7624b06
