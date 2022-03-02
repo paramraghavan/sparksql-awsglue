@@ -44,7 +44,7 @@ rely on a single node. This is how peer to peer protocol works:
 ## Shuffle hash join
 ![img_3.png](img_3.png)
 
-Shuffle happens because we have some kind of operation - join , group by, which involves **joing data across partitions.**
+Shuffle happens because we have some kind of operation - join , group by, which involves **joining data across partitions.** 
 
 Shuffle Hash Join - the data is stored in different executors. With Shuffle join rows having the same value of join key are brought
 into one executor and merged together here. As the name indicates works by shuffling both datasets - Step #1. So the same keys from 
@@ -97,7 +97,7 @@ have an adequate number of keys for parallelism.
   preferSortMergeJoin needs to be set to false, and the cost to build a hash map is less than sorting the data. The Sort-merge
   Join is the default Join and is preferred over Shuffle Hash Join.
 
-- Shuffle sort-merge is used when both  the relationships/table are large
+- Shuffle sort-merge is used when both the relationships/table are large
 
 
 ![img_6.png](img_6.png)
@@ -125,5 +125,13 @@ FROM table_name1, table_name2
 WHERE table_name1.column [> |  < |  >= | <= ] table_name2.column;
 </pre>
 
-
-re: https://blog.clairvoyantsoft.com/apache-spark-join-strategies-e4ebc7624b06
+# References
+- https://www.linkedin.com/pulse/spark-sql-3-common-joins-explained-ram-ghadiyaram/ 
+- **[Spark Join Stratergies](https://towardsdatascience.com/strategies-of-spark-join-c0e7b4572bcf)** 
+- [Shuffle/Hash Join](https://www.waitingforcode.com/apache-spark-sql/shuffle-join-spark-sql/read) 
+- https://www.hadoopinrealworld.com/how-does-shuffle-hash-join-work-in-spark/
+- [Sort Merge join](https://www.waitingforcode.com/apache-spark-sql/sort-merge-join-spark-sql/read)
+- [Broadcast join](https://www.waitingforcode.com/apache-spark-sql/broadcast-join-spark-sql/read)
+- https://stackoverflow.com/questions/43984068/does-spark-sql-autobroadcastjointhreshold-work-for-joins-using-datasets-join-op
+<!-- <a href="https://www.waitingforcode.com/apache-spark-sql/broadcast-join-spark-sql/read" target="_blank" >Broadcast join</a> -->
+- https://blog.clairvoyantsoft.com/apache-spark-join-strategies-e4ebc7624b06
