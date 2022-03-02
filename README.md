@@ -273,7 +273,8 @@ decompress at ~ 500MB/s on a single core.
   - CPU Usage: Medium
   - Splittable: No
  
- [Ref](https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats)
+- [reference](https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats)
+
 
 # [Join strategies](../join-strategies/README.md)
 
