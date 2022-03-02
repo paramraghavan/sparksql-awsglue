@@ -276,7 +276,7 @@ decompress at ~ 500MB/s on a single core.
 - [reference](https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats)
 
 
-# [Join strategies](../join-strategies/README.md)
+# [Join strategies](join-strategies/README.md)
 
 ## [Developing AWS Glue ETL jobs locally using a container](https://github.com/paramraghavan/sparksql-awsglue/tree/main/aws-glue-container#readme)
 
