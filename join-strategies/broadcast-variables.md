@@ -35,7 +35,7 @@ Broadcast Join conditions are the following:
 · Table needs to be broadcast less than  spark.sql.autoBroadcastJoinThreshold the configured value, default 10M (or add a broadcast join the hint)
 · Base table can not be broadcast, such as the left outer join, only broadcast the right table
 
-# [Join strategies](../join-strategies/README.md)
+# [Join strategies](README.md)
 
 # Sort Merge Join -SMJ
 When the two tables are very large, Spark SQL uses a new algorithm to join the table, that is, Sort Merge Join. This method does not have to

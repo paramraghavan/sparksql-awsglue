@@ -40,6 +40,7 @@ rely on a single node. This is how peer to peer protocol works:
 = When we disable auto broadcast Spark will use standard SortMergeJoin
 - When we disable auto broadcast Spark will use standard SortMergeJoin, but it can be forced to use BroadcastHashJoin 
   with broadcast hint, df1.join(broadcast(df2), df1.id==df2.id, "inner").explain()
+- [broadcast variables][broadcast-variables.md]  
 
 ## Shuffle hash join
 ![img_3.png](img_3.png)
