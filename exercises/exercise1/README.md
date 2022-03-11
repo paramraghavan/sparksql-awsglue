@@ -24,6 +24,3 @@ Using Spark, create a script that will process a single day of event data and ou
 * Add a configurable threshold value that can be used to exclude customers with a number of total injections below the threshold
 * Include all mailbox providers, not just Verizon Media
 * For each customer, add the percentage of injection traffic sent to each provider
-
-
-ref: [exercise1](https://github.com/SparkPost/DataEngTakeHome)
