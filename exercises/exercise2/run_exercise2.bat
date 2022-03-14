@@ -1,3 +1,3 @@
 call .\venv\Scripts\activate
 cd data_engineer
-python generate_result.py
+python exercise_solution2.py

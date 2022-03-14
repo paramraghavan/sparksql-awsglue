@@ -10,7 +10,7 @@ From these files, generate an output file in json listing:
 
 1. Each student
 2. The teacher the student has
-3. he class ID the student is scheduled for
+3. The class ID the student is scheduled for
 
 Assumptions:
 An analyst with no Python coding ability should be able to setup and run the 
