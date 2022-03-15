@@ -52,9 +52,11 @@ Even with hash partitioning, data is not necessarily evenly distributed (special
 - RangePartitioner will distribute data across partitions based on a specific range. The RangePartitioner will use a column 
 (for a dataframe) that will be used as partition key. This key will will be sampled (for performance issues) and based on the 
  number of values and the target number of partitions, data will be distributed based on this key.
- 
- 
- # Dataframe repartition
+  
+**Note** Once the dataframe is read in, it  does not have information on the partition.  If the dataframe read in are already in sorted
+order for the processing that needs to be performed - in this case the shuffle is reduced to minimum. 
+
+# Dataframe repartition
  If you call Dataframe.repartition() without specifying a number of partitions, or during a shuffle, you have to know that Spark will
  produce a new dataframe with X partitions (X equals the value of “spark.sql.shuffle.partitions” parameter which is 200 by default).
  This can result in a dataframe with lots of empty partitions, specially if you are dealing with small data (or not big enough!),
