@@ -53,6 +53,7 @@ Even with hash partitioning, data is not necessarily evenly distributed (special
 (for a dataframe) that will be used as partition key. This key will will be sampled (for performance issues) and based on the 
  number of values and the target number of partitions, data will be distributed based on this key.
  
+ - Once the data is read into a dataframe spark does no know which column(s) it was partiioned by
  
  # Dataframe repartition
  If you call Dataframe.repartition() without specifying a number of partitions, or during a shuffle, you have to know that Spark will
