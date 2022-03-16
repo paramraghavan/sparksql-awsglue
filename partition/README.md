@@ -71,7 +71,7 @@ Reference
 ---------
 - https://kontext.tech/column/spark/296/data-partitioning-in-spark-pyspark-in-depth-walkthrough
 - https://medium.com/datalex/on-spark-performance-and-partitioning-strategies-72992bbbf150
-- [Does spark dataframe know the partitin key of the dataframe](https://stackoverflow.com/questions/48459208/does-spark-know-the-partitioning-key-of-a-dataframe#:~:text=You%20don't.,can%20check%20queryExecution%20for%20Partitioner%20.)
+- [Does spark dataframe know the partition key of the dataframe](https://stackoverflow.com/questions/48459208/does-spark-know-the-partitioning-key-of-a-dataframe#:~:text=You%20don't.,can%20check%20queryExecution%20for%20Partitioner%20.)
 
 Coalesce vs repartition
 -----------------------------
