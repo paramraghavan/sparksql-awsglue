@@ -47,6 +47,7 @@ but can be used with Hadoop since it can create distributed datasets from files 
 - The Spark DataFrame was designed to behave a lot like a SQL table (a table with variables in the columns and observations in the rows). Not only are they easier to understand,
   DataFrames are also more optimized for complicated operations than RDDs.
 - [Shuffling Magic](https://medium.com/swlh/revealing-apache-spark-shuffling-magic-b2c304306142)
+
 **Cache:**
 Cache is applied to DF using- .cache, a flag is enabled for spark to know caching 
 of DF is enabled. The actual caching happens when an action is performed - show 
