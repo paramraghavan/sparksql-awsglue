@@ -57,7 +57,7 @@ optimizer may not be able to perform its optimization. The optimizer may also no
 be able to do optimization when it has to [shuffle - Important Aspects of Apache Spark Shuffling](https://medium.com/swlh/revealing-apache-spark-shuffling-magic-b2c304306142) - because of narrow DF to wider DF - wider operation like groupby.
 
 >
-> More on ***[Spark Partitioning](https://sparkbyexamples.com/spark/spark-partitioning-understanding/)***
+> More on ***[Spark Partitioning](partition/README.md)***
 >
 > **Note:** When you want to reduce the number of partitions, It is recommended to use PySpark coalesce() over repartition() 
 > as it uses fewer resources due to less number of shuffles it takes.
