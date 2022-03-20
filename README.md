@@ -37,14 +37,16 @@ The driver is the application code that defines the transformations and actions 
 - Databricks
 
 **Note:**
-Spark does not provide a distributed file storage system, so it is mainly used for computation, on top of Hadoop. Spark does not need Hadoop to run, but can be used with Hadoop since it can create distributed datasets from files stored in the HDFS.
+Spark does not provide a distributed file storage system, so it is mainly used for computation, on top of Hadoop. Spark does not need Hadoop to run, 
+but can be used with Hadoop since it can create distributed datasets from files stored in the HDFS.
 
 **Spark Characteristics**
 - Spark does lazy load all the way, until it needs to perform an action
 - Action - Common actions include operations that collect the results of tasks - count, sum etc... and ship them to the driver, save an RDD, or count the number of elements in a RDD.
 - Transformation - are operations that generate a new RDD- resilient distributed dataset. Common transformations include operations that filter, sort and group by key, cache etc are all lazy
 - The Dataframes returned/read by spark are all immutable.
-- The Spark DataFrame was designed to behave a lot like a SQL table (a table with variables in the columns and observations in the rows). Not only are they easier to understand, DataFrames are also more optimized for complicated operations than RDDs.
+- The Spark DataFrame was designed to behave a lot like a SQL table (a table with variables in the columns and observations in the rows). Not only are they easier to understand,
+  DataFrames are also more optimized for complicated operations than RDDs.
 - [Shuffling Magic](https://medium.com/swlh/revealing-apache-spark-shuffling-magic-b2c304306142)
 **Cache:**
 Cache is applied to DF using- .cache, a flag is enabled for spark to know caching 
