@@ -43,6 +43,12 @@ hadoop\bin folder in the SPARK_HOME folder
 
 - **Note** SPARK_HOME enviroment variable is already set.
 
+# Install modules
+- pip install findspark
+- pip install pyspark
+- pip install pandas (optional)
+- pip install awscli
+
 # Cell 1, Run 
 - import findspark
 - findspark.init()
