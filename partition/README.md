@@ -94,3 +94,66 @@ ref: https://stackoverflow.com/questions/31610971/spark-repartition-vs-coalesce
 </pre>
 
 - https://stackoverflow.com/questions/46386505/pyspark-difference-between-pyspark-sql-functions-col-and-pyspark-sql-functions-l
+
+**Determining the Number of Partitions When Data is Read into Dataframe/RDD/Dataset**
+-------------------------------------------------------------
+When spark reads from th data source, as a very general rule of thumb the number of partitions created 
+depends on total number of core available(n - executor X m - cores per executor) - (see)[./README.md#what-is-spark-partitioning-]. Now lets see in details
+how this works
+
+- Following are the config parameters which affects the number of partitions in the Dataset
+<pre>
+1. spark.default.parallelism (default: Total No. of CPU cores)
+2. spark.sql.files.maxPartitionBytes (default: 128 MB)
+3. spark.sql.files.openCostInBytes (default: 4 MB), this incurred per partition
+4. maxSplitBytes = Minimum(maxPartitionBytes, bytesPerCore)
+5. bytesPerCore = (Sum of sizes of all data files + No. of files * openCostInBytes) / default.parallelism
+
+Calculating file chunk size
+----------------------------
+Each of the data files (to be read) is split if the it is splittable. 
+- If a file is splittable, with a size more than ‘maxSplitBytes’,then the file is split in multiple chunks 
+  of ‘maxSplitBytes’, the last chunk being less than or equal to ‘maxSplitBytes’.
+- If the file is not splittable or the size is less than ‘maxSplitBytes’, there is only one file chunk 
+  of size equal file size.
+
+After file chunks are calculated for all the data files, one or more file chunks are packed in a partition. The packing 
+process starts with initializing an empty partition followed by iteration over file chunks, for each iterated file chunk:
+- If there is no current partition being packed, initialize a new partition to be packed and assign the iterated file
+  chunk to it.The partition size becomes the sum of chunk size and the additional overhead of ‘openCostInBytes’. 
+- If the addition of chunk size does not exceed the size of current partition (being packed) by more than ‘maxSplitBytes’,
+  then the file chunk becomes the part of the current partition. The partition size is incremented by the sum of the 
+  chunk size and the additional overhead of ‘openCostInBytes’.
+- If the addition of chunk size exceeds the size of current partition being packed by more than ‘maxSplitBytes’, then
+  the current partition is declared as complete and a new partition is initiated. The iterated file chunk becomes the
+  part of the newer partition being initiated, and the newer partition size becomes the sum of chunk size and the 
+  additional overhead of ‘openCostInBytes’.
+
+Based on the above steps it comes out with the number of partitions of the dataset, corresponding to the data
+files being read.
+</pre>
+
+![image](https://user-images.githubusercontent.com/52529498/159253384-0702cd3a-fdb5-41e4-8fbe-fec24f4f183c.png)
+
+<pre>
+Examples:
+
+54 parquet files, 65 MB each, all 3 config parameters at default, No. of core equal to 10: 
+- The number of partitions for this comes out to be 54. Each file has only one chunk here. It is obvious here
+  that two files cannot be packed in one partition (as the size would exceed ‘maxSplitBytes’, 128 MB after adding
+  the second file) in this example.
+
+54 parquet files, 63 MB each, all 3 config parameters at default, No. of core equal to 10: 
+- The number of partitions comes out to be again 54. It seems that two files can be packed here, but since,
+  there is an overhead of ‘openCostInBytes’ (4 MB) after packing the first file, therefore, after adding
+  the second file, the limit of 128 MB gets crossed, hence, two files cannot be packed in one partition
+  in this example.  
+
+54 parquet files, 40 MB each, all 3 config parameters at default, No. of core equal to 10: 
+- The number of partitions comes out to be 18 this time. According to the packing process explained above, even 
+  after adding two files of 40 MB and overhead of 4 MB each, the total size comes out to be 88 MB, therefore the
+  third file of 40 MB can also be packed since the size come out to be just 128 MB. Hence, the number of partitions
+  comes out to be 18.
+</pre>
+
+
