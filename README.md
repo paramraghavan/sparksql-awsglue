@@ -48,6 +48,27 @@ but can be used with Hadoop since it can create distributed datasets from files 
   DataFrames are also more optimized for complicated operations than RDDs.
 - [Shuffling Magic](https://medium.com/swlh/revealing-apache-spark-shuffling-magic-b2c304306142)
 
+**Why Shuffle:**
+
+Data re-distribution is the primary goal of shuffling operation in Spark. Therefore, shuffling in a Spark program is executed
+whenever there is a need to re-distribute an existing distributed data collection represented either by an RDD, Dataframe,
+or Dataset. A data partition represents the unit of data to be processed together by a single Spark Task
+
+- Increase or Decrease the number of data partitions when existing number of data partitions are:
+  - not sufficient enough in order to maximize the usage of available resources.
+  - too heavy to be computed reliably without memory overruns.
+  - high in number such that task scheduling overhead becomes the bottleneck in the overall processing time. 
+
+In all of the above situations, redistribution of data is required to either increase or decrease the number of underlying 
+data partitions. **This redestributuion is achieved by executing shuffling on the existing distributed data collection via commonly 
+available ‘repartition’ API among RDDs, Datasets, and Dataframes.**
+
+- When performing aggregation and join all data records belonging to aggregation, or a join key should reside in a single data 
+partition. If the existing partitioning scheme of the input data collection(s) does not satisfy the condition, then re-distribution
+in accordance with aggregation/join key becomes mandatory, and therefore shuffling would be executed on the input data collection
+to achieve the desired re-distribution/shuffling
+
+
 **Cache:**
 Cache is applied to DF using- .cache, a flag is enabled for spark to know caching 
 of DF is enabled. The actual caching happens when an action is performed - show 
