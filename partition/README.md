@@ -60,10 +60,11 @@ order for the processing that needs to be performed - in this case the shuffle i
 # Determining the Number of Partitions on Read
 
 When spark reads from th data source, as a very general rule of thumb the number of partitions created 
-depends on total number of core available(n - executor X m - cores per executor) - [see](README.md#what-is-spark-partitioning). Now lets see in details
+depends on total number of core available(n - executor X m - cores per executor). Now lets see in details
 how this works
 
-- Following are the config parameters which affects the number of partitions in the Dataset
+Following are the config parameters which affects the number of partitions in the Dataset
+
 <pre>
 1. spark.default.parallelism (default: Total No. of CPU cores)
 2. spark.sql.files.maxPartitionBytes (default: 128 MB)
@@ -91,7 +92,7 @@ process starts with initializing an empty partition followed by iteration over f
   part of the newer partition being initiated, and the newer partition size becomes the sum of chunk size and the 
   additional overhead of ‘openCostInBytes’.
 
-Based on the above steps it comes out with the number of partitions of the dataset, corresponding to the data
+Based on the above steps it comes out with the number of partitions for the dataset, corresponding to the data
 files being read.
 </pre>
 
