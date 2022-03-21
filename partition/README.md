@@ -56,49 +56,11 @@ Even with hash partitioning, data is not necessarily evenly distributed (special
 **Note** Once the dataframe is read in, it  does not have information on the partition.  If the dataframe read in are already in sorted
 order for the processing that needs to be performed - in this case the shuffle is reduced to minimum. 
 
-# Dataframe repartition
- If you call Dataframe.repartition() without specifying a number of partitions, or during a shuffle, you have to know that Spark will
- produce a new dataframe with X partitions (X equals the value of “spark.sql.shuffle.partitions” parameter which is 200 by default).
- This can result in a dataframe with lots of empty partitions, specially if you are dealing with small data (or not big enough!),
- and scheduling issues.
 
- repartition() shuffles the data between the executors and divides the data into number of partitions. But this might be an expensive
- operation since it shuffles the data between executors and involves network traffic. Ideal place to partition is at the data source,
- while fetching the data. Things can speed up greatly when data is partitioned the right way but can dramatically slow down when
- done wrong, especially due the Shuffle operation.
+# Determining the Number of Partitions on Read
 
-Reference
----------
-- https://kontext.tech/column/spark/296/data-partitioning-in-spark-pyspark-in-depth-walkthrough
-- https://medium.com/datalex/on-spark-performance-and-partitioning-strategies-72992bbbf150
-- [Does spark dataframe know the partition key of the dataframe](https://stackoverflow.com/questions/48459208/does-spark-know-the-partitioning-key-of-a-dataframe#:~:text=You%20don't.,can%20check%20queryExecution%20for%20Partitioner%20.)
-- https://sparkbyexamples.com/spark/spark-partitioning-understanding/
-
-Coalesce vs repartition
------------------------------
-<pre>
-Difference between coalesce and repartition
-
-coalesce uses existing partitions to minimize the amount of data that's shuffled.
-repartition creates new partitions and does a full shuffle. coalesce results in
-partitions with different amounts of data (sometimes partitions that have much different sizes)
-and repartition results in roughly equal sized partitions.
-
-Is coalesce or repartition faster?
-
-coalesce may run faster than repartition, but unequal sized partitions are
-generally slower to work with than equal sized partitions. You'll usually need to repartition datasets
-after filtering a large data set. I've found repartition to be faster overall because Spark is
-built to work with equal sized partitions.
-ref: https://stackoverflow.com/questions/31610971/spark-repartition-vs-coalesce
-</pre>
-
-- https://stackoverflow.com/questions/46386505/pyspark-difference-between-pyspark-sql-functions-col-and-pyspark-sql-functions-l
-
-**Determining the Number of Partitions When Data is Read into Dataframe/RDD/Dataset**
--------------------------------------------------------------
 When spark reads from th data source, as a very general rule of thumb the number of partitions created 
-depends on total number of core available(n - executor X m - cores per executor) - (see)[./README.md#what-is-spark-partitioning-]. Now lets see in details
+depends on total number of core available(n - executor X m - cores per executor) - [see](README.md#what-is-spark-partitioning). Now lets see in details
 how this works
 
 - Following are the config parameters which affects the number of partitions in the Dataset
@@ -156,4 +118,42 @@ Examples:
   comes out to be 18.
 </pre>
 
+# Dataframe repartition
+ If you call Dataframe.repartition() without specifying a number of partitions, or during a shuffle, you have to know that Spark will
+ produce a new dataframe with X partitions (X equals the value of “spark.sql.shuffle.partitions” parameter which is 200 by default).
+ This can result in a dataframe with lots of empty partitions, specially if you are dealing with small data (or not big enough!),
+ and scheduling issues.
+
+ repartition() shuffles the data between the executors and divides the data into number of partitions. But this might be an expensive
+ operation since it shuffles the data between executors and involves network traffic. Ideal place to partition is at the data source,
+ while fetching the data. Things can speed up greatly when data is partitioned the right way but can dramatically slow down when
+ done wrong, especially due the Shuffle operation.
+
+Reference
+---------
+- https://kontext.tech/column/spark/296/data-partitioning-in-spark-pyspark-in-depth-walkthrough
+- https://medium.com/datalex/on-spark-performance-and-partitioning-strategies-72992bbbf150
+- [Does spark dataframe know the partition key of the dataframe](https://stackoverflow.com/questions/48459208/does-spark-know-the-partitioning-key-of-a-dataframe#:~:text=You%20don't.,can%20check%20queryExecution%20for%20Partitioner%20.)
+- https://sparkbyexamples.com/spark/spark-partitioning-understanding/
+
+Coalesce vs repartition
+-----------------------------
+<pre>
+Difference between coalesce and repartition
+
+coalesce uses existing partitions to minimize the amount of data that's shuffled.
+repartition creates new partitions and does a full shuffle. coalesce results in
+partitions with different amounts of data (sometimes partitions that have much different sizes)
+and repartition results in roughly equal sized partitions.
+
+Is coalesce or repartition faster?
+
+coalesce may run faster than repartition, but unequal sized partitions are
+generally slower to work with than equal sized partitions. You'll usually need to repartition datasets
+after filtering a large data set. I've found repartition to be faster overall because Spark is
+built to work with equal sized partitions.
+ref: https://stackoverflow.com/questions/31610971/spark-repartition-vs-coalesce
+</pre>
+
+- https://stackoverflow.com/questions/46386505/pyspark-difference-between-pyspark-sql-functions-col-and-pyspark-sql-functions-l
 
