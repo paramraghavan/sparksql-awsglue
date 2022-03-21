@@ -57,7 +57,7 @@ Even with hash partitioning, data is not necessarily evenly distributed (special
 order for the processing that needs to be performed - in this case the shuffle is reduced to minimum. 
 
 
-# Determining the Number of Partitions on Read
+# Determining the Number of Dataset Partitions on Read
 
 When spark reads from th data source, as a general rule of thumb the number of partitions created 
 depends on total number of core available(n - executor X m - cores per executor). Now lets see in details
