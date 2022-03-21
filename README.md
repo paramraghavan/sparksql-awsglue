@@ -50,7 +50,7 @@ but can be used with Hadoop since it can create distributed datasets from files 
 
 **Why Shuffle:**
 
-Data re-distribution is the primary goal of shuffling operation in Spark. Therefore, shuffling in a Spark program is executed
+Data re-distribution is the primary goal of shuffling operation in Spark. Shuffling in a Spark program is executed
 whenever there is a need to re-distribute an existing distributed data collection represented either by an RDD, Dataframe,
 or Dataset. A data partition represents the unit of data to be processed together by a single Spark Task
 
