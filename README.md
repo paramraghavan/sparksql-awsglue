@@ -409,7 +409,11 @@ toPandas() is an expensive operation that should be used carefully in order to m
  [See here for more details](https://towardsdatascience.com/how-to-efficiently-convert-a-pyspark-dataframe-to-pandas-8bda2c3875c3)
 
 # [EMR Spark submit - How does it work?](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
- 
+AWS EMR clusters by default are configured with a single capacity scheduler queue and can run a single job at any given
+time. [This](http://mitylytics.com/2017/11/configuring-multiple-queues-aws-emr-yarn/) blog talks about how you can create
+and configure multiple capacity scheduler queues in YARN Capacity Scheduler during the creation of a new EMR cluster or 
+when updating existing EMR clusters. For more details on configuration, refer to Apache documentation on Hadoop Capacity Scheduler.
+
 Spark is a distributed computing engine and its main abstraction is a resilient distributed dataset (RDD), which can be viewed as 
 a distributed collection. RDDs are collections of objects. Under the hood, **these objects are stored in partitions.** When performing 
 computations on RDDs, these partitions can be operated on in parallel. Understanding how Spark deals with partitions allow us to control
