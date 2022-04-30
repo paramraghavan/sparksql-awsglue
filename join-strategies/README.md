@@ -126,6 +126,9 @@ FROM table_name1, table_name2
 WHERE table_name1.column [> |  < |  >= | <= ] table_name2.column;
 </pre>
 
+## dataframe join examples
+- https://sparkbyexamples.com/spark/spark-sql-dataframe-join/
+
 # References
 - https://www.linkedin.com/pulse/spark-sql-3-common-joins-explained-ram-ghadiyaram/ 
 - **[Spark Join Stratergies](https://towardsdatascience.com/strategies-of-spark-join-c0e7b4572bcf)** 
