@@ -212,5 +212,5 @@ yarn application components <Components Name>
 yarn application -decommission < Application Name>
 yarn application - instances<Component Instances>
 yarn application -list
-yarn application -kill <application id>
+yarn application -kill <application id
 </pre>
