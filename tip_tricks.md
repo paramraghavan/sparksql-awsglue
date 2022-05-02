@@ -173,6 +173,7 @@ earlier apps finish.
   and for num-executors try with 4 or 5 and see how it goes. Num of executors could be upto 20. **Todo** How to use
   executor-cores wrt to num-executors?
 - [More of fair scheduler](https://hadoop.apache.org/docs/r2.7.1/hadoop-yarn/hadoop-yarn-site/FairScheduler.html)
+- https://amalgjose.com/2015/07/24/configuring-fair-scheduler-in-hadoop-cluster/
 - All the above are the yarn scheduler properties.
 - [performance][https://towardsdatascience.com/apache-spark-performance-boosting-e072a3ec1179]
 
