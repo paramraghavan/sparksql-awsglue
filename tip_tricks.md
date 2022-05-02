@@ -201,3 +201,16 @@ ref: https://stackoverflow.com/questions/63086480/are-dataframes-created-every-t
 df.unpersist(false) // unpersists the Dataframe without blocking
 </pre>
 
+4. Yarn commands
+<pre>
+yarn application -help
+yarn application appId <Applciaiton ID>
+yarn application -appStates <States>
+yarn application -appTags <Tags>
+yarn application -appTypes <Types>
+yarn application components <Components Name>
+yarn application -decommission < Application Name>
+yarn application - instances<Component Instances>
+yarn application -list
+yarn application -kill <application id>
+</pre>
