@@ -23,19 +23,18 @@
   operation uses the cached data to write to disk.
 
 2. Optimize spark submit
-
-- Let say we use the fair scheduler, this way all the jobs submitted are getting equal resources
-- By default, the Fair Scheduler bases scheduling fairness decisions only on memory. It can be
-  configured to schedule with both memory and CPU, using the notion of Dominant Resource Fairness developed by Ghodsi et
-  al. When there is a single app running, that app uses the entire cluster. When other apps are submitted, resources
-  that free up are assigned to the new apps, so that each app eventually on gets roughly the same amount of resources. The
-  Fair Scheduler lets all apps run by default, but it is also possible to limit the number of running apps per user and
-  per queue through the config file. This can be useful when a user must submit hundreds of apps at once, or in general
-  to improve performance if running too many apps at once would cause too much intermediate data to be created or too
-  much context-switching. Limiting the apps does not cause any subsequently submitted apps to fail, only to wait in the
-  scheduler’s queue until some of the user’s earlier apps finish.
+- Use fair scheduler for you cluster, this way all the jobs submitted are getting equal resources
+- By default, the Fair Scheduler bases scheduling fairness decisions only on memory. It can be configured to schedule
+  with both memory and CPU. When there is a single app running, that app uses the entire cluster. When other apps are
+  submitted, resources that free up are assigned to the new apps, so that each app eventually on gets roughly the same
+  amount of resources. The Fair Scheduler lets all apps run by default, but it is also possible to limit the number of
+  running apps per user and per queue through the config file. This can be useful when a user must submit hundreds of
+  apps at once, or in general to improve performance if running too many apps at once would cause too much intermediate
+  data to be created or too much context-switching. Limiting the apps does not cause any subsequently submitted apps to
+  fail, only to wait in the scheduler’s queue until some of the user’s earlier apps finish.
 - let's say we use the default queue, it is best to limit the maxRunningApps. 
-- And at the spark submit level limit the executor-memory to 32gb(try with 16 or 32), available values 8,16,32,64 gb and for num-executors
-  try with 4 or 5 and see how it goes. Num of executors could be upto 20. **Todo** How to use executor-cores wrt to num-executors?
+- And at the job/spark-submit level limit the executor-memory to 32gb(try with 16 or 32), available values 8,16,32,64 gb
+  and for num-executors try with 4 or 5 and see how it goes. Num of executors could be upto 20. **Todo** How to use
+  executor-cores wrt to num-executors?
 - [More of fair scheduler](https://hadoop.apache.org/docs/r2.7.1/hadoop-yarn/hadoop-yarn-site/FairScheduler.html)
 - All the above are the yarn scheduler properties.
