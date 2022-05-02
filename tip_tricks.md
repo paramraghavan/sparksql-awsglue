@@ -193,6 +193,10 @@ That is, unless the previous DF is cached. If we have to avoid this reconstructi
 will we not end up occupying all the memory and spilling some data to disk and slow down the spark application?. _Yes its wasteful and thats 
 why its advisable to cache the DF if its used more than once._ That's the reason all DFs are not persisted by default. However, when you 
 persist there are multiple options like MEMORY_ONLY, MEMORY_AND_DISK besides others. Check details [here](https://spark.apache.org/docs/latest/rdd-programming-guide.html#rdd-persistence)
-ref: https://stackoverflow.com/questions/63086480/are-dataframes-created-every-time-using-dag-when-the-df-is-referenced-multiple
+ref: https://stackoverflow.com/questions/63086480/are-dataframes-created-every-time-using-dag-when-the-df-is-referenced-multiple.
 
+**Note:** after you use df.cache(), unpersist the cached df as soona s you do not need it.
+<pre>
+df.unpersist(false) // unpersists the Dataframe without blocking
+</pre>
 
