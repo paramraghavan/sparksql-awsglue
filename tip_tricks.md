@@ -174,3 +174,25 @@ earlier apps finish.
   executor-cores wrt to num-executors?
 - [More of fair scheduler](https://hadoop.apache.org/docs/r2.7.1/hadoop-yarn/hadoop-yarn-site/FairScheduler.html)
 - All the above are the yarn scheduler properties.
+- [performance][https://towardsdatascience.com/apache-spark-performance-boosting-e072a3ec1179]
+
+3. example:
+<pre>
+val df = spark.read().format("csv").csv("/path/file.csv")
+
+df = df.filter(....)  // you are over writing the df reference
+
+// df.cache() // use this if filter and read is to be performed only once.
+
+val cnt = df.count()  // action - triggers the filter and read operations 
+
+df.saveAsTable()   //  action - triggers the filter and read operations 
+</pre>
+ Whenever a "action" (count() and saveAsTable() in this case) is performed it triggers the re-computation of data till the previous DF. 
+That is, unless the previous DF is cached. If we have to avoid this reconstruction process everytime and if we start persisting the DF's, 
+will we not end up occupying all the memory and spilling some data to disk and slow down the spark application?. _Yes its wasteful and thats 
+why its advisable to cache the DF if its used more than once._ That's the reason all DFs are not persisted by default. However, when you 
+persist there are multiple options like MEMORY_ONLY, MEMORY_AND_DISK besides others. Check details [here](https://spark.apache.org/docs/latest/rdd-programming-guide.html#rdd-persistence)
+ref: https://stackoverflow.com/questions/63086480/are-dataframes-created-every-time-using-dag-when-the-df-is-referenced-multiple
+
+
