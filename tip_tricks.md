@@ -48,13 +48,13 @@ The node types in Amazon EMR are as follows:
   allowing application master processes to run only on core nodes. The application master process controls running jobs
   and needs to stay alive for the life of the job**._
   
-  Amazon EMR release version 5.19.0 and later uses the built-in YARN node labels feature to achieve this. (Earlier
+  _Amazon EMR release version 5.19.0 and later uses the built-in YARN node labels feature to achieve this. (Earlier
   versions used a code patch). Properties in the yarn-site and capacity-scheduler configuration classifications are
   configured by default so that the YARN capacity-scheduler and fair-scheduler take advantage of node labels. Amazon EMR
-  automatically labels core nodes with the CORE label, and sets properties so that application masters are scheduled only
-  on nodes with the CORE label. Manually modifying related properties in the yarn-site and capacity-scheduler
+  automatically labels core nodes with the CORE label, and sets properties so that **application masters are scheduled only
+  on nodes with the CORE label.** Manually modifying related properties in the yarn-site and capacity-scheduler
   configuration classifications, or directly in associated XML files, could break this feature or modify this
-  functionality.
+  functionality._
   
   Beginning with Amazon EMR 6.x release series, the YARN node labels feature is disabled by default. The application
   master processes can run on both core and task nodes by default. You can enable the YARN node labels feature by
