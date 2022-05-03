@@ -18,10 +18,12 @@ The node types in Amazon EMR are as follows:
   allows you to access directories and files, such as Hadoop log files, directly. For more information, see View log
   files. You can also view user interfaces that applications publish as websites running on the master node.
 
-- **Core node:** Core nodes are managed by the master node. Core nodes run the **Data Node daemon to coordinate data storage
-  as part of the Hadoop Distributed File System (HD**FS). They also run the Task Tracker daemon and perform other parallel
-  computation tasks on data that installed applications require. For example, a **core node runs YARN NodeManager daemons,
-  Hadoop MapReduce tasks,and Spark executors.**
+- **Core node:** A node with software components that run tasks and store data in the Hadoop Distributed File System (
+  HDFS) on your cluster. Multi-node clusters have at least one core node.Core nodes are managed by the master node. Core
+  nodes run the **Data Node daemon to coordinate data storage
+  as part of the Hadoop Distributed File System (HD**FS). They also run the Task Tracker daemon and perform other
+  parallel computation tasks on data that installed applications require. For example, a **core node runs YARN NodeManager
+  daemons, Hadoop MapReduce tasks,and Spark executors.**
 
   There is only one core instance group or instance fleet per cluster, but there can be multiple nodes running on multiple
   Amazon EC2 instances in the instance group or instance fleet. With instance groups, you can add and remove Amazon EC2
@@ -31,7 +33,8 @@ The node types in Amazon EMR are as follows:
   With instance fleets, you can effectively add and remove instances by modifying the instance fleet's target capacities
   for On-Demand and Spot accordingly.
 
-- **Task node**: You can use task nodes to add power to perform parallel computation tasks on data, such as Hadoop MapReduce
+- **Task node**:  A node with software components that only runs tasks and does not store data in HDFS. Task nodes are
+  optional.You can use task nodes to add power to perform parallel computation tasks on data, such as Hadoop MapReduce
   tasks and Spark executors. Task nodes don't run the Data Node daemon, nor do they store data in HDFS. As with core
   nodes, you can add task nodes to a cluster by adding Amazon EC2 instances to an existing uniform instance group or by
   modifying target capacities for a task instance fleet.
