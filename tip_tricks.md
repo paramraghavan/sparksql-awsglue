@@ -112,7 +112,16 @@ earlier apps finish.
             }
           }
 </pre>
-
+- Or you have the file fair-scheduler.xmlin /etc/hadoop/conf, this is an example of another configuration using the root hadoop queue
+<pre>
+<allocations>
+    <!-- sets the default running app limit for queues; overridden by maxRunningApps element in each queue.-->
+    <queueMaxAppsDefault>50</queueMaxAppsDefault>
+    <!-- sets the default AM resource limit for queue; overridden by maxAMShare element in each queue. -->
+    <queueMaxAMShareDefault>0.9</queueMaxAMShareDefault>
+</allocations>
+</pre>
+  
 - Following are the options available:
 <pre>
           {
@@ -212,5 +221,11 @@ yarn application components <Components Name>
 yarn application -decommission < Application Name>
 yarn application - instances<Component Instances>
 yarn application -list
-yarn application -kill <application id
+yarn application -kill <application id>
+
+sudo stop hadoop-yarn-resourcemanager
+sudo start hadoop-yarn-resourcemanager
 </pre>
+
+5. Stop all jobs
+for x in $(yarn application -list -appStates RUNNING | awk 'NR > 2 { print $1 }'); do yarn application -kill $x; done
