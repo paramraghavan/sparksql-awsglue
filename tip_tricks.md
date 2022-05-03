@@ -63,6 +63,7 @@ The node types in Amazon EMR are as follows:
   yarn.node-labels.enabled: true
   yarn.node-labels.am.default-node-label-expression: 'CORE'
   
+ref: https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-master-core-task-nodes.html
 
 ![img_5.png](img_5.png)
 
