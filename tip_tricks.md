@@ -65,8 +65,12 @@ The node types in Amazon EMR are as follows:
   
   yarn.node-labels.enabled: true
   yarn.node-labels.am.default-node-label-expression: 'CORE'
-  
-ref: https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-master-core-task-nodes.html
+- **Application Master**: The Application Master is responsible for the execution of a single application. It asks for
+  containers from the Resource Scheduler (Resource Manager) and executes specific programs on the obtained containers.
+  **Application Master is just a broker that negotiates resources with the Resource Manager** and then after getting some
+  container it make sure to launch tasks(which are picked from scheduler queue) on
+  containers.[ref](https://stackoverflow.com/questions/63914667/what-is-the-difference-between-driver-and-application-manager-in-spark)  
+  ref: https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-master-core-task-nodes.html
 
 ![img_5.png](img_5.png)
 
@@ -141,93 +145,17 @@ earlier apps finish.
 2. Optimize spark submit
 - Use fair scheduler for you cluster, this way all the jobs submitted are getting equal resources
 - Configure the scheduler at the cluster level, let's say we use the default queue, it is best to limit the maxRunningApps.
-  You can either update the fair-scheduler.xml under /etc/hadoop/conf or add fair-scheduler classification to the Configurations
-- <pre>
-          {
-            "Classification": "fair-scheduler",
-            "allocations":  {
-               "queue": [
-                  {
-                     "@name": "primary_queue",
-                     "maxRunningApps": "50",
-                     "schedulingPolicy": "fair",
-                  }
-               ],
-               "queuePlacementPolicy": [
-                  {
-                     "@name": "default",
-                     "@queue": "primary_queue"
-                  }
-               ]
-            }
-          }
-</pre>
-- Or you have the file fair-scheduler.xmlin /etc/hadoop/conf, this is an example of another configuration using the root hadoop queue
-<pre>
-<allocations>
-    <!-- sets the default running app limit for queues; overridden by maxRunningApps element in each queue.-->
-    <queueMaxAppsDefault>50</queueMaxAppsDefault>
-    <!-- sets the default AM resource limit for queue; overridden by maxAMShare element in each queue. -->
-    <queueMaxAMShareDefault>0.9</queueMaxAMShareDefault>
-</allocations>
-</pre>
-  
-- Following are the options available:
-<pre>
-          {
-            "Classification": "fair-scheduler",
-            "allocations":  {
-               "queue": [
-                  {
-                     "@name": "primary_queue",
-                     "minResources": "10000 mb,0vcores",
-                     "maxResources": "90000 mb,0vcores",
-                     "maxRunningApps": "50",
-                     "maxAMShare": "0.1",
-                     "weight": "2.0",
-                     "schedulingPolicy": "fair",
-                     "queue": {
-                        "@name": "priimary_sub_queue",
-                        "aclSubmitApps": "charlie",
-                        "minResources": "5000 mb,0vcores"
-                     }
-                  },
-                  {
-                     "@name": "secondary_queue",
-                     "@type": "parent",
-                     "weight": "3.0"
-                  }
-               ],
-               "queueMaxAMShareDefault": "0.5",
-               "queueMaxResourcesDefault": "40000 mb,0vcores",
-               "user": {
-                  "@name": "sample_user",
-                  "maxRunningApps": "30"
-               },
-               "userMaxAppsDefault": "5",
-               "queuePlacementPolicy": [
-                  {
-                     "@name": "specified"
-                  },
-                  {
-                     "@name": "primaryGroup",
-                     "@create": "false"
-                  },
-                  {
-                     "@name": "nestedUserQueue",
-                     "rule": {
-                        "@name": "secondaryGroupExistingQueue",
-                        "@create": "false"
-                     }
-                  },
-                  {
-                     "@name": "default",
-                     "@queue": "primary_queue"
-                  }
-               ]
-            }
-          }
-</pre>
+  You can either update the fair-scheduler.xml under /etc/hadoop/conf.  The fair-scheduler classification cannot be added to
+  the Configurations The file fair-scheduler.xmli n /etc/hadoop/conf, using the default queue - root.hadoop queue
+  <pre>
+  <allocations>
+      <!-- sets the default running app limit for queues; overridden by maxRunningApps element in each queue.-->
+      <queueMaxAppsDefault>25</queueMaxAppsDefault>
+      <!-- sets the default AM resource limit for queue; overridden by maxAMShare element in each queue. .5 is the default and -->
+      <!--   leave it a default, so commenting it out.-->
+      <!--<queueMaxAMShareDefault>0.5</queueMaxAMShareDefault> -->
+  </allocations>
+  </pre>
 - And at the job/spark-submit level limit the executor-memory to 32gb(try with 16 or 32), available values 8,16,32,64 gb
   and for num-executors try with 4 or 5 and see how it goes. Num of executors could be upto 20. **Todo** How to use
   executor-cores wrt to num-executors?
@@ -237,25 +165,21 @@ earlier apps finish.
 - [performance][https://towardsdatascience.com/apache-spark-performance-boosting-e072a3ec1179]
 
 3. example:
-<pre>
-val df = spark.read().format("csv").csv("/path/file.csv")
-
-df = df.filter(....)  // you are over writing the df reference
-
-// df.cache() // use this if filter and read is to be performed only once.
-
-val cnt = df.count()  // action - triggers the filter and read operations 
-
-df.saveAsTable()   //  action - triggers the filter and read operations 
-</pre>
- Whenever a "action" (count() and saveAsTable() in this case) is performed it triggers the re-computation of data till the previous DF. 
+  <pre>
+    val df = spark.read().format("csv").csv("/path/file.csv")
+    df = df.filter(....)  // you are over writing the df reference
+    // df.cache() // use this if filter and read is to be performed only once.
+    val cnt = df.count()  // action - triggers the filter and read operations
+    write_to_disk(df)   //  action - triggers the filter and read operations 
+  </pre>
+ Whenever a "action" (count() and write_to_disk() in this case) is performed it triggers the re-computation of data till the previous DF. 
 That is, unless the previous DF is cached. If we have to avoid this reconstruction process everytime and if we start persisting the DF's, 
 will we not end up occupying all the memory and spilling some data to disk and slow down the spark application?. _Yes its wasteful and thats 
 why its advisable to cache the DF if its used more than once._ That's the reason all DFs are not persisted by default. However, when you 
 persist there are multiple options like MEMORY_ONLY, MEMORY_AND_DISK besides others. Check details [here](https://spark.apache.org/docs/latest/rdd-programming-guide.html#rdd-persistence)
 ref: https://stackoverflow.com/questions/63086480/are-dataframes-created-every-time-using-dag-when-the-df-is-referenced-multiple.
 
-**Note:** after you use df.cache(), unpersist the cached df as soona s you do not need it.
+**Note:** after you use df.cache(), unpersist the cached df as soon as you do not need it.
 <pre>
 df.unpersist(false) // unpersists the Dataframe without blocking
 </pre>
@@ -264,7 +188,8 @@ df.unpersist(false) // unpersists the Dataframe without blocking
 <pre>
 yarn application -help
 yarn application appId <Applciaiton ID>
-yarn application -appStates <States>
+yarn application -list -appStates <States>
+yarn application -list -appStates RUNNING
 yarn application -appTags <Tags>
 yarn application -appTypes <Types>
 yarn application components <Components Name>
@@ -273,8 +198,8 @@ yarn application - instances<Component Instances>
 yarn application -list
 yarn application -kill <application id>
 
-sudo stop hadoop-yarn-resourcemanager
-sudo start hadoop-yarn-resourcemanager
+sudo systemctl stop hadoop-yarn-resourcemanager
+sudo systemctl start hadoop-yarn-resourcemanager
 </pre>
 
 5. Stop all jobs
