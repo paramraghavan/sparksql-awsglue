@@ -441,6 +441,40 @@ transformations (map, filter etc) pipelined in the stage.
 
 ref: https://medium.com/@thejasbabu/spark-under-the-hood-partition-d386aaaa26b7
 
+# Apache Hudi
+
+In today’s world, We are more concerned about our personal data privacy as compared to earlier. In the future, there
+would definitely be a need to form laws regarding data privacy and the storage of personal data will come into the
+picture for developing countries too.
+As many EU countries have already formed General Data Protection Regulations (GDPR) which govern the usage of personal
+data. So If a user requests an organization to OPT-OUT or Delete his/her personal data from the data lake. It became
+very tricky to delete  a record from a petabyte of data. To Overcome the problem of deletion or updates to a single
+row in a big data system there are many solutions available in the market i.e. from Hive transactional property to 
+data bricks Delta features to now Apache Hudi.  
+
+## Can we use Apache Hudi without having to convert existing Parquet data in our data lake
+
+For customers operating at scale on several terabytes or petabytes of data, migrating their datasets to start using
+Apache Hudi is a very time-consuming operation. Depending on the size of the dataset and the compute power, it might
+take several hours using insert or bulk insert write operations. These operations rewrite the entire dataset into an
+Apache Hudi table format so that Apache Hudi could generate per-record metadata and index information required to
+perform record-level operations. Even if the existing dataset is in Parquet format, Hudi would rewrite it entirely in
+its compatible format, which is also Parquet. This created an obstacle to customer adoption and onboarding.
+
+To address this problem, Amazon EMR team collaborated with the Apache Hudi community to create a feature in release
+version 0.6.0, the bootstrap operation, which allows customers to use Hudi with their existing Parquet datasets without
+needing to rewrite the dataset. As part of this operation, Hudi generates metadata only. It writes the metadata in a
+separate file that corresponds to each data file in the dataset. The original data is left as-is and not copied over.
+The result is a faster, less compute-intensive onboarding process. The bootstrap operation is available in Amazon EMR
+releases 5.31.0 and 6.2.0, which ship with Apache Hudi 0.6.0.[ref](https://aws.amazon.com/blogs/big-data/new-features-from-apache-hudi-available-in-amazon-emr/)
+
+
+**references**
+https://medium.com/@simpsons/apache-hudi-basic-crud-operations-64c1f1fe35df **	
+https://medium.com/@parth09/apache-hudi-the-basics-5c1848ca12e0 *
+
+
+
 # Running pyspark on windows
 - [setup pysaprk/sparksql on windows](https://github.com/paramraghavan/sparksql-awsglue/blob/main/help/sparksql-setup.md)
 - pyspark with interactive Jupyter Notebook
