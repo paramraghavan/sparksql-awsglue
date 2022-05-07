@@ -450,7 +450,9 @@ As many EU countries have already formed General Data Protection Regulations (GD
 data. So If a user requests an organization to OPT-OUT or Delete his/her personal data from the data lake. It became
 very tricky to delete  a record from a petabyte of data. To Overcome the problem of deletion or updates to a single
 row in a big data system there are many solutions available in the market i.e. from Hive transactional property to 
-data bricks Delta features to now Apache Hudi.  
+data bricks Delta features to now Apache Hudi. Apache Hudi is an open-source data management framework used to simplify
+incremental data processing and data pipeline development by providing **record-level insert, update and delete
+capabilities.** This record-level capability is helpful if you’re building your data lakes on Amazon S3 or HDFS.
 
 ## Can we use Apache Hudi without having to convert existing Parquet data in our data lake
 
