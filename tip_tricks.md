@@ -145,16 +145,18 @@ earlier apps finish.
 2. Optimize spark submit
 - Use fair scheduler for you cluster, this way all the jobs submitted are getting equal resources
 - Configure the scheduler at the cluster level, let's say we use the default queue, it is best to limit the maxRunningApps.
-  You can either update the fair-scheduler.xml under /etc/hadoop/conf.  The fair-scheduler classification cannot be added to
-  the Configurations The file fair-scheduler.xmli n /etc/hadoop/conf, using the default queue - root.hadoop queue
+  You can update the fair-scheduler.xml under /etc/hadoop/conf.  The fair-scheduler classification cannot be added to
+  the Configurations The default queue for fair scheduler- root.hadoop queue
+  ``` xml
     <allocations>
+      <!-- this allocation is for the default queue -->
       <!-- sets the default running app limit for queues; overridden by maxRunningApps element in each queue.-->
       <queueMaxAppsDefault>25</queueMaxAppsDefault>
       <!-- sets the default AM resource limit for queue; overridden by maxAMShare element in each queue. .5 is the default and -->
       <!--   leave it a default, so commenting it out.-->
       <!--<queueMaxAMShareDefault>0.5</queueMaxAMShareDefault> -->
     </allocations>
-  
+   ```  
 - And at the job/spark-submit level limit the executor-memory to 32gb(try with 16 or 32), available values 8,16,32,64 gb
   and for num-executors try with 4 or 5 and see how it goes. Num of executors could be upto 20. **Todo** How to use
   executor-cores wrt to num-executors?
