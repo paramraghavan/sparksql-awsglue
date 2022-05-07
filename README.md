@@ -295,8 +295,13 @@ decompress at ~ 500MB/s on a single core.
   - Storage Space: Medium
   - CPU Usage: Medium
   - Splittable: No
+
+## Apache Parquet has the following characteristics:
+  - Self-describing
+  - Columnar format
+  - Language-independent
  
-- [reference](https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats)
+  - [reference](https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats)
 
 
 # [Join strategies](join-strategies/README.md)
@@ -470,10 +475,15 @@ separate file that corresponds to each data file in the dataset. The original da
 The result is a faster, less compute-intensive onboarding process. The bootstrap operation is available in Amazon EMR
 releases 5.31.0 and 6.2.0, which ship with Apache Hudi 0.6.0.[ref](https://aws.amazon.com/blogs/big-data/new-features-from-apache-hudi-available-in-amazon-emr/)
 
+**Note:**
+- [Hudi does not support field deletions](https://github.com/apache/hudi/issues/2331)
+- [insert operation didn't insert a new record, instead it updated existing records in my no-primary-key table](https://github.com/apache/hudi/issues/2051)
 
 **references**
 https://medium.com/@simpsons/apache-hudi-basic-crud-operations-64c1f1fe35df **	
 https://medium.com/@parth09/apache-hudi-the-basics-5c1848ca12e0 *
+https://hudi.apache.org/docs/writing_data/
+https://hudi.apache.org/docs/next/table_management/
 
 
 
@@ -493,6 +503,13 @@ https://medium.com/@parth09/apache-hudi-the-basics-5c1848ca12e0 *
 - [Window functions](https://docs.oracle.com/cd/E17952_01/mysql-8.0-en/window-functions-usage.html)
 - https://medium.com/@thejasbabu/spark-under-the-hood-partition-d386aaaa26b7
 - [Pandas vs SQL](https://towardsdatascience.com/pandas-vs-sql-compared-with-examples-3f14db65c06f)
+- [Pycharm Parquet Plugin](https://plugins.jetbrains.com/plugin/12281-avro-and-parquet-viewer)
+- Steps to Install apache Drill 
+  - Drill can be used to query parquet, json, avro, etc... files
+  - [installing-drill-on-linux-and-mac-os-x/](https://drill.apache.org/docs/installing-drill-on-linux-and-mac-os-x/)
+  - [starting-drill-on-linux-and-mac-os-x](https://drill.apache.org/docs/starting-drill-on-linux-and-mac-os-x/), bin/drill-embedded
+  - [sql query using drill](https://drill.apache.org/docs/query-data/)
+  - example query,  SELECT * FROM dfs.`<path-tofile/sample-data/region.parquet`;
  
 # Spark Performance Tuning & Best Practices
 - https://sparkbyexamples.com/spark/spark-performance-tuning/
