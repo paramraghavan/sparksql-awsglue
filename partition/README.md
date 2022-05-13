@@ -157,3 +157,19 @@ ref: https://stackoverflow.com/questions/31610971/spark-repartition-vs-coalesce
 
 - https://stackoverflow.com/questions/46386505/pyspark-difference-between-pyspark-sql-functions-col-and-pyspark-sql-functions-l
 
+
+## Partition Discovery
+
+Starting from Spark 1.6.0, partition discovery only finds partitions under the given paths by default. For the above
+example, if users pass path/to/table/gender=male to either SparkSession.read.parquet or SparkSession.read.load, gender
+will not be considered as a partitioning column. If users need to specify the base path that partition discovery should
+start with, they can set basePath in the data source options. For example, when path/to/table/gender=male is the path of
+the data and users set basePath to path/to/table/, gender will be a partitioning column.
+```python
+ spark.read \
+            .option('basePath', 'path/to/table' ) \
+            .load(path='path/to/table/gender=male', format='json')
+```
+
+
+ref: https://spark.apache.org/docs/latest/sql-data-sources-parquet.html
