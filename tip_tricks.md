@@ -209,3 +209,4 @@ for x in $(yarn application -list -appStates RUNNING | awk 'NR > 2 { print $1 }'
 
 ## Good reads
 - https://towardsdatascience.com/apache-spark-performance-boosting-e072a3ec1179
+- https://luminousmen.com/post/spark-tips-partition-tuning
