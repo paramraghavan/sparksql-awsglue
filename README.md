@@ -302,7 +302,7 @@ decompress at ~ 500MB/s on a single core.
   - Language-independent
  
   - [reference](https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats)
-
+  - https://medium.com/swlh/insights-into-parquet-storage-ac7e46b94ffe
 
 # [Join strategies](join-strategies/README.md)
 
