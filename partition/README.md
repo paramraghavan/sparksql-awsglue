@@ -16,7 +16,7 @@ bad performance, mostly in 3 fields :
 Memory because your executor nodes will have to put high volume of data in memory (possibly causing OOM Exception),
 and CPU because compute across the cluster will be unequal: A subset of you CPU will do the work and the others ones will
 look their neighbors work.
-- Skewed data in your partitions - data skewness is caused by transformations that change data partitioning like join,
+- Skewed data in your partitions - [data skewness](https://itnext.io/handling-data-skew-in-apache-spark-9f56343e58e8) is caused by transformations that change data partitioning like join,
   groupBy, and orderBy. For example, joining on a key that is not evenly distributed across the cluster, causing some
   partitions to be very large and not allowing Spark to process data in parallel. When a Spark task will be executed on
   these partitions, they will be distributed across executor slots and CPUs. If your partitions are unbalanced in terms
