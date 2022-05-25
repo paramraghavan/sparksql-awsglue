@@ -304,6 +304,18 @@ decompress at ~ 500MB/s on a single core.
   - [reference](https://stackoverflow.com/questions/35789412/spark-sql-difference-between-gzip-vs-snappy-vs-lzo-compression-formats)
   - https://medium.com/swlh/insights-into-parquet-storage-ac7e46b94ffe
 
+## Apache Avro
+Apache Avro is an open-source, row-based, data serialization and data exchange framework for Hadoop projects, originally
+developed by databricks as an open-source library that supports reading and writing data in Avro file format. it is
+mostly used in Apache Spark especially for Kafka-based data pipelines. When **Avro data is stored in a file, its schema is
+stored with it, so that files may be processed later by any program**.
+
+It has build to serialize and exchange big data between different Hadoop based projects. It serializes data in a compact
+binary format and schema is in JSON format that defines the field names and data types.
+
+
+[ref:](https://sparkbyexamples.com/spark/read-write-avro-file-spark-dataframe/)
+
 # [Join strategies](join-strategies/README.md)
 
 ## [Developing AWS Glue ETL jobs locally using a container](https://github.com/paramraghavan/sparksql-awsglue/tree/main/aws-glue-container#readme)
