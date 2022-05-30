@@ -74,6 +74,11 @@ how this works
 4. maxSplitBytes = Minimum(maxPartitionBytes, bytesPerCore)
 5. bytesPerCore = (Sum of sizes of all data files + No. of files * openCostInBytes) / default.parallelism
 
+![img.png](img.png)
+refs: 
+- https://spark.apache.org/docs/latest/configuration.html
+- https://stackoverflow.com/questions/69715907/understanding-the-number-of-partitions-created-by-spark
+
 **Calculating file chunk size**
 
 Each of the data files (to be read) is split if it is splittable. 
