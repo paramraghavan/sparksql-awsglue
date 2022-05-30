@@ -199,7 +199,7 @@ In SQL queries predicates are usually encountered in the WHERE clause and are us
     - Use an IN clause to specify multiple restrictions for a particular column.
     
 2. When creating Spark SQL queries that use comparison operators, making sure the predicates are pushed down to the database correctly is 
-   critical to retrieving the correct data with the best performance. For example, given a CQL table with the following schema:
+   critical to retrieving the correct data with the best performance. For example, given a SQL table with the following schema:
   <pre>
     CREATE TABLE test.common (
         year int,
@@ -215,7 +215,7 @@ In SQL queries predicates are usually encountered in the WHERE clause and are us
 SELECT * FROM test.common WHERE birthday < '2001-1-1';
 </pre>
 
-Note that the Filter directive is treating the birthday column, a CQL TIMESTAMP, as a string. The query optimizer looks at this comparison
+Note that the Filter directive is treating the birthday column, a SQL TIMESTAMP, as a string. The query optimizer looks at this comparison
 and needs to make the types match before generating a predicate. In this case the optimizer decides to cast the birthday column as a string to
 match the string '2001-1-1', but cast functions cannot be pushed down. The predicate isn't pushed down, and it doesn't appear in PushedFilters.
 A full table scan will be performed at the database layer, with the results returned to Spark for further processing.
