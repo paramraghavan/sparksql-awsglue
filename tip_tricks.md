@@ -210,3 +210,50 @@ for x in $(yarn application -list -appStates RUNNING | awk 'NR > 2 { print $1 }'
 ## Good reads
 - https://towardsdatascience.com/apache-spark-performance-boosting-e072a3ec1179
 - https://luminousmen.com/post/spark-tips-partition-tuning
+
+
+## Create parquet files without _temporary folder
+- using awswrangler, cobvert spark dataframe to pandas and use awswrangler api
+```
+# update s3 policy file
+# "s3:PutObject",
+# "s3:ListObjectsV2"
+import awswrangler as wr
+import pandas as pd
+
+def write_to_s3_parquet(self, data_df, path, max_rows_per_file) -> None:
+    pandas_df = data_df.toPandas()
+    print(pandas_df)
+
+    wr.s3.to_parquet(
+        df=pandasDF,
+        path=path,
+        dataset=True,
+        compression='snappy',
+        # partition_cols=['dt'],        
+        mode='overwrite_partitions',
+        max_rows_by_file=max_rows_per_file)
+```
+- Tried updating the config, has not worked so far
+```
+hadoopConf.set('fs.s3.impl', 'org.apache.hadoop.fs.s3a.S3AFileSystem')
+hadoopConf.set('fs.s3a.impl', 'org.apache.hadoop.fs.s3a.S3AFileSystem')
+
+
+#hadoopConf.set('spark.hadoop.fs.s3a.committer.staging.tmp.path', '/tmp/staging')
+hadoopConf.set('fs.s3a.committer.staging.tmp.path', 'tmp/staging')
+hadoopConf.set('fs.s3a.buffer.dir', 'tmp/staging')
+
+hadoopConf.set("spark.hadoop.fs.s3a.committer.magic.enabled", "true")
+hadoopConf.set("fs.s3a.committer.magic.enabled", "true")
+#hadoopConf.set("spark.hadoop.fs.s3a.committer.name",  "magic")
+# enabling S3Guard
+hadoopConf.set("fs.s3a.committer.name",  "magic")
+hadoopConf.set("fs.s3a.bucket.landsat-pds.committer.magic.enabled", "true")
+hadoopConf.set("fs.s3a.committer.staging.conflict-mode", "replace")
+hadoopConf.set("mapreduce.fileoutputcommitter.algorithm.version", "2")
+hadoopConf.set("mapreduce.fileoutputcommitter.task.cleanup.enabled",  "false")
+hadoopConf.set("mapreduce.outputcommitter.factory.scheme.s3a", "org.apache.hadoop.fs.s3a.commit.staging.S3ACommitterFactory")
+```
+  - https://hadoop.apache.org/docs/r3.1.1/hadoop-aws/tools/hadoop-aws/committers.html#Switching_to_an_S3A_Committer
+  - https://stackoverflow.com/questions/46665299/spark-avoid-creating-temporary-directory-in-s3
