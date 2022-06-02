@@ -425,6 +425,81 @@ toPandas() is an expensive operation that should be used carefully in order to m
  fairly large, you need to consider PyArrow optimization when converting Spark to Pandas DataFrames.
  [See here for more details](https://towardsdatascience.com/how-to-efficiently-convert-a-pyspark-dataframe-to-pandas-8bda2c3875c3)
 
+# EMR, YARN, SPARK Jobs
+![img_7.png](img_7.png)
+
+The central component of Amazon EMR is the cluster. A cluster is a collection of Amazon Elastic Compute Cloud (Amazon
+EC2) instances. Each instance in the cluster is called a node. Each node has a role within the cluster, referred to as
+the node type. Amazon EMR also installs different software components on each node type, giving each node a role in a
+distributed application like Apache Hadoop.
+
+The node types in Amazon EMR are as follows:
+- Master node: The master node manages the cluster and typically runs master components of distributed applications. For
+  example, **the master node runs the YARN ResourceManager** service to manage resources for applications. It **also runs the
+  HDFS NameNode service**, tracks the status of jobs submitted to the cluster, and monitors the health of the instance
+  groups.
+
+  To monitor the progress of a cluster and interact directly with applications, you can connect to the master node over
+  SSH as the Hadoop user. For more information, see Connect to the master node using SSH. Connecting to the master node
+  allows you to access directories and files, such as Hadoop log files, directly. For more information, see View log
+  files. You can also view user interfaces that applications publish as websites running on the master node.
+
+- **Core node:** A node with software components that run tasks and store data in the Hadoop Distributed File System (
+  HDFS) on your cluster. Multi-node clusters have at least one core node.Core nodes are managed by the master node. Core
+  nodes run the **Data Node daemon to coordinate data storage
+  as part of the Hadoop Distributed File System (HD**FS). They also run the Task Tracker daemon and perform other
+  parallel computation tasks on data that installed applications require. For example, a **core node runs YARN NodeManager
+  daemons, Hadoop MapReduce tasks,and Spark executors.**
+
+  There is only one core instance group or instance fleet per cluster, but there can be multiple nodes running on multiple
+  Amazon EC2 instances in the instance group or instance fleet. With instance groups, you can add and remove Amazon EC2
+  instances while the cluster is running. You can also set up automatic scaling to add instances based on the value of a
+  metric. 
+
+  With instance fleets, you can effectively add and remove instances by modifying the instance fleet's target capacities
+  for On-Demand and Spot accordingly.
+
+- **Task node**:  A node with software components that only runs tasks and does not store data in HDFS. Task nodes are
+  optional.You can use task nodes to add power to perform parallel computation tasks on data, such as Hadoop MapReduce
+  tasks and Spark executors. Task nodes don't run the Data Node daemon, nor do they store data in HDFS. As with core
+  nodes, you can add task nodes to a cluster by adding Amazon EC2 instances to an existing uniform instance group or by
+  modifying target capacities for a task instance fleet.
+
+  With the uniform instance group configuration, you can have up to a total of 48 task instance groups. The ability to add
+  instance groups in this way allows you to mix Amazon EC2 instance types and pricing options, such as On-Demand Instances
+  and Spot Instances. This gives you flexibility to respond to workload requirements in a cost-effective way.
+  
+  With the instance fleet configuration, the ability to mix instance types and purchasing options is built in, so there is
+  only one task instance fleet.
+  
+  _Because Spot Instances are often used to run task nodes, Amazon EMR has default functionality for scheduling YARN jobs
+  so that running jobs do not fail when task nodes running on Spot Instances are terminated. **Amazon EMR does this by
+  allowing application master processes to run only on core nodes. The application master process controls running jobs
+  and needs to stay alive for the life of the job**._
+  
+  _Amazon EMR release version 5.19.0 and later uses the built-in YARN node labels feature to achieve this. (Earlier
+  versions used a code patch). Properties in the yarn-site and capacity-scheduler configuration classifications are
+  configured by default so that the YARN capacity-scheduler and fair-scheduler take advantage of node labels. Amazon EMR
+  automatically labels core nodes with the CORE label, and sets properties so that **application masters are scheduled only
+  on nodes with the CORE label.** Manually modifying related properties in the yarn-site and capacity-scheduler
+  configuration classifications, or directly in associated XML files, could break this feature or modify this
+  functionality._
+  
+  Beginning with Amazon EMR 6.x release series, the YARN node labels feature is disabled by default. The application
+  master processes can run on both core and task nodes by default. You can enable the YARN node labels feature by
+  configuring following properties:
+  
+  yarn.node-labels.enabled: true
+  yarn.node-labels.am.default-node-label-expression: 'CORE'
+- **Application Master**: The Application Master is responsible for the execution of a single application. It asks for
+  containers from the Resource Scheduler (Resource Manager) and executes specific programs on the obtained containers.
+  **Application Master is just a broker that negotiates resources with the Resource Manager** and then after getting some
+  container it make sure to launch tasks(which are picked from scheduler queue) on
+  containers.[ref](https://stackoverflow.com/questions/63914667/what-is-the-difference-between-driver-and-application-manager-in-spark)  
+  ref: https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-master-core-task-nodes.html
+
+
+
 # [EMR Spark submit - How does it work?](https://aws.amazon.com/blogs/big-data/submitting-user-applications-with-spark-submit/)
 AWS EMR clusters by default are configured with a single capacity scheduler queue and can run a single job at any given
 time. [This](http://mitylytics.com/2017/11/configuring-multiple-queues-aws-emr-yarn/) blog talks about how you can create
