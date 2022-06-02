@@ -145,7 +145,7 @@ earlier apps finish.
 2. Optimize spark submit
 - Use fair scheduler for you cluster, this way all the jobs submitted are getting equal resources
 - Configure the scheduler at the cluster level, let's say we use the default queue, it is best to limit the maxRunningApps.
-  You can update the fair-scheduler.xml under /etc/hadoop/conf.  The fair-scheduler classification cannot be added to
+  You can update the fair-scheduler.xml under ~~/etc/hadoop/conf~~ /home/hadoop/conf/fair-scheduler.xml.  The fair-scheduler classification cannot be added to
   the Configurations The default queue for fair scheduler- root.hadoop queue
   ``` xml
     <allocations>
