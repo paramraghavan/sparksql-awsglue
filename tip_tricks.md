@@ -272,4 +272,5 @@ hadoopConf.set("mapreduce.outputcommitter.factory.scheme.s3a", "org.apache.hadoo
 - Actions triggers a job. Action marks a job. Jobs run in sequence
 - these are - read, write, collect, take
 
-## When a spark job is submitted to yarn Resource Manager, the RM assigns an Application Master to run the application driver aka the main program of the job you just submitted. The Driver based on number of actions creates jobs - job 1 .. job N.  In each job based on number of widening tranformation creates n+1 stages. So if there are no widening tranformation to be applied to job1 then there will be 0+1=1 stage for job1
+## Jobs and Stages
+When a spark job is submitted to yarn Resource Manager, the RM assigns an Application Master to run the application driver aka the main program of the job you just submitted. The Driver based on number of actions creates jobs - job 1 .. job N.  In each job based on number of widening tranformation creates n+1 stages. So if there are no widening tranformation to be applied to job1 then there will be 0+1=1 stage for job1
