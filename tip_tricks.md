@@ -261,3 +261,15 @@ hadoopConf.set("mapreduce.outputcommitter.factory.scheme.s3a", "org.apache.hadoo
 ```
   - https://hadoop.apache.org/docs/r3.1.1/hadoop-aws/tools/hadoop-aws/committers.html#Switching_to_an_S3A_Committer
   - https://stackoverflow.com/questions/46665299/spark-avoid-creating-temporary-directory-in-s3
+
+
+## Transformations
+- Narrow are select, withcolumn, filter/where clause, count, drop. Thes apply on individual partitions
+- Wide are join, groupby, cube, rollup, agg. These are applied on possibly more than one partitions and use key for join
+- widening transforamtion marks a stage, there is a stage for each partition and stages run in parallel
+
+## Action
+- Actions triggers a job. Action marks a job. Jobs run in sequence
+- these are - read, write, collect, take
+
+## When a spark job is submitted to yarn Resource Manager, the RM assigns an Application Master to run the application driver aka the main program of the job you just submitted. The Driver based on number of actions creates jobs - job 1 .. job N.  In each job based on number of widening tranformation creates n+1 stages. So if there are no widening tranformation to be applied to job1 then there will be 0+1=1 stage for job1
