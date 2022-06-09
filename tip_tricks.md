@@ -270,7 +270,17 @@ hadoopConf.set("mapreduce.outputcommitter.factory.scheme.s3a", "org.apache.hadoo
 
 ## Action
 - Actions triggers a job. Action marks a job. Jobs run in sequence
-- these are - read, write, collect, take
+- these are - read, write, collect, take, count
+
+## Count Action or transformation
+- If you call count on Dataframe, it initiates the DAG execution and returns the data to the driver, its an action for Dataframe.
+  - for ex: df.count // it returns a Long value
+- In your case you are calling groupBy on dataframe which returns RelationalGroupedDataset object, and you are calling count on grouped Dataset which returns a Dataframe, so its a transformation since it doesn't gets the data to the driver and initiates the DAG execution.
+  - for ex:
+  df.groupBy("department") // returns RelationalGroupedDataset
+          .count // returns a Dataframe so a transformation
+          .count // returns a Long value since called on DF so an action
+
 
 ## Jobs and Stages
 When a spark job is submitted to yarn Resource Manager, the RM assigns an Application Master to run the application driver aka the main program of the job you just submitted. The Driver based on number of actions creates jobs - job 1 .. job N.  In each job based on number of widening tranformation creates n+1 stages. So if there are no widening tranformation to be applied to job1 then there will be 0+1=1 stage for job1
