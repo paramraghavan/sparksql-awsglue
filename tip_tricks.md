@@ -69,7 +69,11 @@ The node types in Amazon EMR are as follows:
   containers from the Resource Scheduler (Resource Manager) and executes specific programs on the obtained containers.
   **Application Master is just a broker that negotiates resources with the Resource Manager** and then after getting some
   container it make sure to launch tasks(which are picked from scheduler queue) on
-  containers.[ref](https://stackoverflow.com/questions/63914667/what-is-the-difference-between-driver-and-application-manager-in-spark)  
+  containers.
+  **Application Master(AM)** is per application, so lets say there are multiple applications running on a YARN cluster, it is possible that there 
+  can be  multiple application master on same node. But each of these must belong to different applications and none of them will be aware
+  about presence of other.
+  [ref](https://stackoverflow.com/questions/63914667/what-is-the-difference-between-driver-and-application-manager-in-spark)  
   ref: https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-master-core-task-nodes.html
 
 ![img_5.png](img_5.png)
