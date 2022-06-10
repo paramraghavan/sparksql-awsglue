@@ -285,3 +285,13 @@ hadoopConf.set("mapreduce.outputcommitter.factory.scheme.s3a", "org.apache.hadoo
 
 ## Jobs and Stages
 When a spark job is submitted to yarn Resource Manager, the RM assigns an Application Master to run the application driver aka the main program of the job you just submitted. The Driver based on number of actions creates jobs - job 1 .. job N.  In each job based on number of widening tranformation creates n+1 stages. So if there are no widening tranformation to be applied to job1 then there will be 0+1=1 stage for job1
+
+
+## Other Parameters
+
+- executor_memory_overhead
+- executor memory 
+- num of executors - limit the number of executors to 5. More than 5 causes excessive memory management
+- enable adaptive query  execution aka AQE  - runtime re-optimization up-to-date accurate statistics at the end of a write shuffle/exchange buffer  and  could convert a sort -merge into a broadcast join. ref: Adaptive query execution | Databricks on AWS 
+- Figure out the optimum executor memory and cores based on the data  size.
+- yarn.scheduler.maximum-allocation-mb
