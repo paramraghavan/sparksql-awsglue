@@ -290,9 +290,13 @@ When a spark job is submitted to yarn Resource Manager, the RM assigns an Applic
 ## Other Parameters
 
 - spark executor/driver_memory_overhead - for non jvm processes like pyspark/python, udf code inside executor, used for network read buffer/ shuffle exchange
-- spark executor/driver memory - for sparks jvm processes
+- spark executor/driver memory - for sparks jvm processes also called jvm heap memory
 - num of executors - limit the number of executors to 5. More than 5 causes excessive memory management
 - enable adaptive query  execution aka AQE  - runtime re-optimization up-to-date accurate statistics at the end of a write shuffle/exchange buffer  and  could convert a sort -merge into a broadcast join. ref: Adaptive query execution | Databricks on AWS 
 - Figure out the optimum executor memory and cores based on the data  size.
 - yarn.scheduler.maximum-allocation-mb --> indicates the physical memory limit at the worker node level.
 - pyspark executor memory --> the executor.memoryOverhead
+
+## Executor memory ›
+![image](https://user-images.githubusercontent.com/52529498/173185855-879aa88f-413d-45f2-87bf-a3c4952921c5.png)
+
