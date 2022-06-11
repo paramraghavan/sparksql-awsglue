@@ -298,5 +298,4 @@ When a spark job is submitted to yarn Resource Manager, the RM assigns an Applic
 - pyspark executor memory --> the executor.memoryOverhead
 
 ## Executor memory ›
-![image](https://user-images.githubusercontent.com/52529498/173185855-879aa88f-413d-45f2-87bf-a3c4952921c5.png)
 
