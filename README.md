@@ -602,3 +602,6 @@ https://hudi.apache.org/docs/next/table_management/
 - https://sparkbyexamples.com/spark/spark-performance-tuning/
 - https://www.unraveldata.com/common-reasons-spark-applications-slow-fail-part-1/
 - https://www.unraveldata.com/common-failures-slowdowns-part-ii/
+
+# pyspark and windows function
+- https://www.geeksforgeeks.org/pyspark-window-functions/
