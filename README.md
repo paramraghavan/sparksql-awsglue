@@ -581,6 +581,13 @@ https://hudi.apache.org/docs/next/table_management/
     - [spark-sql](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/spark-sql-parquet.ipynb) 
     - [aws-glue](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/aws-glue.ipynb) -  using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) seems to be nicely written and easy to use with pandas dataframe
 
+# Apache Hudi
+- Apache Hudi supports in place updates, inserts and deletes in a Big data system. There are couple of way to use Hudi:
+- Convert all current datasets/parquet to Apache Hudi parquet files.
+- Apache Hudi without having to convert existing Parquet data in our data lake - As part of this operation, Hudi generates metadata only. It writes the metadata in a separate file that corresponds to each data file in the dataset. The original data is left as-is and not copied over. This is available in EMR.
+- Hudi is acronym for Hadoop Upserts anD Incrementals
+- EMR 5.28 includes Hudi 0.5.0 and is is compatible with spark hive and presto. Support hive metastore and aws glue catalog for storing metadata
+
 # Notes
 - [difference between s3n, s3a and s3](https://stackoverflow.com/questions/33356041/technically-what-is-the-difference-between-s3n-s3a-and-s3)
 - [Spark RDD Stages,DAG](https://medium.com/@goyalsaurabh66/spark-basics-rdds-stages-tasks-and-dag-8da0f52f0454)
