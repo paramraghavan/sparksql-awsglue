@@ -582,7 +582,7 @@ https://hudi.apache.org/docs/next/table_management/
     - [aws-glue](https://github.com/padmaparam/sparksql-awsglue/blob/main/aws-glue/aws-glue.ipynb) -  using [aws data wrangler](https://aws-data-wrangler.readthedocs.io/en/stable/what.html) seems to be nicely written and easy to use with pandas dataframe
 
 # Apache Hudi
-- Apache Hudi supports in place updates, inserts and deletes in a Big data system. There are couple of way to use Hudi:
+- [Apache Hudi](https://github.com/paramraghavan/sparksql-awsglue/blob/main/ApacheHudi.pdf) supports in place updates, inserts and deletes in a Big data system. There are couple of way to use Hudi:
 - Convert all current datasets/parquet to Apache Hudi parquet files.
 - Apache Hudi without having to convert existing Parquet data in our data lake - As part of this operation, Hudi generates metadata only. It writes the metadata in a separate file that corresponds to each data file in the dataset. The original data is left as-is and not copied over. This is available in EMR.
 - Hudi is acronym for Hadoop Upserts anD Incrementals
