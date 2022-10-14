@@ -318,6 +318,8 @@ binary format and schema is in JSON format that defines the field names and data
 
 # [Join strategies](join-strategies/README.md)
 
+# [pyspark and aggregation](https://amiradata.com/pyspark-groupby-aggregate-data-in-pyspark/)
+
 ## [Developing AWS Glue ETL jobs locally using a container](https://github.com/paramraghavan/sparksql-awsglue/tree/main/aws-glue-container#readme)
 
 # Redshift Spectrum vs Glue
