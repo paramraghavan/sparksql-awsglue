@@ -13,7 +13,7 @@ msck repair table database_name.table_name;
 ```
 
 **When using Athena, keep in mind**
-- Columnar storage is used, so when Selecting only use the columns you  need, if you have to select start to look a quick look, 
+- Columnar storage is used, so when Selecting only use the columns you  need, if you have to select * to look have a quick look, 
 limit your resultset - select * from database_name.table_name limit 10;
 - You pay for the data scanned not the amount of time the query takes to runs.
 - $5.00 per TB of data scanned
