@@ -9,4 +9,4 @@ For specific commands that demonstrate the flexibility of S3DistCP in real-world
 Like DistCp, S3DistCp uses MapReduce to copy in a distributed manner. It shares the copy, error handling, recovery, and reporting tasks across
 several servers. For more information about the Apache DistCp open source project, see the DistCp guide in the Apache Hadoop documentation.
 
-(more details)[https://docs.aws.amazon.com/emr/latest/ReleaseGuide/UsingEMR_s3distcp.html]
+[more details](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/UsingEMR_s3distcp.html)
