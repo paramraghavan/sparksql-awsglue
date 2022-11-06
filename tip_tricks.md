@@ -202,6 +202,7 @@ yarn application -decommission < Application Name>
 yarn application - instances<Component Instances>
 yarn application -list
 yarn application -kill <application id>
+yarn logs -application_id <enter_application_id>
 
 sudo systemctl stop hadoop-yarn-resourcemanager
 sudo systemctl start hadoop-yarn-resourcemanager
