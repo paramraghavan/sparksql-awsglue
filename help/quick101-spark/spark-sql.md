@@ -18,7 +18,7 @@ based on a input dataset.
 
 ### Logical Plan
 ![image](https://user-images.githubusercontent.com/52529498/200234055-80c1186f-435b-42c5-ab6c-b0b7794242fa.png)
-Logical plan opnly talk about scan does not identify the type of scan, similary does not identify the type of join and so on, b ut physcial plan will identify all these details
+Logical plan only talk about scan does not identify the type of scan, similary does not identify the type of join and so on, b ut physcial plan will identify all these details
 
 ## Physical Plan
 ![image](https://user-images.githubusercontent.com/52529498/200234419-ec8c8e11-8f26-40b9-84fa-618c69ba6171.png)
@@ -32,5 +32,8 @@ Logical plan opnly talk about scan does not identify the type of scan, similary 
 - Constant folding
 ![image](https://user-images.githubusercontent.com/52529498/200388083-d7cbec40-a613-46b0-b865-e11e5ff64874.png)
 see t2.id> 50*1000 --> to t2.id > 50000 and 1+2+t1.value as  3+t1.value.
+- Column pruning
+![image](https://user-images.githubusercontent.com/52529498/200391179-71b6b835-2784-416e-bdae-72fcb80059f0.png)
+When the table t1 and t2 are read all the rows are not read, but only the ones used are read, rest are pruned out
 
 
