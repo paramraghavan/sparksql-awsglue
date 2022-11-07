@@ -455,9 +455,11 @@ class SparkSession(pyspark.sql.pandas.conversion.SparkConversionMixin)
  |      list of weak references to the object (if defined)
 ```
 
-'''python
+```python
 help(spark.udf)
-,,,
+```
+
+```
 Help on UDFRegistration in module pyspark.sql.udf object:
 
 class UDFRegistration(builtins.object)
@@ -636,8 +638,4 @@ class UDFRegistration(builtins.object)
  |  
  |  __weakref__
  |      list of weak references to the object (if defined)
-
-
-'''
-
-'''
+```
