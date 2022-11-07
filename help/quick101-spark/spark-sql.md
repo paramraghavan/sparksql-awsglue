@@ -12,4 +12,6 @@ based on a input dataset.
 - In the above picture query plan is highlighted in green
 - First step table t1 and t2 are read/scanned
 - next t1 and t2 are joined
-- 
+- third step filter conditon, where is applied
+- fourth step projection is applied using select.
+- finally aggregate is applied.
