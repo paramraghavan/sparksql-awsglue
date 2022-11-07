@@ -34,6 +34,6 @@ Logical plan only talk about scan does not identify the type of scan, similary d
 see t2.id> 50*1000 --> to t2.id > 50000 and 1+2+t1.value as  3+t1.value.
 - Column pruning
 ![image](https://user-images.githubusercontent.com/52529498/200391179-71b6b835-2784-416e-bdae-72fcb80059f0.png)
-When the table t1 and t2 are read all the rows are not read, but only the ones used are read, rest are pruned out
+When the table t1 and t2 are read all the columns are not read, but only the columns used are read, rest are pruned - not read from datasource
 
 
