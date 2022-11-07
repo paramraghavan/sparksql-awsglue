@@ -641,3 +641,7 @@ class UDFRegistration(builtins.object)
 ```
 
 ![image](https://user-images.githubusercontent.com/52529498/200436581-ef9247e4-616d-4cef-844a-dc6e7264a299.png)
+![image](https://user-images.githubusercontent.com/52529498/200437201-e8d48c13-73ae-4887-b68e-200dc50da6e4.png)
+![image](https://user-images.githubusercontent.com/52529498/200437733-d16b1da8-b3e6-4989-8ed4-aae9bf24162e.png)
+
+
