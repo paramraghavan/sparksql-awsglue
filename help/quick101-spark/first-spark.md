@@ -13,5 +13,5 @@ spark = SparkSession \
 print("Spark Object id created ...")
 spark.stop()
 ```
-- [spark performance](https://spark.apache.org/docs/latest/sql-performance-tuning.html)
+- [spark performance tuning](https://spark.apache.org/docs/latest/sql-performance-tuning.html)
 - [spark with yarn](https://spark.apache.org/docs/latest/running-on-yarn.html#confiquration)
