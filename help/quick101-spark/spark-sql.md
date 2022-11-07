@@ -15,3 +15,12 @@ based on a input dataset.
 - third step filter conditon, where is applied
 - fourth step projection is applied using select.
 - finally aggregate is applied.
+
+### Logical Plan
+![image](https://user-images.githubusercontent.com/52529498/200234055-80c1186f-435b-42c5-ab6c-b0b7794242fa.png)
+Logical plan opnly talk about scan does not identify the type of scan, similary does not identify the type of join and so on, b ut physcial plan will identify all these details
+
+## Physical Plan
+![image](https://user-images.githubusercontent.com/52529498/200234419-ec8c8e11-8f26-40b9-84fa-618c69ba6171.png)
+
+
