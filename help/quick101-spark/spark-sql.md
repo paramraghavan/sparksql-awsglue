@@ -3,3 +3,10 @@
 
 - The spark compiler will first identify expressions in the user program - spark sql or data frame api. In the above picture expressions
  are highlighted in green.
+
+## Query plan
+Describe data operation like aggregates, joins, filters etc. and these operations essentially generate a new dataset
+based on a input dataset.
+
+![image](https://user-images.githubusercontent.com/52529498/200227272-24590c4a-af2b-4e46-8408-160e5b3d9113.png)
+- In the above picture query plan is highlighted in green
