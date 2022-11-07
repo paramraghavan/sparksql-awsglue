@@ -10,3 +10,6 @@ based on a input dataset.
 
 ![image](https://user-images.githubusercontent.com/52529498/200227272-24590c4a-af2b-4e46-8408-160e5b3d9113.png)
 - In the above picture query plan is highlighted in green
+- First step table t1 and t2 are read/scanned
+- next t1 and t2 are joined
+- 
