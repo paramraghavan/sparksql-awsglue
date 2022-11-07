@@ -8,3 +8,4 @@ https://spark.apache.org/docs/latest/sql-ref-datatypes.html
 IntegerType ---> int, integer
 StringType ----->string
 BooleanType----->boolean
+NaN is only applicable for Float and Double type
