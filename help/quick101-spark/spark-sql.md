@@ -36,4 +36,50 @@ see t2.id> 50*1000 --> to t2.id > 50000 and 1+2+t1.value as  3+t1.value.
 ![image](https://user-images.githubusercontent.com/52529498/200391179-71b6b835-2784-416e-bdae-72fcb80059f0.png)
 When the table t1 and t2 are read all the columns are not read, but only the columns used are read, rest are pruned - not read from datasource
 
+## Execution Plan
+- explain(extended=False):
+Prints the (logical and physical) plans to the console for debugging purpose.
+Extended is a Boolean parameter.default : False. If False, it prints only the physical plan.
+If True, it prints all - Parsed Logical Plan, Analyzed Logical Plan, Optimized Logical Plan and Physical Plan.
+Explain function is extended for whole-stage code generation. When an operator has a star around it (*), whole-stage code generation is enabled. In the following example, Range, Filter, and the two Aggregates are both running with whole-stage code generation. Exchange does not
+have whole-stage code generation because it is sending data across the network. spark.sql.codegen.wholeStage is enabled by default for spark 2.0. and above, it will do all the internal optimization possible from the spark catalist side .
+Example:
+```
+spark.conf.set("spark.sql.codegen.wholeStage",True)
+spark.range(1000).filter("id > 100").selectExpr("sum(id)").explain()
 
+== Physical Plan ==
+*(2) HashAggregate(keys=[], functions=[sum(id#23L)])
++- Exchange SinglePartition, ENSURE_REQUIREMENTS, [id=#62]
+   +- *(1) HashAggregate(keys=[], functions=[partial_sum(id#23L)])
+      +- *(1) Filter (id#23L > 100)
+         +- *(1) Range (0, 1000, step=1, splits=8)
+
+```
+
+```
+spark.range(1000).filter("id > 100").selectExpr("sum(id)").explain(extended=True)
+
+== Parsed Logical Plan ==
+'Project [unresolvedalias('sum('id), Some(org.apache.spark.sql.Column$$Lambda$2515/626237529@744977fb))]
++- Filter (id#32L > cast(100 as bigint))
+   +- Range (0, 1000, step=1, splits=Some(8))
+
+== Analyzed Logical Plan ==
+sum(id): bigint
+Aggregate [sum(id#32L) AS sum(id)#37L]
++- Filter (id#32L > cast(100 as bigint))
+   +- Range (0, 1000, step=1, splits=Some(8))
+
+== Optimized Logical Plan ==
+Aggregate [sum(id#32L) AS sum(id)#37L]
++- Filter (id#32L > 100)
+   +- Range (0, 1000, step=1, splits=Some(8))
+
+== Physical Plan ==
+*(2) HashAggregate(keys=[], functions=[sum(id#32L)], output=[sum(id)#37L])
++- Exchange SinglePartition, ENSURE_REQUIREMENTS, [id=#83]
+   +- *(1) HashAggregate(keys=[], functions=[partial_sum(id#32L)], output=[sum#40L])
+      +- *(1) Filter (id#32L > 100)
+         +- *(1) Range (0, 1000, step=1, splits=8)
+```
