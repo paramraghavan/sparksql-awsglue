@@ -66,6 +66,7 @@ Once we broadcasted the value to the nodes, we shouldn't make changes to its val
 exact same copy of data. The modified value might be sent to another node later that would give unexpected results.
 
 Example:
-![image](https://user-images.githubusercontent.com/52529498/200212884-feb883dd-5675-4920-84df-23509b6f0274.png)
+![image](https://user-images.githubusercontent.com/52529498/200213323-60dbd85e-4eba-414a-a306-6d112c1db369.png)
+
 
 
