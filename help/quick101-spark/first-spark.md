@@ -41,3 +41,12 @@ spark-submit
 --py-files file1.py, file2.py, file3.zip
 /dev/example1/src/main/python/bin/basic.py arg1 arg2 arg3
 ```
+
+## Shared variables
+Shared variables are the variables that are required to be used by functions and methods in parallel.
+Shared variables can be used in parallel operations.
+- Spark provides two types of shared variables
+  - Broadcast
+  - Accumulator
+
+
