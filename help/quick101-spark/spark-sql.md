@@ -83,3 +83,7 @@ Aggregate [sum(id#32L) AS sum(id)#37L]
       +- *(1) Filter (id#32L > 100)
          +- *(1) Range (0, 1000, step=1, splits=8)
 ```
+
+Whole scale code geenration is not used :
+- when using python UDF - user defined functions
+- https://stackoverflow.com/questions/40554815/whole-stage-code-generation-in-spark-2-0
