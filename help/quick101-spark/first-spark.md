@@ -49,4 +49,23 @@ Shared variables can be used in parallel operations.
   - Broadcast
   - Accumulator
 
+### Broadcast Varaibles
+- Broadcast variables allow the programmer to keep a read-only variable cached on each machine rather than
+shipping a copy of it with tasks.
+- Immutable and cached on each worker nodes only once.
+- Efficient manner to give a copy of a dataset to each node, provided the dataset is not too big to fit in memory.
+### When to use Broadcast Variable:
+- For processing, the executors need information regarding variables or methods. This information is serialized by Spark and
+sent to each executor and is known as CLOSURE.
+- If we have a huge array that is accessed from spark CLOSURES, for example - if we have 5 nodes cluster with 100 partitions
+(20 partitions per node), this Array will be distributed at least 100 times (20 times to each node). If you we broadcast
+it will be distributed once per node using efficient p2p protocol.
+
+### What not to do:
+Once we broadcasted the value to the nodes, we shouldn't make changes to its value to make sure each node have
+exact same copy of data. The modified value might be sent to another node later that would give unexpected results.
+
+Example:
+![image](https://user-images.githubusercontent.com/52529498/200212884-feb883dd-5675-4920-84df-23509b6f0274.png)
+
 
