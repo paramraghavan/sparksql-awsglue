@@ -646,3 +646,4 @@ class UDFRegistration(builtins.object)
 
 - help(df.filter)
 - help(df.join)
+- help(df.selectExpr)
