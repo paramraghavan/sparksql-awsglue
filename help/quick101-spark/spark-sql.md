@@ -88,3 +88,370 @@ Whole scale code geenration is not used :
 - when using python UDF - user defined functions
 - Exchange does not have whole-stage code generation because it is sending data across the network
 - https://stackoverflow.com/questions/40554815/whole-stage-code-generation-in-spark-2-0
+
+## Commonly used functions in Sparksession
+![image](https://user-images.githubusercontent.com/52529498/200409366-62c8222f-0e18-42fa-adfa-51079e53a591.png)
+
+### help spark
+```python
+help(spark)
+```
+
+```
+Help on SparkSession in module pyspark.sql.session object:
+
+class SparkSession(pyspark.sql.pandas.conversion.SparkConversionMixin)
+ |  SparkSession(sparkContext, jsparkSession=None)
+ |  
+ |  The entry point to programming Spark with the Dataset and DataFrame API.
+ |  
+ |  A SparkSession can be used create :class:`DataFrame`, register :class:`DataFrame` as
+ |  tables, execute SQL over tables, cache tables, and read parquet files.
+ |  To create a :class:`SparkSession`, use the following builder pattern:
+ |  
+ |  .. autoattribute:: builder
+ |     :annotation:
+ |  
+ |  Examples
+ |  --------
+ |  >>> spark = SparkSession.builder \
+ |  ...     .master("local") \
+ |  ...     .appName("Word Count") \
+ |  ...     .config("spark.some.config.option", "some-value") \
+ |  ...     .getOrCreate()
+ |  
+ |  >>> from datetime import datetime
+ |  >>> from pyspark.sql import Row
+ |  >>> spark = SparkSession(sc)
+ |  >>> allTypes = sc.parallelize([Row(i=1, s="string", d=1.0, l=1,
+ |  ...     b=True, list=[1, 2, 3], dict={"s": 0}, row=Row(a=1),
+ |  ...     time=datetime(2014, 8, 1, 14, 1, 5))])
+ |  >>> df = allTypes.toDF()
+ |  >>> df.createOrReplaceTempView("allTypes")
+ |  >>> spark.sql('select i+1, d+1, not b, list[1], dict["s"], time, row.a '
+ |  ...            'from allTypes where b and i > 0').collect()
+ |  [Row((i + 1)=2, (d + 1)=2.0, (NOT b)=False, list[1]=2,         dict[s]=0, time=datetime.datetime(2014, 8, 1, 14, 1, 5), a=1)]
+ |  >>> df.rdd.map(lambda x: (x.i, x.s, x.d, x.l, x.b, x.time, x.row.a, x.list)).collect()
+ |  [(1, 'string', 1.0, 1, True, datetime.datetime(2014, 8, 1, 14, 1, 5), 1, [1, 2, 3])]
+ |  
+ |  Method resolution order:
+ |      SparkSession
+ |      pyspark.sql.pandas.conversion.SparkConversionMixin
+ |      builtins.object
+ |  
+ |  Methods defined here:
+ |  
+ |  __enter__(self)
+ |      Enable 'with SparkSession.builder.(...).getOrCreate() as session: app' syntax.
+ |      
+ |      .. versionadded:: 2.0
+ |  
+ |  __exit__(self, exc_type, exc_val, exc_tb)
+ |      Enable 'with SparkSession.builder.(...).getOrCreate() as session: app' syntax.
+ |      
+ |      Specifically stop the SparkSession on exit of the with block.
+ |      
+ |      .. versionadded:: 2.0
+ |  
+ |  __init__(self, sparkContext, jsparkSession=None)
+ |      Initialize self.  See help(type(self)) for accurate signature.
+ |  
+ |  createDataFrame(self, data, schema=None, samplingRatio=None, verifySchema=True)
+ |      Creates a :class:`DataFrame` from an :class:`RDD`, a list or a :class:`pandas.DataFrame`.
+ |      
+ |      When ``schema`` is a list of column names, the type of each column
+ |      will be inferred from ``data``.
+ |      
+ |      When ``schema`` is ``None``, it will try to infer the schema (column names and types)
+ |      from ``data``, which should be an RDD of either :class:`Row`,
+ |      :class:`namedtuple`, or :class:`dict`.
+ |      
+ |      When ``schema`` is :class:`pyspark.sql.types.DataType` or a datatype string, it must match
+ |      the real data, or an exception will be thrown at runtime. If the given schema is not
+ |      :class:`pyspark.sql.types.StructType`, it will be wrapped into a
+ |      :class:`pyspark.sql.types.StructType` as its only field, and the field name will be "value".
+ |      Each record will also be wrapped into a tuple, which can be converted to row later.
+ |      
+ |      If schema inference is needed, ``samplingRatio`` is used to determined the ratio of
+ |      rows used for schema inference. The first row will be used if ``samplingRatio`` is ``None``.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      .. versionchanged:: 2.1.0
+ |         Added verifySchema.
+ |      
+ |      Parameters
+ |      ----------
+ |      data : :class:`RDD` or iterable
+ |          an RDD of any kind of SQL data representation (:class:`Row`,
+ |          :class:`tuple`, ``int``, ``boolean``, etc.), or :class:`list`, or
+ |          :class:`pandas.DataFrame`.
+ |      schema : :class:`pyspark.sql.types.DataType`, str or list, optional
+ |          a :class:`pyspark.sql.types.DataType` or a datatype string or a list of
+ |          column names, default is None.  The data type string format equals to
+ |          :class:`pyspark.sql.types.DataType.simpleString`, except that top level struct type can
+ |          omit the ``struct<>`` and atomic types use ``typeName()`` as their format, e.g. use
+ |          ``byte`` instead of ``tinyint`` for :class:`pyspark.sql.types.ByteType`.
+ |          We can also use ``int`` as a short name for :class:`pyspark.sql.types.IntegerType`.
+ |      samplingRatio : float, optional
+ |          the sample ratio of rows used for inferring
+ |      verifySchema : bool, optional
+ |          verify data types of every row against schema. Enabled by default.
+ |      
+ |      Returns
+ |      -------
+ |      :class:`DataFrame`
+ |      
+ |      Notes
+ |      -----
+ |      Usage with spark.sql.execution.arrow.pyspark.enabled=True is experimental.
+ |      
+ |      Examples
+ |      --------
+ |      >>> l = [('Alice', 1)]
+ |      >>> spark.createDataFrame(l).collect()
+ |      [Row(_1='Alice', _2=1)]
+ |      >>> spark.createDataFrame(l, ['name', 'age']).collect()
+ |      [Row(name='Alice', age=1)]
+ |      
+ |      >>> d = [{'name': 'Alice', 'age': 1}]
+ |      >>> spark.createDataFrame(d).collect()
+ |      [Row(age=1, name='Alice')]
+ |      
+ |      >>> rdd = sc.parallelize(l)
+ |      >>> spark.createDataFrame(rdd).collect()
+ |      [Row(_1='Alice', _2=1)]
+ |      >>> df = spark.createDataFrame(rdd, ['name', 'age'])
+ |      >>> df.collect()
+ |      [Row(name='Alice', age=1)]
+ |      
+ |      >>> from pyspark.sql import Row
+ |      >>> Person = Row('name', 'age')
+ |      >>> person = rdd.map(lambda r: Person(*r))
+ |      >>> df2 = spark.createDataFrame(person)
+ |      >>> df2.collect()
+ |      [Row(name='Alice', age=1)]
+ |      
+ |      >>> from pyspark.sql.types import *
+ |      >>> schema = StructType([
+ |      ...    StructField("name", StringType(), True),
+ |      ...    StructField("age", IntegerType(), True)])
+ |      >>> df3 = spark.createDataFrame(rdd, schema)
+ |      >>> df3.collect()
+ |      [Row(name='Alice', age=1)]
+ |      
+ |      >>> spark.createDataFrame(df.toPandas()).collect()  # doctest: +SKIP
+ |      [Row(name='Alice', age=1)]
+ |      >>> spark.createDataFrame(pandas.DataFrame([[1, 2]])).collect()  # doctest: +SKIP
+ |      [Row(0=1, 1=2)]
+ |      
+ |      >>> spark.createDataFrame(rdd, "a: string, b: int").collect()
+ |      [Row(a='Alice', b=1)]
+ |      >>> rdd = rdd.map(lambda row: row[1])
+ |      >>> spark.createDataFrame(rdd, "int").collect()
+ |      [Row(value=1)]
+ |      >>> spark.createDataFrame(rdd, "boolean").collect() # doctest: +IGNORE_EXCEPTION_DETAIL
+ |      Traceback (most recent call last):
+ |          ...
+ |      Py4JJavaError: ...
+ |  
+ |  newSession(self)
+ |      Returns a new :class:`SparkSession` as new session, that has separate SQLConf,
+ |      registered temporary views and UDFs, but shared :class:`SparkContext` and
+ |      table cache.
+ |      
+ |      .. versionadded:: 2.0
+ |  
+ |  range(self, start, end=None, step=1, numPartitions=None)
+ |      Create a :class:`DataFrame` with single :class:`pyspark.sql.types.LongType` column named
+ |      ``id``, containing elements in a range from ``start`` to ``end`` (exclusive) with
+ |      step value ``step``.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      Parameters
+ |      ----------
+ |      start : int
+ |          the start value
+ |      end : int, optional
+ |          the end value (exclusive)
+ |      step : int, optional
+ |          the incremental step (default: 1)
+ |      numPartitions : int, optional
+ |          the number of partitions of the DataFrame
+ |      
+ |      Returns
+ |      -------
+ |      :class:`DataFrame`
+ |      
+ |      Examples
+ |      --------
+ |      >>> spark.range(1, 7, 2).collect()
+ |      [Row(id=1), Row(id=3), Row(id=5)]
+ |      
+ |      If only one argument is specified, it will be used as the end value.
+ |      
+ |      >>> spark.range(3).collect()
+ |      [Row(id=0), Row(id=1), Row(id=2)]
+ |  
+ |  sql(self, sqlQuery)
+ |      Returns a :class:`DataFrame` representing the result of the given query.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      Returns
+ |      -------
+ |      :class:`DataFrame`
+ |      
+ |      Examples
+ |      --------
+ |      >>> df.createOrReplaceTempView("table1")
+ |      >>> df2 = spark.sql("SELECT field1 AS f1, field2 as f2 from table1")
+ |      >>> df2.collect()
+ |      [Row(f1=1, f2='row1'), Row(f1=2, f2='row2'), Row(f1=3, f2='row3')]
+ |  
+ |  stop(self)
+ |      Stop the underlying :class:`SparkContext`.
+ |      
+ |      .. versionadded:: 2.0
+ |  
+ |  table(self, tableName)
+ |      Returns the specified table as a :class:`DataFrame`.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      Returns
+ |      -------
+ |      :class:`DataFrame`
+ |      
+ |      Examples
+ |      --------
+ |      >>> df.createOrReplaceTempView("table1")
+ |      >>> df2 = spark.table("table1")
+ |      >>> sorted(df.collect()) == sorted(df2.collect())
+ |      True
+ |  
+ |  ----------------------------------------------------------------------
+ |  Class methods defined here:
+ |  
+ |  getActiveSession() from builtins.type
+ |      Returns the active :class:`SparkSession` for the current thread, returned by the builder
+ |      
+ |      .. versionadded:: 3.0.0
+ |      
+ |      Returns
+ |      -------
+ |      :class:`SparkSession`
+ |          Spark session if an active session exists for the current thread
+ |      
+ |      Examples
+ |      --------
+ |      >>> s = SparkSession.getActiveSession()
+ |      >>> l = [('Alice', 1)]
+ |      >>> rdd = s.sparkContext.parallelize(l)
+ |      >>> df = s.createDataFrame(rdd, ['name', 'age'])
+ |      >>> df.select("age").collect()
+ |      [Row(age=1)]
+ |  
+ |  ----------------------------------------------------------------------
+ |  Readonly properties defined here:
+ |  
+ |  catalog
+ |      Interface through which the user may create, drop, alter or query underlying
+ |      databases, tables, functions, etc.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      Returns
+ |      -------
+ |      :class:`Catalog`
+ |  
+ |  conf
+ |      Runtime configuration interface for Spark.
+ |      
+ |      This is the interface through which the user can get and set all Spark and Hadoop
+ |      configurations that are relevant to Spark SQL. When getting the value of a config,
+ |      this defaults to the value set in the underlying :class:`SparkContext`, if any.
+ |      
+ |      Returns
+ |      -------
+ |      :class:`pyspark.sql.conf.RuntimeConfig`
+ |      
+ |      .. versionadded:: 2.0
+ |  
+ |  read
+ |      Returns a :class:`DataFrameReader` that can be used to read data
+ |      in as a :class:`DataFrame`.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      Returns
+ |      -------
+ |      :class:`DataFrameReader`
+ |  
+ |  readStream
+ |      Returns a :class:`DataStreamReader` that can be used to read data streams
+ |      as a streaming :class:`DataFrame`.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      Notes
+ |      -----
+ |      This API is evolving.
+ |      
+ |      Returns
+ |      -------
+ |      :class:`DataStreamReader`
+ |  
+ |  sparkContext
+ |      Returns the underlying :class:`SparkContext`.
+ |      
+ |      .. versionadded:: 2.0
+ |  
+ |  streams
+ |      Returns a :class:`StreamingQueryManager` that allows managing all the
+ |      :class:`StreamingQuery` instances active on `this` context.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      Notes
+ |      -----
+ |      This API is evolving.
+ |      
+ |      Returns
+ |      -------
+ |      :class:`StreamingQueryManager`
+ |  
+ |  udf
+ |      Returns a :class:`UDFRegistration` for UDF registration.
+ |      
+ |      .. versionadded:: 2.0.0
+ |      
+ |      Returns
+ |      -------
+ |      :class:`UDFRegistration`
+ |  
+ |  version
+ |      The version of Spark on which this application is running.
+ |      
+ |      .. versionadded:: 2.0
+ |  
+ |  ----------------------------------------------------------------------
+ |  Data and other attributes defined here:
+ |  
+ |  Builder = <class 'pyspark.sql.session.SparkSession.Builder'>
+ |      Builder for :class:`SparkSession`.
+ |  
+ |  
+ |  builder = <pyspark.sql.session.SparkSession.Builder object>
+ |  
+ |  ----------------------------------------------------------------------
+ |  Data descriptors inherited from pyspark.sql.pandas.conversion.SparkConversionMixin:
+ |  
+ |  __dict__
+ |      dictionary for instance variables (if defined)
+ |  
+ |  __weakref__
+ |      list of weak references to the object (if defined)
+```
+
