@@ -24,3 +24,5 @@ Logical plan opnly talk about scan does not identify the type of scan, similary 
 ![image](https://user-images.githubusercontent.com/52529498/200234419-ec8c8e11-8f26-40b9-84fa-618c69ba6171.png)
 
 
+## Transform
+![image](https://user-images.githubusercontent.com/52529498/200381131-7b3d9ecb-9313-499a-aa7a-46ec6add108d.png)
