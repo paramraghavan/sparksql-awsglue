@@ -69,4 +69,47 @@ Example:
 ![image](https://user-images.githubusercontent.com/52529498/200213323-60dbd85e-4eba-414a-a306-6d112c1db369.png)
 
 
+### Associative Variables
+Accumulator is a shared variable to perform sum and counter operations.
+These variables are shared by all executors to update and add information through associative or commutative
+operations.
 
+- Commutative -> f(x, y) = fl(y, x)
+  - Example: sum(5,7 ) = sum(7,5) --> good
+  
+- Associative -> flf(x, y), 2) = flf(x, 2), y) = flf(y, 2), x)
+  - Example : sum(multiply(5,6),7) = sum(multiply(6,7),5) --> not associative;
+    sum(sum(5,6),7) = sum(sum(6,7),5) --> good
+  - Example:
+```python
+counter =0
+
+def f1(x):
+    global counter
+    counter += 1
+    
+f1 (10)
+f1 (10)
+# counter  value is 2
+print(f'counter: {counter}')
+
+rdd = spark.sparkContext.parallelize([1,2,3])
+rdd.foreach (f1)
+# don't expect counter to be 5, it is only 3 as 
+# if we use counter as accumulator  variable, this counter value will be sent to driver and will add up to 5
+print(f'counter: {counter}')
+
+# Using accumulator variable
+counter1 = spark.sparkContext.accumulator (0)
+
+def f2 (x):
+    global counter1
+    counter1.add(1)
+    
+rdd.foreach(f2)
+# the acculiualtor varaible shold be same as the number of row in rdd, which is 3
+# accumulator value is sent to driver and addtion happens in the driver
+print(f'counter1.value: {counter1.value}')
+# counter1.value: 3
+```
+    
