@@ -26,3 +26,11 @@ Logical plan opnly talk about scan does not identify the type of scan, similary 
 
 ## Transform
 ![image](https://user-images.githubusercontent.com/52529498/200381131-7b3d9ecb-9313-499a-aa7a-46ec6add108d.png)
+- in the above picture adding 1+2 and using as value 3 everywhere is called **constant folding**, there are 100 of other techniques that are used.
+- Predicate pushdown, the filter is applied at the table source and not after the tables are joined
+![image](https://user-images.githubusercontent.com/52529498/200387765-8092d348-2280-4bdb-bc6a-85d21bc0c81e.png)
+- Constant folding
+![image](https://user-images.githubusercontent.com/52529498/200388083-d7cbec40-a613-46b0-b865-e11e5ff64874.png)
+see t2.id> 50*1000 --> to t2.id > 50000 and 1+2+t1.value as  3+t1.value
+
+
