@@ -31,6 +31,6 @@ Logical plan opnly talk about scan does not identify the type of scan, similary 
 ![image](https://user-images.githubusercontent.com/52529498/200387765-8092d348-2280-4bdb-bc6a-85d21bc0c81e.png)
 - Constant folding
 ![image](https://user-images.githubusercontent.com/52529498/200388083-d7cbec40-a613-46b0-b865-e11e5ff64874.png)
-see t2.id> 50*1000 --> to t2.id > 50000 and 1+2+t1.value as  3+t1.value
+see t2.id> 50*1000 --> to t2.id > 50000 and 1+2+t1.value as  3+t1.value.
 
 
