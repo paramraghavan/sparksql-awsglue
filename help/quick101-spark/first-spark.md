@@ -26,3 +26,18 @@ spark.stop()
 - py-files: Use -py-files to add .py and .zip files. File specified with -py-files are uploaded to the cluster before it
 run the application.
   - Example: --py-files file1.py, file2.py,file3.zip
+- Example
+```python
+spark-submit
+-master "yarn" \
+-deploy-mode "cluster" # default is "client"
+-conf spark.sql.shuffle.partitions = 300 \
+-conf spark.yarn.appMasterEnv.HDFS_PATH="practice/retaildb/orders"
+-driver-memory 1024M \
+-executor-memory 1024M
+--num-executors2
+-jars -jars/devl/src/main/python/lib/ojdbc7.jar, fil2.jar, file3.jar \
+-packages org.apache.spark:spark-avro2.11:2.4.4|
+--py-files file1.py, file2.py, file3.zip
+/dev/example1/src/main/python/bin/basic.py arg1 arg2 arg3
+```
