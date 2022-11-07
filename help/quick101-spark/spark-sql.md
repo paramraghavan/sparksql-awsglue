@@ -86,4 +86,5 @@ Aggregate [sum(id#32L) AS sum(id)#37L]
 
 Whole scale code geenration is not used :
 - when using python UDF - user defined functions
+- Exchange does not have whole-stage code generation because it is sending data across the network
 - https://stackoverflow.com/questions/40554815/whole-stage-code-generation-in-spark-2-0
