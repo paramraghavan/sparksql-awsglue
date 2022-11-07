@@ -26,7 +26,7 @@ Logical plan only talk about scan does not identify the type of scan, similary d
 
 ## Transform
 ![image](https://user-images.githubusercontent.com/52529498/200381131-7b3d9ecb-9313-499a-aa7a-46ec6add108d.png)
-- in the above picture adding 1+2 and using as value 3 everywhere is called **constant folding**, there are 100 of other techniques that are used.
+- in the above picture adding 1+2 and using as value 3 everywhere is called **constant folding**, there are 100 of other techniques - these in turn improve performance.
 - Predicate pushdown, the filter is applied at the table source and not after the tables are joined
 ![image](https://user-images.githubusercontent.com/52529498/200387765-8092d348-2280-4bdb-bc6a-85d21bc0c81e.png)
 - Constant folding
