@@ -126,4 +126,9 @@ rdd1.foreach(f3)
 print(f'counter3.value: {counter3.value}')
 # counter3.value 15
 ```
-    
+
+- Spark natively supports accumulators of numeric types (int, float) and programmers can add support for **new custom types using
+AccumulatorParam class of PySpark**.
+- Accumulators do not change the lazy evaluation model of Spark. If they are being updated within an operation on an DD, their value
+is only updated once that DD is computed as part of an action.
+
