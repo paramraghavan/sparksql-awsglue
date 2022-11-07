@@ -639,3 +639,5 @@ class UDFRegistration(builtins.object)
  |  __weakref__
  |      list of weak references to the object (if defined)
 ```
+
+![image](https://user-images.githubusercontent.com/52529498/200436581-ef9247e4-616d-4cef-844a-dc6e7264a299.png)
