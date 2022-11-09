@@ -17,11 +17,11 @@ spark.stop()
 - [spark with yarn](https://spark.apache.org/docs/latest/running-on-yarn.html#confiquration)
 
 
-## spark subnit
+## spark submit
 
 - jars: Dependency .jar files.
   - Example: --jars/devl/src/main/python/lib/ojdbc7.jar,fil2.jar,file3.jar
-- packages: Pass the dependency packages.
+- packages: Pass the dependency packages like maven
   - Example: --packages org.apache.spark:spark-avro2.11:2.4.4
 - py-files: Use -py-files to add .py and .zip files. File specified with -py-files are uploaded to the cluster before it
 run the application.
