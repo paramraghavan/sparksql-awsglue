@@ -129,8 +129,8 @@ print(f'counter3.value: {counter3.value}')
 
 - Spark natively supports accumulators of numeric types (int, float) and programmers can add support for **new custom types using
 AccumulatorParam class of PySpark**.
-- Accumulators do not change the lazy evaluation model of Spark. If they are being updated within an operation on an DD, their value
-is only updated once that DD is computed as part of an action.
+- Accumulators do not change the lazy evaluation model of Spark. If they are being updated within an operation on an RDD, their value
+is only updated once that RDD is computed as part of an action.
 - Computations inside transformations are evaluated lazily, so unless an action happens on an RDD the transformations are not
 executed. As a result of this, accumulators used inside functions like map() or filter() wont get executed unless some action applied
 on the RDD. Spark guarantees to update accumulators inside actions only once. **Always use accumulators inside actions ONLY (ex - foreach)**.
