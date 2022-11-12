@@ -12,10 +12,13 @@ would come across optimization and performance issues.
   - For DataFrame, create a udf by wrapping under @udf or udf() function.
 
 ```python
-df = spark.createDataFrame([['robert'], ['raina']], ["Name"])
-# By default return type is StringType()
+
 from pyspark.sql.types import StringType
 from pyspark.sql.functions import udf, col
+
+df = spark.createDataFrame([['robert'], ['raina']], ["Name"])
+
+# default return type is StringType()
 @udf(returnType=StringType())
 def initCap(input):
     finalStr=''
