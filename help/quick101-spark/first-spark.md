@@ -113,19 +113,6 @@ rdd.foreach(f2)
 print(f'counter1.value: {counter1.value}')
 # counter1.value: 3
 
-
-rdd1 = spark.sparkContext.parallelize([1,2,3,4,5])
-# Using accumulator variableß
-counter3 = spark.sparkContext.accumulator (0)
-
-# Note, this example is not the  way to use the accumulator
-def f3 (x):
-    global counter3
-    counter3.add(x)
-    
-rdd1.foreach(f3)    
-print(f'counter3.value: {counter3.value}')
-# counter3.value 15
 ```
 
 - Spark natively supports accumulators of numeric types (int, float) and programmers can add support for **new custom types using
