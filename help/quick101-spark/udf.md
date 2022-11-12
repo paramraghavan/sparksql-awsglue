@@ -3,6 +3,7 @@
 - UDFs are the User Defined Functions. Spark UDFs are similar to RDBMS User DefinedFunctions.
 - If there is a need of a function and pyspark build-in features don't have this function, then
 you can create a udf and use it is DataFrames and Spark SQLs.
+- udf cannot use the spark optimizations, so if you have buildin pysaprk function which will do job use it.
 - UDFs are error-prune and so should be designed carefully. First check if similar function is
 available in pyspark functions library(pyspark.sq.functions). If not designed properly, we
 would come across optimization and performance issues.
