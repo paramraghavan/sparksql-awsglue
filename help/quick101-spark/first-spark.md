@@ -118,6 +118,7 @@ rdd1 = spark.sparkContext.parallelize([1,2,3,4,5])
 # Using accumulator variableß
 counter3 = spark.sparkContext.accumulator (0)
 
+# Note, this example is not the  way to use the accumulator
 def f3 (x):
     global counter3
     counter3.add(x)
