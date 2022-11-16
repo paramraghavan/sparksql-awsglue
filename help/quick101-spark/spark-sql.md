@@ -647,3 +647,7 @@ class UDFRegistration(builtins.object)
 - help(df.filter)
 - help(df.join)
 - help(df.selectExpr)
+
+## Various joins and differences
+![image](https://user-images.githubusercontent.com/52529498/202062805-6363b8f0-f030-4be0-8b54-06070fe9389e.png)
+
