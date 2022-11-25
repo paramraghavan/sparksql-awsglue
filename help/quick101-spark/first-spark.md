@@ -70,7 +70,7 @@ Example:
 ![image](https://user-images.githubusercontent.com/52529498/200213323-60dbd85e-4eba-414a-a306-6d112c1db369.png)
 
 
-### Associative Variables
+### Accumulator Variables
 Accumulator is a shared variable to perform sum and counter operations.
 These variables are shared by all executors to update and add information through associative or commutative
 operations.
