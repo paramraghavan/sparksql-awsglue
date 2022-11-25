@@ -23,6 +23,7 @@ spark.stop()
   - Example: --jars/devl/src/main/python/lib/ojdbc7.jar,fil2.jar,file3.jar
 - packages: Pass the dependency packages like maven
   - Example: --packages org.apache.spark:spark-avro2.11:2.4.4
+  - Above refers to the java maven repository, [see here for more](https://mvnrepository.com/artifact/org.apache.spark/spark-avro_2.11/2.4.4)
 - py-files: Use -py-files to add .py and .zip files. File specified with -py-files are uploaded to the cluster before it
 run the application.
   - Example: --py-files file1.py, file2.py,file3.zip
