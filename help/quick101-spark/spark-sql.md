@@ -654,4 +654,6 @@ class UDFRegistration(builtins.object)
 ## How spark prioritize joins
 ![image](https://user-images.githubusercontent.com/52529498/202068059-2bb1eec3-5153-434c-94b7-f58de6ebd130.png)
 
+### [Demystifying joins](https://towardsdatascience.com/demystifying-joins-in-apache-spark-38589701a88e)
+
 
