@@ -41,8 +41,14 @@ but can be used with Hadoop since it can create distributed datasets from files 
 
 **Spark Characteristics**
 - Spark does lazy load all the way, until it needs to perform an action
+- Transformations - are operations that generate a new RDD- resilient distributed dataset. Common transformations include operations that filter, sort and group by key, cache etc are all lazy
+  - Narrow are select, withcolumn, filter/where clause, count, drop. Thes apply on individual partitions
+  - Wide are join, groupby, cube, rollup, agg. These are applied on possibly more than one partitions and use key for join
+  - widening transformation marks a stage, there is a task for each partition and all these tasks run in parallel
 - Action - Common actions include operations that collect the results of tasks - count, sum etc... and ship them to the driver, save an RDD, or count the number of elements in a RDD.
-- Transformation - are operations that generate a new RDD- resilient distributed dataset. Common transformations include operations that filter, sort and group by key, cache etc are all lazy
+  - Actions triggers a job. Action marks a job. Jobs run in sequence
+  - these are - read, write, collect, take, count
+  - any step which sends the results back to the driver is an action
 - The Dataframes returned/read by spark are all immutable.
 - The Spark DataFrame was designed to behave a lot like a SQL table (a table with variables in the columns and observations in the rows). Not only are they easier to understand,
   DataFrames are also more optimized for complicated operations than RDDs.
