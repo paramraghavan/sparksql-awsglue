@@ -168,7 +168,7 @@ from pyspark.sql.functions import lit, concat
 spfData = dataDF.select(concat(dataDF.first_name, lit('s')).alias('name'))
 spfData.count()
 </pre>
-Ran both multiple times, the udf usually took about 1.1 - 1.4 s, and the Spark concat function always took under 0.15 s.
+In some cases the **selectExpr** can be used instead of select as selectExpr accepts SQL expressions/functions (in string format) which may not be supported by the standard dataframe select. Ran both multiple times, the udf usually took about 1.1 - 1.4 s, and the Spark concat function always took under 0.15 s.
 
 When executing Spark-SQL native functions, the data will stays in tungsten backend. However, in Spark UDF scenario, the data will be moved out from tungsten into JVM (Scala scenario) or JVM and Python Process (Python scenario) to do the actual process, and then move back into tungsten. As a result of that:
 - Inevitably, there would be a overhead / penalty on :
