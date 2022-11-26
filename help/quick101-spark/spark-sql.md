@@ -89,6 +89,18 @@ Whole scale code geenration is not used :
 - Exchange does not have whole-stage code generation because it is sending data across the network
 - https://stackoverflow.com/questions/40554815/whole-stage-code-generation-in-spark-2-0
 
+## Wholestage code generations ?
+Whole-Stage CodeGen is also known as Whole-Stage Java Code Generation, which is a physical query
+optimization phase in Spark SQL that clubs multiple physical operations together to form a 
+single Java function. 
+
+Whole-Stage Java code generation improves the execution performance by converting a query tree
+into an optimized function that eliminates unnecessary calls and leverages CPU registers 
+for intermediate data.
+
+Whole-Stage CodeGen is enabled by default in Spark 2.x. This can be controlled by the 
+property spark.sql.codegen.wholeStage.
+
 ## Commonly used functions in Sparksession
 ![image](https://user-images.githubusercontent.com/52529498/200409366-62c8222f-0e18-42fa-adfa-51079e53a591.png)
 
