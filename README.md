@@ -620,3 +620,19 @@ https://hudi.apache.org/docs/next/table_management/
 
 # pyspark and windows function
 - https://www.geeksforgeeks.org/pyspark-window-functions/
+
+# EMR, SPARK and Python versions
+- https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-app-versions-6.x.html
+- https://spark.apache.org/security.html
+- https://docs.aws.amazon.com/glue/latest/dg/release-notes.html
+	- AWS Glue 4.0, Spark 3.3.0, Python 3.10; Check avro jar changes as well
+	- spark 3.3.0 —> python 3.7 and above; https://github.com/apache/spark/blob/branch-3.3/python/setup.py
+	- spark 3.1.1 —> supports python 3.6 and above
+- https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html - aws lambda python support
+- [Python 3.9 vs 3.10](https://www.analyticsvidhya.com/blog/2021/08/differences-between-python-3-10-and-python-3-9-which-you-need-to-know)
+
+ 
+
+ 
+
+ 
