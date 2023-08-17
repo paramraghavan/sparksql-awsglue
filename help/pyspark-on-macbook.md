@@ -10,8 +10,7 @@
 - Run the following in jupyter notebook
   
 ```python:
-  import os
-  
+
   from pyspark.sql import SparkSession
   
   import os
