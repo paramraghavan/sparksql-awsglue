@@ -1,6 +1,6 @@
 # Steps
 - brew install apache-spark
-  - Specific version brew install apache-spark@3.3.0
+  - Specific version brew install apache-spark@3.3.1
 - brew info apache-spark
 - brew install wget
 - wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.349/aws-java-sdk-bundle-1.12.349.jar
