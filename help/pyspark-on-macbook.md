@@ -1,11 +1,12 @@
 # Steps
 - brew install apache-spark
-  - Specific version brew install apache-spark@3.3.1
 - brew info apache-spark
 - brew install wget
 - wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.349/aws-java-sdk-bundle-1.12.349.jar
 - wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.1/hadoop-aws-3.3.1.jar
 - In my case spark got installed at /opt/homebrew/Cellar/apache-spark/3.4.1
+- **Note:** as apache spark 3.4.1 is installed, install pyspark-3.4.1 in your virtual environment as well.
+  - pip install pyspark==3.4.1   
 # Next step
 - Copy aws-java-sdk-bundle version 1.12.349.jar and hadoop-aws version 3.3.1.jar to /opt/homebrew/Cellar/apache-spark/3.4.1/libexec/jars
 - Run the following in jupyter notebook
