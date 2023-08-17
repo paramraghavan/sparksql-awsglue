@@ -8,7 +8,8 @@
 # Next step
 - Copy aws-java-sdk-bundle version 1.12.349.jar and hadoop-aws version 3.3.1.jar to /opt/homebrew/Cellar/apache-spark/3.4.1/libexec/jars
 - Run the following in jupyter notebook
-'''python
+  
+```python:
   import os
   
   from pyspark.sql import SparkSession
@@ -31,7 +32,7 @@
   S3_URI = "s3a://some-bucket-with-parquet-files/"
   df = spark.read.parquet(S3_URI)
   df.take(5)
-''' 
+``` 
 
 ### Ref
 - https://www.jitsejan.com/using-pyspark-with-s3-updated
