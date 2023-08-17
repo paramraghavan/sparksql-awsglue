@@ -1,12 +1,13 @@
-brew install apache-spark
-brew info apache-spark
-brew install wget
-wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.349/aws-java-sdk-bundle-1.12.349.jar
-wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.1/hadoop-aws-3.3.1.jar
-
-# Copy aws-java-sdk-bundle version 1.12.349.jar and hadoop-aws version 3.3.1.jar to /opt/homebrew/Cellar/apache-spark/3.4.1/libexec/jars
-
-# in my case it got installed at /opt/homebrew/Cellar/apache-spark/3.4.1
+# Steps
+- brew install apache-spark
+- brew info apache-spark
+- brew install wget
+- wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.349/aws-java-sdk-bundle-1.12.349.jar
+- wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.1/hadoop-aws-3.3.1.jar
+- In my case spark got installed at /opt/homebrew/Cellar/apache-spark/3.4.1
+# Next step
+- Copy aws-java-sdk-bundle version 1.12.349.jar and hadoop-aws version 3.3.1.jar to /opt/homebrew/Cellar/apache-spark/3.4.1/libexec/jars
+- Run the following in jupyter notebook
 '''python
   import os
   
@@ -32,5 +33,5 @@ wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.1/hadoop-aw
   df.take(5)
 ''' 
 
-
-ref: https://www.jitsejan.com/using-pyspark-with-s3-updated
+### Ref
+- https://www.jitsejan.com/using-pyspark-with-s3-updated
