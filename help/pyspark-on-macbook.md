@@ -9,6 +9,10 @@
   - pip install pyspark==3.4.1   
 # Next step
 - Copy aws-java-sdk-bundle version 1.12.349.jar and hadoop-aws version 3.3.1.jar to /opt/homebrew/Cellar/apache-spark/3.4.1/libexec/jars
+<!-- - Run the following in jupyter notebook
+  - python3 -m pip install notebook -->
+- Run the following in **jupyter lab **
+  - python3 -m pip install jupyterlab
 - Run the following in jupyter notebook
   
 ```python:
