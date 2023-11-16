@@ -12,9 +12,9 @@ export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Conten
 - brew install wget
 - wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.349/aws-java-sdk-bundle-1.12.349.jar
 - wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.1/hadoop-aws-3.3.1.jar
-- In my case spark got installed at /opt/homebrew/Cellar/apache-spark/3.4.1
-- **Note:** as apache spark 3.4.1 is installed, install pyspark-3.4.1 in your virtual environment as well.
-- pip install pyspark==3.4.1
+- In my case spark got installed at /usr/local/Cellar/apache-spark/3.5.0
+- **Note:** as apache spark 3.5.0 is installed, install pyspark-3.5.0 in your virtual environment as well.
+- pip install pyspark==3.5.0
 # Set Up Environment Variables:
 - For Spark to work correctly, you need to set up a few environment variables. You can do this in your shell profile file (e.g., ~/.bash_profile for Bash or ~/.zshrc for Zsh).
 ```sh
@@ -24,7 +24,7 @@ export PATH=$SPARK_HOME/bin:$PATH
 Replace /usr/local/Cellar/apache-spark/3.5.0/libexec with the actual path where Spark is installed on your system. This path can vary depending on the Spark version you have installed.
 
 # copy aws sdk and hadoop
-- Copy aws-java-sdk-bundle version 1.12.349.jar and hadoop-aws version 3.3.1.jar to /opt/homebrew/Cellar/apache-spark/3.4.1/libexec/jars
+- Copy aws-java-sdk-bundle version 1.12.349.jar and hadoop-aws version 3.3.1.jar to /usr/local/Cellar/apache-spark/3.5.0/libexec/jars
 - hadoop canbe installed via - **brew install hadoop**.
 
 # Verify install
@@ -72,9 +72,9 @@ def local_spark():
     import sys
     # Path for spark source folder
     # replace praghavan with you own home directory
-    os.environ['SPARK_HOME'] = "/opt/homebrew/Cellar/apache-spark/3.4.1/libexec"
+    os.environ['SPARK_HOME'] = "/usr/local/Cellar/apache-spark/3.5.0/libexec"
     # Append pyspark  to Python Path
-    sys.path.append("/opt/homebrew/Cellar/apache-spark/3.4.1/libexec/python/pyspark")
+    sys.path.append("/usr/local/Cellar/apache-spark/3.5.0/libexec/python/pyspark")
 
     # Set profile to be used by the credentials provider
     os.environ["AWS_PROFILE"] = "prd"
