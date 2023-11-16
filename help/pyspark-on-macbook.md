@@ -14,7 +14,7 @@ export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Conten
 - wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.1/hadoop-aws-3.3.1.jar
 - In my case spark got installed at /usr/local/Cellar/apache-spark/3.5.0
 - **Note:** as apache spark 3.5.0 is installed, install pyspark-3.5.0 in your virtual environment as well.
-- pip install pyspark==3.5.0
+- python3 -m pip install pyspark==3.5.0
 # Set Up Environment Variables:
 - For Spark to work correctly, you need to set up a few environment variables. You can do this in your shell profile file (e.g., ~/.bash_profile for Bash or ~/.zshrc for Zsh).
 ```sh
