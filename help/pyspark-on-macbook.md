@@ -1,12 +1,27 @@
-# Steps
+# install java
+- install java
+- Check if Java is installed by running java -version.
+- If Java is not installed, download and install it from the Oracle website or use a package manager like Homebrew with the command **brew install java**.
+# install spark
 - brew install apache-spark
-- brew info apache-spark
+- brew info apache-spark, will give the path for the spark installed
 - brew install wget
 - wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.349/aws-java-sdk-bundle-1.12.349.jar
 - wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.1/hadoop-aws-3.3.1.jar
 - In my case spark got installed at /opt/homebrew/Cellar/apache-spark/3.4.1
 - **Note:** as apache spark 3.4.1 is installed, install pyspark-3.4.1 in your virtual environment as well.
-  - pip install pyspark==3.4.1   
+- pip install pyspark==3.4.1
+# Set Up Environment Variables:
+- For Spark to work correctly, you need to set up a few environment variables. You can do this in your shell profile file (e.g., ~/.bash_profile for Bash or ~/.zshrc for Zsh).
+```sh
+export SPARK_HOME=/usr/local/Cellar/apache-spark/3.4.1/libexec
+export PATH=$SPARK_HOME/bin:$PATH
+```
+Replace /usr/local/Cellar/apache-spark/3.0.1/libexec with the actual path where Spark is installed on your system. This path can vary depending on the Spark version you have installed.
+
+# Verify install
+- run command -  spark-shell or pyspark
+  
 # Next step
 - Copy aws-java-sdk-bundle version 1.12.349.jar and hadoop-aws version 3.3.1.jar to /opt/homebrew/Cellar/apache-spark/3.4.1/libexec/jars
 <!-- - Run the following in jupyter notebook
