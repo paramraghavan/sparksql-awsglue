@@ -182,6 +182,8 @@ Still
 Use the higher-level standard Column-based functions with Dataset operators whenever possible before reverting to using your own custom UDF functions since UDFs are a BlackBox for Spark and so it does not even try to optimize them.
 
 What actually happens behind the screens, is that the [Catalyst](https://blog.bi-geek.com/en/spark-sql-optimizador-catalyst/) can’t process and optimize UDFs at all, and it treats them as BlackBox, which results in losing many optimizations like Predicate pushdown, Constant folding, Column pruning and many others.
+- **Catalyst Optimizer**: Catalyst is an extensible query optimization framework built into Spark SQL. Its primary function is to optimize logical and physical query plans.
+- **Tungsten Engine**: Tungsten is primarily focused on improving the efficiency of memory and CPU usage in Spark. It is part of Project Tungsten, which aims to revamp Spark’s execution engine for better performance.
 
 [Ref](https://stackoverflow.com/questions/38296609/spark-functions-vs-udf-performance)
 
