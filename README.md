@@ -280,8 +280,8 @@ dataset that underpins the view.
   DISK_ONLY). Without passing argument, persist() and cache() are the same - results in memory.
    
 -  Explain Plan/Query Execution Plan - The best way to make sure everything has run as expected is to look
-   at the execution plan. You can see in the following execution plan the keywords InMemoryTableScan and 
-   InMemoryRelation which indicate that we are working on a cached DataFrame.dataframe_object.explain()
+   at the execution plan. You can see in the execution plan - DataFrame.dataframe_object.explain(), the keywords InMemoryTableScan and 
+   InMemoryRelation which indicate that we are working on a cached dataFrame.
    
 # Parquet file Gzip vs Snappy
 GZIP compression uses more CPU resources than Snappy or LZO, but provides a higher compression ratio. GZip is often a good choice for cold data,
