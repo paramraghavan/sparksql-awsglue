@@ -217,11 +217,15 @@ df = spark.createDataFrame(data, ["Name", "Age"])
 def increment_age_udf(age_series: pd.Series) -> pd.Series:
     return age_series + 1
 
-
+# apply udf to dataframe
+df_with_incremented_age = df.withColumn("IncrementedAge", increment_age_udf(col("Age")))
+#show
+df_with_incremented_age.show()
+spark.stop()
 ```
-
-
-
+- In this example, a simple PySpark DataFrame is created with names and ages. The increment_age_udf function is defined as a vectorized UDF using the pandas_udf decorator.
+This UDF adds 1 to each age in the DataFrame. The UDF is then applied to the DataFrame, creating a new column with the updated ages. The use of pandas_udf and vectorized
+operations significantly improves performance, especially with large datasets.
 
 
 # Spark predicate pushdown
