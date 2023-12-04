@@ -185,6 +185,44 @@ What actually happens behind the screens, is that the [Catalyst](https://blog.bi
 
 [Ref](https://stackoverflow.com/questions/38296609/spark-functions-vs-udf-performance)
 
+# Vectorized UDF
+Vectorized User-Defined Functions (UDFs) in PySpark offer enhanced performance compared to traditional UDFs because they use Apache Arrow to convert data to a Pandas DataFrame format. This process allows for more efficient computations as it takes advantage of the optimized data processing capabilities of Pandas. Here's why vectorized UDFs are more performant:
+* Batch Processing: Traditional UDFs operate on one row at a time, which is inefficient for large datasets. Vectorized UDFs, on the other hand, process data in batches, which leads to better use of CPU and memory resources.
+* Optimized Data Representation: Apache Arrow provides an efficient data representation that reduces the overhead of moving data between JVM (Java Virtual Machine) and Python processes. This minimizes the serialization and deserialization costs.
+* Utilization of Pandas: Pandas is a highly optimized library for data manipulation in Python, and vectorized UDFs leverage this for faster computations on large datasets.
+* Less Overhead: Vectorized UDFs have less overhead compared to traditional UDFs as they minimize the context switching between the JVM and Python interpreter.
+
+## Example of Vectorized UDF in PySpark
+- Install
+```sh
+pip install pyspark pyarrow
+```
+- Import Required Libraries
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, pandas_udf
+from pyspark.sql.types import IntegerType
+import pandas as pd
+```
+- Code
+```python
+spark = SparkSession.builder.appName("vectorized_udf_example").getOrCreate()
+
+data = [("Alice", 34), ("Bob", 36), ("Cathy", 30)]
+df = spark.createDataFrame(data, ["Name", "Age"])
+
+# Define a Python function that operates on pandas Series and decorate it with pandas_udf. For instance,
+# a simple function to increment age. integer passed into @pandas_udf indicates retrn data type
+@pandas_udf("integer")
+def increment_age_udf(age_series: pd.Series) -> pd.Series:
+    return age_series + 1
+
+
+```
+
+
+
+
 
 # Spark predicate pushdown
 A predicate is a condition on a query that returns true or false, typically located in the WHERE clause. A predicate push down filters the data in
