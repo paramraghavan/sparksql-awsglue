@@ -124,3 +124,42 @@ is only updated once that RDD is computed as part of an action.
 executed. As a result of this, accumulators used inside functions like map() or filter() wont get executed unless some action applied
 on the RDD. Spark guarantees to update accumulators inside actions only once. **Always use accumulators inside actions ONLY (ex - foreach)**.
 
+### spark, closures, and how closure can be used with dataframe 
+* **What is a Closure in Spark?**: A closure is the entire environment needed to execute a function on a worker node. This includes the function itself and any variables it uses from outside its own scope.
+* **Why are Closures Important?**: They allow you to apply complex operations on distributed data. Spark automatically detects and sends the necessary parts of your code and data to the workers.
+* **Challenges with Closures**: You need to ensure that all external variables used in your function are serializable. Also, any changes made to these variables within the function will not be reflected back in the driver program, except for special types like accumulators.
+* Example below where you have a DataFrame and you want to filter out records based on some external criteria:
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col
+
+# Initialize Spark session
+spark = SparkSession.builder.appName("closure_example").getOrCreate()
+
+# Sample DataFrame
+data = [("Alice", 30), ("Bob", 25), ("Charlie", 35)]
+columns = ["Name", "Age"]
+df = spark.createDataFrame(data, columns)
+
+# External variable used in the closure
+age_threshold = 30
+
+# Define a function to use as a closure
+def is_above_threshold(age):
+    return age > age_threshold
+
+# Apply the closure in a DataFrame operation
+filtered_df = df.filter((col("Age") > age_threshold))
+
+# Show the result
+filtered_df.show()
+```
+* In the  example above:
+  * age_threshold is an external variable used inside the closure.
+  * The is_above_threshold function acts as a closure, which is applied to the DataFrame to filter out records.
+  * df.filter is the DataFrame operation where the closure is used. The condition inside filter uses age_threshold, which is serialized and sent to each worker node.
+  * Example demonstrates how Spark manages the complexity of distributing both the data (the DataFrame) and the computations (the closure) across the cluster. The closure (is_above_threshold function and 
+   age_threshold variable) is automatically serialized and distributed to the worker nodes by Spark.
+
+
+
