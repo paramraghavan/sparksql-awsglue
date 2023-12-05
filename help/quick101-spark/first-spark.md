@@ -55,16 +55,21 @@ Shared variables can be used in parallel operations.
 shipping a copy of it with tasks.
 - Immutable and cached on each worker nodes only once.
 - Efficient manner to give a copy of a dataset to each node, provided the dataset is not too big to fit in memory.
+- Broadcast variables in Apache Spark cannot be modified once they are broadcasted.
+- Broadcast variables are designed to efficiently distribute large, read-only data to all nodes in a Spark cluster.
+- Once a broadcast variable is created and distributed, it is meant to be a read-only variable to ensure that all nodes have the same data.
+  
 ### When to use Broadcast Variable:
 - For processing, the executors need information regarding variables or methods. This information is serialized by Spark and
 sent to each executor and is known as CLOSURE.
 - If we have a huge array that is accessed from spark CLOSURES, for example - if we have 5 nodes cluster with 100 partitions
 (20 partitions per node), this Array will be distributed at least 100 times (20 times to each node). If you we broadcast
 it will be distributed once per node using efficient p2p protocol.
+- **Large, Read-Only Lookup Tables:** If your Spark tasks frequently need to access a large, read-only lookup table (such as a dictionary or a set of configuration options), broadcasting these can prevent the need to send this data with every task.
+- **Common Reference Data:** When the same data (like a map for converting values, a set of common keys, etc.) is required by all nodes for tasks like data enrichment or validation.
+- **Avoiding Data Shuffle:** In join operations where one DataFrame is significantly smaller than the other, broadcasting the smaller DataFrame can be more efficient as it avoids shuffling the larger DataFrame.
+- **Repeated Operations:** When performing operations that use the same data repeatedly across multiple Spark actions or jobs.
 
-### What not to do:
-Once we broadcasted the value to the nodes, we shouldn't make changes to its value to make sure each node have
-exact same copy of data. The modified value might be sent to another node later that would give unexpected results.
 
 Example:
 ![image](https://user-images.githubusercontent.com/52529498/200213323-60dbd85e-4eba-414a-a306-6d112c1db369.png)
