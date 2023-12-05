@@ -118,11 +118,48 @@ print(f'counter1.value: {counter1.value}')
 
 - Spark natively supports accumulators of numeric types (int, float) and programmers can add support for **new custom types using
 AccumulatorParam class of PySpark**.
-- Accumulators do not change the lazy evaluation model of Spark. If they are being updated within an operation on an RDD, their value
-is only updated once that RDD is computed as part of an action.
-- Computations inside transformations are evaluated lazily, so unless an action happens on an RDD the transformations are not
-executed. As a result of this, accumulators used inside functions like map() or filter() wont get executed unless some action applied
-on the RDD. Spark guarantees to update accumulators inside actions only once. **Always use accumulators inside actions ONLY (ex - foreach)**.
+- Accumulators are variables that are used to aggregate information across different nodes in a distributed environment. They
+  are typically used for performing counters or sums in a parallel way. Accumulators are write-only variables for the executors
+  (nodes that perform the task), meaning they can only be read by the driver program (the main controlling program).
+- Use Cases for Accumulators
+  - Counting the occurrences of various events.
+  - Summing up values across nodes.
+  - Tracking the status of tasks or applications.
+-  Accumulators are only “added” to through an associative and commutative operation and are therefore safe to use in parallel operations.
+- Any updates to an accumulator inside a transformation (like map(), filter()) are not guaranteed to be executed and hence should be avoided.
+- The reliable way to update an accumulator is inside an action (like foreach(), collect()).
+- Example
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col
+
+# Initialize Spark session
+spark = SparkSession.builder.appName("accumulator_example").getOrCreate()
+
+# Sample data
+data = [("Alice", 25), ("Bob", 30), ("Charlie", 35), ("David", 40)]
+columns = ["Name", "Age"]
+df = spark.createDataFrame(data, columns)
+
+# Create an accumulator
+age_above_30_count = spark.sparkContext.accumulator(0)
+
+# Function to increment accumulator
+def count_age_above_30(row):
+    if row.Age > 30:
+        age_above_30_count.add(1)
+
+# Use foreach to iterate over DataFrame rows
+df.foreach(count_age_above_30)
+
+# Get the accumulator's value
+print("Number of people with age above 30:", age_above_30_count.value)
+
+```
+- In this example, a DataFrame df is created with names and ages. An accumulator age_above_30_count is defined to count the number of people with age above 30.
+  The foreach action is used to iterate over each row of the DataFrame, and the accumulator is incremented if the age condition is met. Finally, the value of
+  the accumulator is printed, which gives the count of people with age above 30.
+ 
 
 ### spark, closures, and how closure can be used with dataframe 
 * **What is a Closure in Spark?**: A closure is the entire environment needed to execute a function on a worker node. This includes the function itself and any variables it uses from outside its own scope.
