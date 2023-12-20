@@ -1,0 +1,17 @@
+{
+  "source": {
+    "s3_bucket": "s3://your-source-bucket/path",
+    "input_format": "parquet"
+  },
+  "target": {
+    "s3_bucket": "s3://your-target-bucket/path",
+    "output_format": "parquet"
+  },
+  "transformations": [
+    "SELECT * FROM inputTable WHERE age > 30",
+    "SELECT *, salary * 1.1 as updated_salary FROM inputTable",
+    "SELECT *, CONCAT(name, ' - ', address) as name_address FROM inputTable",
+    "SELECT *, CASE WHEN gender = 'male' THEN 'M' WHEN gender = 'female' THEN 'F' ELSE 'Other' END as gender_short FROM inputTable",
+    "SELECT date_format(current_date(), 'yyyy-MM-dd') as processing_date, * FROM inputTable"
+  ]
+}

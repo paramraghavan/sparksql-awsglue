@@ -59,7 +59,7 @@ def apply_join_transform(spark, config):
 
 
 def main():
-    config = read_config('config.json')
+    config = read_config('../config/config.json')
 
     spark = SparkSession.builder.appName("DataTransformer").getOrCreate()
 
@@ -79,6 +79,9 @@ def main():
     transformed_df.write.csv(f"s3://{config['target']['bucket_name']}/{config['target']['file_path']}")
 
     joined_df = apply_join_transform(config);
+
+    # Close the Spark session
+    spark.stop()
 
 
 # Define a sample UDF - replace with your actual function
