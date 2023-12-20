@@ -1,0 +1,69 @@
+{
+  "source": {
+    "type": "s3",
+    "bucket_name": "source-bucket",
+    "file_path": "source-data/"
+  },
+  "target": {
+    "type": "s3",
+    "bucket_name": "target-bucket",
+    "file_path": "transformed-data/"
+  },
+  "transformations": [
+    {
+      "type": "filter",
+      "condition": "age > 30"
+    },
+    {
+      "type": "select",
+      "columns": [
+        "name",
+        "age",
+        "email"
+      ]
+    },
+    {
+      "type": "drop_columns",
+      "columns": [
+        "unnecessary_column"
+      ]
+    },
+    {
+      "type": "rename_column",
+      "old_name": "oldName",
+      "new_name": "newName"
+    },
+    {
+      "type": "add_column",
+      "column_name": "new_column",
+      "default_value": "value"
+    },
+    {
+      "type": "change_data_type",
+      "column_name": "age",
+      "new_data_type": "string"
+    },
+    {
+      "type": "custom_transformation",
+      "udf": "your_custom_function"
+    }
+  ],
+  "join": {
+    "type": "inner",
+    "left_dataset": "s3://bucket1/data1.parquet",
+    "right_dataset": "s3://bucket2/data2.parquet",
+    "left_keys": [
+      "id"
+    ],
+    "right_keys": [
+      "user_id"
+    ],
+    "columns": [
+      "id",
+      "name",
+      "age",
+      "user_id",
+      "purchase"
+    ]
+  }
+}
