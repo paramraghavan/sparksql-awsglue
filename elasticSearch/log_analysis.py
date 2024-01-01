@@ -26,7 +26,7 @@ def readLogs(spark, path) :
 from elasticsearch import Elasticsearch
 
 # Function to index a row to ElasticSearch
-def index_to_es(row):
+def index_to_es(row, index_value):
  """
    Following command takes a row from a PySpark DataFrame, converts it into a dictionary, and then indexes it in Elasticsearch under the 
    specified index with a unique ID. This is typically used in a loop or a DataFrame operation to index multiple rows/documents 
@@ -40,7 +40,7 @@ def index_to_es(row):
   * body=row.asDict(): The body parameter contains the actual data of the document to be indexed. row.asDict() converts the current row of the DataFrame 
     into a Python dictionary. Each key-value pair in this dictionary corresponds to a column name and its value in the row.
   """
-  es.index(index="log_index", id=row["id"], body=row.asDict())
+  es.index(index=index_value, id=row["id"], body=row.asDict())
 
 def index_data_into_elasticsearch(es, logs_df):
   """
@@ -48,11 +48,12 @@ def index_data_into_elasticsearch(es, logs_df):
   """
 
   # Apply the function to each row in DataFrame
-  logs_df.foreach(lambda row: index_to_es(row))  
+  logs_df.foreach(lambda row: index_to_es(row, "log_index"))  
 
 
 def index_data_into_elasticsearch_using_elasticsearch_hadoop_conenctor(df):
   # Assuming Elasticsearch is running and accessible
+  # Add index into elasticsearch
   
   # Required configuration for Elasticsearch
   es_write_conf = {
