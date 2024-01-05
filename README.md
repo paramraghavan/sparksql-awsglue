@@ -674,9 +674,7 @@ https://hudi.apache.org/docs/next/table_management/
 	- spark 3.1.1 —> supports python 3.6 and above
 - https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html - aws lambda python support
 - [Python 3.9 vs 3.10](https://www.analyticsvidhya.com/blog/2021/08/differences-between-python-3-10-and-python-3-9-which-you-need-to-know)
-
- 
-
+- [MIT Videos and Lecture Notes](http://nil.csail.mit.edu/6.824/2020/schedule.html%0A%0AMIT%20Distributed%20systems%20/%20distributed%20databases%20course%20online.%20%0A%0AVideo%20and%20lecture%20notes%0A)
  
 
  
