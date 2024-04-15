@@ -75,6 +75,15 @@ ref: Getting Started with Spark 2
 ## Notes/appendix
 -------------------------------------------------------------------------------------------
 # Setup pyspark on windows
+- create  python virtual environment
+- pip install pyspark
+- copy aws-java-sdk-bundle-x.xx.xxx.jar ,aws-java-sdk-bundle-x.xx.xxx.pom ,aws-java-sdk-bundle-x.xx.xxx-javadoc ,
+  aws-java-sdk-bundle-x.xx.xxx.sources, hadoop-aws-3.x.x.jar, hadoop-aws-3.x.x-sources.jar to 
+  ..\vitualenvs\myenvs\Lib\site-packages\pyspark\jars
+- copy relevant cacert.pem file to .\vitualenvs\myenvs\Lib\site-packages\botocore
+- Install Winutils to C:\tmp drive
+- copy c\tmp\winutils\hadoop-3.x.x\\bin to c:\Windows\System32
+- copy security.zip to c:\JDK\lib\security
 Follow Janani Ravi Getting started Spark2 - see chapter  Demo: Installing Spark 2
 https://bigdata-madesimple.com/guide-to-install-spark-and-use-pyspark-from-jupyter-in-windows/
 Use hadoop 2.7.1
