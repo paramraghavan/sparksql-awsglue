@@ -29,7 +29,7 @@ try:
         df = cursor.fetch_pandas_all()
 
         # Write DataFrame to a pipe-delimited text file
-        output_file = f"{table_name}.txt"
+        output_file = f"{table_name}.dat"
         df.to_csv(output_file, sep='|', index=False)
         print(f"Data for {table_name} written to {output_file}")
 finally:
