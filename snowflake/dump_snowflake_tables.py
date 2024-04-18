@@ -26,7 +26,9 @@ try:
         cursor.execute(query)
 
         # Fetch the result into DataFrame
-        df = cursor.fetch_pandas_all()
+        # df = cursor.fetch_pandas_all()
+        rows = cursor.fetchall()
+        df = pd.DataFrame(rows, columns=[x[0] for x in cursor.description])
 
         # Write DataFrame to a pipe-delimited text file
         output_file = f"{table_name}.dat"
