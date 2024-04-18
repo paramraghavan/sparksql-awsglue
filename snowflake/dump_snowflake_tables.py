@@ -1,7 +1,7 @@
 import pandas as pd
 import snowflake.connector
-from snowflake.connector.pandas_tools import pd_writer
 
+# pip install snowflake-connector-python pandas
 # Snowflake connection parameters
 conn_params = {
     "user": 'YOUR_USERNAME',
