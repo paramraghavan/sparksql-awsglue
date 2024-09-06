@@ -8,13 +8,13 @@ data = {
 df = pd.DataFrame(data)
 
 # Convert 'effective_date' column to datetime
-df['effective_date'] = pd.to_datetime(df['effective_date'])
+df['effective_date1'] = pd.to_datetime(df['effective_date'])
 
 # Get today's date (midnight)
 today_midnight = pd.Timestamp.today().normalize()
 
 # Apply multiple filters: 'effective_date' <= today AND 'other_column' > 10
-filtered_df = df[(df['effective_date'] <= today_midnight) & (df['other_column'] > 10)]
+filtered_df = df[(df['effective_date1'] <= today_midnight) & (df['other_column'] > 10)]
 
 # Display the filtered DataFrame
 filtered_df
