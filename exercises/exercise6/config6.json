@@ -1,0 +1,88 @@
+{
+  "fields": [
+    {
+      "name": "customer_id",
+      "path": "$.id",
+      "type": "string"
+    },
+    {
+      "name": "customer_name",
+      "path": "$.name",
+      "type": "string"
+    },
+    {
+      "name": "customer_email",
+      "path": "$.email",
+      "type": "string"
+    },
+    {
+      "name": "street",
+      "path": "$.address.street",
+      "type": "string"
+    },
+    {
+      "name": "city",
+      "path": "$.address.city",
+      "type": "string"
+    },
+    {
+      "name": "state",
+      "path": "$.address.state",
+      "type": "string"
+    },
+    {
+      "name": "zip",
+      "path": "$.address.zip",
+      "type": "string"
+    },
+    {
+      "name": "orders",
+      "path": "$.orders",
+      "type": "array",
+      "fields": [
+        {
+          "name": "order_id",
+          "path": "$.order_id",
+          "type": "string"
+        },
+        {
+          "name": "order_date",
+          "path": "$.date",
+          "type": "string"
+        },
+        {
+          "name": "total",
+          "path": "$.total",
+          "type": "double"
+        },
+        {
+          "name": "items",
+          "path": "$.items",
+          "type": "array",
+          "fields": [
+            {
+              "name": "product_id",
+              "path": "$.product_id",
+              "type": "string"
+            },
+            {
+              "name": "product_name",
+              "path": "$.name",
+              "type": "string"
+            },
+            {
+              "name": "quantity",
+              "path": "$.quantity",
+              "type": "integer"
+            },
+            {
+              "name": "price",
+              "path": "$.price",
+              "type": "double"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
