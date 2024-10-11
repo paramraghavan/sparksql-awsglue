@@ -51,7 +51,7 @@ def main():
     spark = SparkSession.builder.appName("ConfigDrivenJsonParser").getOrCreate()
 
     # Load configuration from YAML file
-    with open('exercise7.yaml', 'r') as config_file:
+    with open('config7.yaml', 'r') as config_file:
         config = yaml.safe_load(config_file)
 
     # Load sample JSON data
