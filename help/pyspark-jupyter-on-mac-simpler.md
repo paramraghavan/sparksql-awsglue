@@ -34,11 +34,12 @@
    Add to ~/.zshrc or ~/.bash_profile:
 
    ```shell
-   export SPARK_HOME=/Users/`whoami`/pyspark_env/lib/python3.11/site-packages/pyspark
+   export SPARK_HOME=/Users/`whoami`/pyspark_env/lib/python3.10/site-packages/pyspark
    #export SPARK_HOME=$(pip3 show pyspark | grep Location | cut -d' ' -f2)/pyspark
    export PATH=$SPARK_HOME/bin:$PATH
-   export PYSPARK_PYTHON=python3.11
-   export PYSPARK_DRIVER_PYTHON=jupyter
+   export PYSPARK_PYTHON=python3.10
+   export PYSPARK_DRIVER_PYTHON=python3.10
+   #export PYSPARK_DRIVER_PYTHON=jupyter
    export PYSPARK_DRIVER_PYTHON_OPTS='notebook'
    ```
 7. Start Jupyter with PySpark:
@@ -49,9 +50,11 @@
 ## Error
 Get error indicates a mismatch between the Python versions used by the PySpark driver and worker. Here's what's happening:
 
-The PySpark driver is using Python 3.11
+The PySpark driver is using Python 3.10
 The PySpark worker is using Python 3.12
-> Changed venv to use 3.11
+> Following fixed it
+>  export PYSPARK_PYTHON=python3.10
+   export PYSPARK_DRIVER_PYTHON=python3.10
 
 **In a new notebook, you can test your PySpark setup with:**
 ```python
