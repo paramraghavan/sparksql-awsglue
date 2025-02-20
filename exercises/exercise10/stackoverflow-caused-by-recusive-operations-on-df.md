@@ -154,3 +154,55 @@ for loop:
 - Adjust the frequency of caching based on your memory constraints
 - Always materialize cached DataFrames with an action like count()
 - Consider unpersisting previous versions to free memory
+
+## Is this normal
+Yes, this is a relatively common issue in Spark, especially when dealing with iterative operations.
+
+1. Root Cause:
+```python
+# In your code, each iteration adds more transformations to Spark's DAG (Directed Acyclic Graph):
+for n in range(...):
+    query_string2 = ...
+    df_pred_temp = spark.sql(query_string2)
+    df_temp = df_temp.join(...)  # Each join adds to the transformation chain
+```
+
+The StackOverflow happens because:
+- Each iteration adds more transformations to Spark's logical execution plan
+- The joins create deeper and deeper nested operations
+- Spark has to maintain this entire chain of transformations in memory
+- When the chain gets too long, Java runs out of stack space for managing these nested calls
+
+2. Why Checkpointing Helps:
+```python
+df_temp = df_temp.checkpoint()  # This materializes the data
+```
+Checkpointing breaks the chain of transformations by:
+- Actually executing all previous transformations
+- Saving the result
+- Starting a new DAG from that point
+
+3. Common Scenarios Where This Occurs:
+- Iterative algorithms
+- Multiple joins in loops
+- Machine learning pipelines with many transformations
+- Complex data processing with nested operations
+
+Think of it like building a tower of blocks:
+- Without checkpointing: You keep adding blocks (transformations) until the tower becomes too tall and falls
+- With checkpointing: You periodically create a new solid foundation and start building from there
+
+To prevent this:
+```python
+# Option 1: Regular materialization
+if n % 5 == 0:
+    df_temp.cache().count()  # Forces computation and caches result
+
+# Option 2: Periodic cleanup
+if n % 5 == 0:
+    spark.sparkContext.clearFiles()  # Cleans up old checkpoints
+    df_temp = df_temp.checkpoint()
+```
+
+It's normal in the sense that it's a known limitation when working with very deep transformation chains in Spark, 
+but it's also something that can and should be managed through proper checkpointing, caching, or materialization strategies.
