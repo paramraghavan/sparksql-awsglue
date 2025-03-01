@@ -94,3 +94,48 @@ spark.stop()
 - Verify Java is properly installed: `java -version`
 - Check Spark installation: `spark-shell --version`
 
+## How to get the right winutils version
+When you encounter "winutils.exe" errors on Windows, you need to download the correct version that matches your Hadoop version. Here's how to identify which version you need:
+
+1. **Check your Spark's Hadoop version**:
+   - Open a command prompt and run: `spark-shell --version`
+   - Look for a line like "Using Hadoop X.X.X" in the output
+   - Alternatively, check the folder name of your Spark installation, which often includes the Hadoop version (e.g., "spark-3.4.0-bin-hadoop3")
+
+2. **Find the Hadoop version in PySpark code**:
+   ```python
+   from pyspark.sql import SparkSession
+   
+   spark = SparkSession.builder.getOrCreate()
+   hadoop_version = spark._jvm.org.apache.hadoop.util.VersionInfo.getVersion()
+   print(f"Hadoop version: {hadoop_version}")
+   ```
+
+3. **Check in the Spark properties file**:
+   - Look in `%SPARK_HOME%\conf\spark-defaults.conf` for Hadoop-related properties
+   - Or check the release notes/README in your Spark installation folder
+
+Once you've identified your Hadoop version, download the corresponding winutils.exe:
+
+1. Find a trusted repository for winutils, such as:
+   - https://github.com/steveloughran/winutils (official but not always up-to-date)
+   - https://github.com/cdarlint/winutils (community-maintained)
+
+2. Navigate to the folder matching your Hadoop version (e.g., "hadoop-3.2.0")
+
+3. Download the winutils.exe file
+
+4. Place it in your `%SPARK_HOME%\bin` directory
+
+5. You may also need to create a `\tmp\hive` directory and grant permissions:
+   ```
+   mkdir C:\tmp\hive
+   %SPARK_HOME%\bin\winutils.exe chmod -R 777 C:\tmp\hive
+   ```
+
+If you're still having issues, you can also try a workaround by setting this environment variable:
+```
+set HADOOP_HOME=%SPARK_HOME%
+```
+This will help PySpark find the winutils.exe file in your Spark installation directory.
+
