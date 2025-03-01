@@ -1,0 +1,9 @@
+store_id,item_number,category,subcategory,quantity_on_hand,reorder_point,reorder_quantity,unit_cost,retail_price,last_received_date,last_sold_date,is_active,supplier_id,last_updated
+S001,ITM10005,Electronics,Audio,156,35,53,33.67,40.4,2024-12-01,2025-02-20,True,SUP1456,2025-02-11 09:23:17
+S003,ITM10022,Home Goods,Bedroom,42,36,77,107.63,150.68,2024-12-17,2025-02-10,True,SUP1234,2025-02-14 15:48:32
+S002,ITM10014,Sports,Equipment,177,20,87,54.95,68.69,2024-12-06,2025-02-24,True,SUP1876,2025-02-05 11:09:45
+S005,ITM10030,Clothing,Women's,103,44,56,87.92,114.3,2024-12-24,2025-02-07,True,SUP1567,2025-01-31 08:42:19
+S004,ITM10011,Groceries,Frozen,87,32,41,11.46,14.33,2025-01-15,2025-02-15,True,SUP1723,2025-02-19 16:37:28
+S001,ITM10017,Electronics,Accessories,134,28,69,58.12,81.37,2024-12-09,2025-02-03,False,SUP1698,2025-02-08 10:15:56
+S003,ITM10007,Home Goods,Kitchen,94,49,81,66.88,93.63,2025-01-08,2025-02-21,True,SUP1321,2025-02-16 14:29:04
+...
