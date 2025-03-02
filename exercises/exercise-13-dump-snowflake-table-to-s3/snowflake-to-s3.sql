@@ -1,10 +1,16 @@
 -- check is this storage intergation exists
 SHOW STORAGE INTEGRATIONS;
 SHOW STORAGE INTEGRATIONS LIKE 's3_integration';
+
+USE ROLE ACCOUNTADMIN; -- Or another role with appropriate access
+USE DATABASE SNOWFLAKE; -- The system database
+
 SELECT integration_name, integration_type, enabled, comment
-FROM information_schema.integrations
+FROM SNOWFLAKE.INFORMATION_SCHEMA.INTEGRATIONS
 WHERE integration_name = 's3_integration';
 
+-- Get the external ID to configure AWS trust relationship
+DESC INTEGRATION s3_integration;
 
 -- Set up Snowflake storage integration with AWS
 -- This only needs to be done once by an account admin
@@ -15,8 +21,7 @@ CREATE OR REPLACE STORAGE INTEGRATION s3_integration
   STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::123456789012:role/your-snowflake-role'
   STORAGE_ALLOWED_LOCATIONS = ('s3://your-s3-bucket-name/your/prefix/path/');
 
--- Get the external ID to configure AWS trust relationship
-DESC INTEGRATION s3_integration;
+
 
 -- Create an external stage using the integration
 CREATE OR REPLACE STAGE my_s3_stage
