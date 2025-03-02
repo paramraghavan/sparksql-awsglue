@@ -132,6 +132,50 @@ Once you've identified your Hadoop version, download the corresponding winutils.
    mkdir C:\tmp\hive
    %SPARK_HOME%\bin\winutils.exe chmod -R 777 C:\tmp\hive
    ```
+>> if you do not have access to c:\tmp\hive
+
+5.1 alternate folder
+Yes, you can certainly create the Hive warehouse directory in your user folder instead of C:\tmp\hive. 
+This is a common approach, especially on Windows systems, to avoid permission issues and to keep your work files organized in your user directory.
+
+Here's how to set this up for PySpark on Windows:
+
+```python
+from pyspark.sql import SparkSession
+
+# Define the hive warehouse directory in your user folder
+user_home = os.path.expanduser("~")  # Gets your user home directory
+hive_warehouse_dir = os.path.join(user_home, "hive_warehouse")
+
+# Create the directory if it doesn't exist
+import os
+if not os.path.exists(hive_warehouse_dir):
+    os.makedirs(hive_warehouse_dir)
+
+# Create SparkSession with the custom warehouse location
+
+spark = SparkSession.builder \
+    .appName("Sample") \
+    .getOrCreate()
+hadoop_version = spark._jvm.org.apache.hadoop.util.VersionInfo.getVersion()
+print(f"Hadoop version: {hadoop_version}")
+```
+
+This approach offers several advantages:
+
+1. Avoids permission issues that might arise when trying to write to C:\tmp
+2. Keeps your Spark-related files in your user directory
+3. Easier to find and manage your Spark data
+4. Prevents conflicts with other users on the same machine
+
+You can also further customize this by creating a more specific directory structure like:
+```python
+hive_warehouse_dir = os.path.join(user_home, "spark_data", "hive_warehouse")
+```
+
+This will create a directory structure like `C:\Users\your_username\spark_data\hive_warehouse\` which helps keep your Spark data organized.
+
+6. **If you're still having issues**
 
 If you're still having issues, you can also try a workaround by setting this environment variable:
 ```
