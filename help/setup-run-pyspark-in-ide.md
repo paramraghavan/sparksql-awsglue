@@ -156,9 +156,23 @@ if not os.path.exists(hive_warehouse_dir):
 
 spark = SparkSession.builder \
     .appName("Sample") \
+    .config("spark.sql.warehouse.dir", hive_warehouse_dir) \
     .getOrCreate()
 hadoop_version = spark._jvm.org.apache.hadoop.util.VersionInfo.getVersion()
 print(f"Hadoop version: {hadoop_version}")
+
+"""
+# s3 access
+spark = SparkSession.builder \
+    .appName("S3 File Access") \
+    .config("spark.sql.warehouse.dir", hive_warehouse_dir) \
+    .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.3.1,com.amazonaws:aws-java-sdk-bundle:1.11.901") \
+    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+    .config("spark.hadoop.fs.s3a.aws.credentials.provider", "com.amazonaws.auth.profile.ProfileCredentialsProvider") \
+    .config("spark.hadoop.fs.s3a.profile", "your_profile_name") \
+    .getOrCreate()
+"""
+
 ```
 
 This approach offers several advantages:
