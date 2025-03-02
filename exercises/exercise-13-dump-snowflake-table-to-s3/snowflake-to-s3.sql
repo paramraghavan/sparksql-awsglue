@@ -5,12 +5,20 @@ SHOW STORAGE INTEGRATIONS LIKE 's3_integration';
 USE ROLE ACCOUNTADMIN; -- Or another role with appropriate access
 USE DATABASE SNOWFLAKE; -- The system database
 
-SELECT integration_name, integration_type, enabled, comment
-FROM SNOWFLAKE.INFORMATION_SCHEMA.INTEGRATIONS
-WHERE integration_name = 's3_integration';
+--SELECT integration_name, integration_type, enabled, comment
+--FROM SNOWFLAKE.INFORMATION_SCHEMA.INTEGRATIONS
+--WHERE integration_name = 's3_integration';
 
 -- Get the external ID to configure AWS trust relationship
 DESC INTEGRATION s3_integration;
+
+--Hierarchy: Snowflake uses a three-level hierarchy:
+--
+--Account
+--Database (within Account)
+--Schema (within Database)
+--Object (tables, views, stages, etc. within Schema)
+
 
 -- Set up Snowflake storage integration with AWS
 -- This only needs to be done once by an account admin
@@ -22,15 +30,17 @@ CREATE OR REPLACE STORAGE INTEGRATION s3_integration
   STORAGE_ALLOWED_LOCATIONS = ('s3://your-s3-bucket-name/your/prefix/path/');
 
 
-
+USE DATABASE your_database; -- this where my_s3_stage is created
+-- Show schemas in current database
+SHOW SCHEMAS;
 -- Create an external stage using the integration
 CREATE OR REPLACE STAGE my_s3_stage
-  URL = 's3://your-s3-bucket-name/your/prefix/path/'
+  URL = 's3://your-s3-bucket-name/your/prefix/path/' -- same as STORAGE_ALLOWED_LOCATIONS above
   STORAGE_INTEGRATION = s3_integration
   FILE_FORMAT = (TYPE = 'PARQUET'); -- or CSV for comma-separated, etc.
 -- , delimited
 CREATE OR REPLACE STAGE my_s3_stage
-  URL = 's3://your-s3-bucket-name/your/prefix/path/'
+  URL = 's3://your-s3-bucket-name/your/prefix/path/' -- same as STORAGE_ALLOWED_LOCATIONS above
   STORAGE_INTEGRATION = s3_integration
   FILE_FORMAT = (
     TYPE = 'CSV',
@@ -55,7 +65,7 @@ CREATE OR REPLACE STAGE my_s3_stage
 
 
 -- Export data directly to S3 using COPY INTO
-COPY INTO @my_s3_stage/your_table_export_
+COPY INTO @my_s3_stage/my_project/your_table_export_
 FROM (
   SELECT *
   FROM your_table_name
