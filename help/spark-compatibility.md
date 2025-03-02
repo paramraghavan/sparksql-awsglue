@@ -3,6 +3,7 @@
 Here's a comprehensive breakdown of PySpark and Python version compatibility:
 
 ## Spark 3.x Series
+ref: https://community.cloudera.com/t5/Community-Articles/Spark-Python-Supportability-Matrix/ta-p/379144
 
 | Spark Version | Python Support              | Java Support   | Notes                        |
 |---------------|-----------------------------|----------------|------------------------------|
