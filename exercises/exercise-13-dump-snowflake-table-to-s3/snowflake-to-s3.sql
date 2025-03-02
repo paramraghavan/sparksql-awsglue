@@ -63,7 +63,7 @@ CREATE OR REPLACE STAGE my_s3_stage
     NULL_IF = ('NULL', 'null', '')
   );
 
-
+-- https://docs.snowflake.com/en/sql-reference/sql/copy-into-location
 -- Export data directly to S3 using COPY INTO
 COPY INTO @my_s3_stage/my_project/your_table_export_
 FROM (
