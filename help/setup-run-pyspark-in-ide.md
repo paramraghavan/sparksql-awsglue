@@ -19,6 +19,40 @@ I'll guide you through setting up Spark on Windows or Mac, and configuring PyCha
 3. **Install Python**
    - Install Python 3.x if you haven't already
    - Ensure pip is installed
+### 1. Set up Hadoop for Windows
+
+1. Download winutils.exe for your Hadoop version
+   from [https://github.com/steveloughran/winutils](https://github.com/steveloughran/winutils)
+
+2. Create a Hadoop home directory in your user folder:
+   ```
+   mkdir C:\Users\your_username\hadoop
+   mkdir C:\Users\your_username\hadoop\bin
+   ```
+
+3. Copy the downloaded winutils.exe to the bin directory you created
+
+### 2. Set Environment Variables
+
+1. Set HADOOP_HOME to your Hadoop directory:
+   ```
+   setx HADOOP_HOME C:\Users\your_username\hadoop
+   ```
+
+2. Add Hadoop's bin directory to your PATH:
+   ```
+   setx PATH "%PATH%;%HADOOP_HOME%\bin"
+   ```
+
+3. Also set SPARK_LOCAL_DIRS to a location in your user folder:
+   ```
+   setx SPARK_LOCAL_DIRS C:\Users\your_username\spark_temp
+   ```
+
+4. Create the spark_temp directory:
+   ```
+   mkdir C:\Users\your_username\spark_temp
+   ```
 
 ## Installing Spark on Mac
 
@@ -36,6 +70,18 @@ I'll guide you through setting up Spark on Windows or Mac, and configuring PyCha
    export SPARK_HOME=/usr/local/Cellar/apache-spark/[version]/libexec
    export PATH=$PATH:$SPARK_HOME/bin
    ```
+
+4. **Working with python 3.12 and pyspark 3.5.2- Spark Compatibiluty with python version**
+   ```python
+   import os
+   os.environ['PYSPARK_PYTHON'] = r'c:\path\to\python3.11\python.exe'  # Use a compatible Python version
+   
+   from pyspark.sql import SparkSession
+   spark = SparkSession.builder.appName("PySpark312Test").getOrCreate()
+   ```
+   - see [spark-compatibility.md](spark-compatibility.md) for more details
+
+
 
 ## Install PySpark
 
@@ -65,10 +111,28 @@ pip install pyspark
 
 ```python
 from pyspark.sql import SparkSession
+import os
+
+os.environ['PYSPARK_PYTHON'] = r'c:\path\to\python3.11\python.exe'  # Use a compatible Python version
+user_home = os.path.expanduser("~")
+hadoop_home = os.path.join(user_home, "hadoop")
+spark_temp = os.path.join(user_home, "spark_temp")
+warehouse_dir = os.path.join(user_home, "spark_warehouse")
+
+# Make sure directories exist
+for directory in [spark_temp, warehouse_dir]:
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+# Configure environment variables in the Python process
+os.environ['HADOOP_HOME'] = hadoop_home
+os.environ['SPARK_LOCAL_DIRS'] = spark_temp
 
 # Initialize Spark session
 spark = SparkSession.builder \
     .appName("PySpark Example") \
+    .config("spark.sql.warehouse.dir", warehouse_dir) \
+    .config("spark.local.dir", spark_temp) \
     .master("local[*]") \
     .getOrCreate()
 
