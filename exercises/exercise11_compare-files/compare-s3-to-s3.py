@@ -358,6 +358,14 @@ def generate_report(spark, result_dir, df1_count, df2_count, only_in_df1_count, 
 
     logger.info("Report generated successfully")
 
+def convert_date_column_data_type_to_str(df):
+    # Alternative approach using a single expression
+    df_converted = df
+    for column_name in df.columns:
+        if column_name.endswith("DT") or column_name.endswith("DATE"):
+            df_converted = df_converted.withColumn(column_name, col(column_name).cast("string"))
+
+    return df_converted
 
 def main():
     # Parse arguments
