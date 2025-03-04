@@ -256,38 +256,23 @@ def write_results(result_dir, only_in_df1, only_in_df2, diff_data, column_diff_s
     """Write comparison results to files."""
     # Write records only in first source
     logger.info(f"Writing records only in {name1}")
-    only_in_df1_path = f"{result_dir}/only_in_{name1}.parquet"
-    only_in_df1.write.mode("overwrite").parquet(only_in_df1_path)
-
-    # Also save as CSV for easier viewing
-    only_in_df1.coalesce(1).write.mode("overwrite").option("header", "true").csv(
-        f"{result_dir}/only_in_{name1}.csv"
-    )
+    only_in_df1_path = f"{result_dir}/only_in_{name1}.csv"
+    only_in_df1.write.mode("overwrite").option("header", "true").csv(only_in_df1_path)
 
     # Write records only in second source
     logger.info(f"Writing records only in {name2}")
-    only_in_df2_path = f"{result_dir}/only_in_{name2}.parquet"
-    only_in_df2.write.mode("overwrite").parquet(only_in_df2_path)
-
-    # Also save as CSV for easier viewing
-    only_in_df2.coalesce(1).write.mode("overwrite").option("header", "true").csv(
-        f"{result_dir}/only_in_{name2}.csv"
-    )
+    only_in_df2_path = f"{result_dir}/only_in_{name2}.csv"
+    only_in_df2.write.mode("overwrite").option("header", "true").csv(only_in_df2_path)
 
     # Write detailed differences
     logger.info("Writing detailed differences")
-    diff_data_path = f"{result_dir}/detailed_differences.parquet"
-    diff_data.write.mode("overwrite").parquet(diff_data_path)
-
-    # Also save as CSV for easier viewing - ensure it has only one file for easy access
-    diff_data.coalesce(1).write.mode("overwrite").option("header", "true").csv(
-        f"{result_dir}/detailed_differences.csv"
-    )
+    diff_data_path = f"{result_dir}/detailed_differences.csv"
+    diff_data.write.mode("overwrite").option("header", "true").csv(diff_data_path)
 
     # Write column difference summary
     logger.info("Writing column difference summary")
-    summary_path = f"{result_dir}/column_diff_summary"
-    column_diff_summary.coalesce(1).write.mode("overwrite").option("header", "true").csv(summary_path)
+    summary_path = f"{result_dir}/column_diff_summary.csv"
+    column_diff_summary.write.mode("overwrite").option("header", "true").csv(summary_path)
 
     # Write a simple text summary for quick viewing
     summary_text = column_diff_summary.toPandas()
@@ -301,18 +286,179 @@ def write_results(result_dir, only_in_df1, only_in_df2, diff_data, column_diff_s
                 f.write(f"{row['column_name']}: {row['diff_count']} differences ({row['percentage']:.2f}%)\n")
 
 
+def generate_html_report(spark, result_dir, df1_count, df2_count, only_in_df1_count, only_in_df2_count,
+                         diff_count, column_diff_summary, name1, name2):
+    """Generate a comprehensive HTML report."""
+    # Convert the summary to pandas for easier reporting
+    summary_pdf = column_diff_summary.toPandas()
+
+    # Calculate matching records
+    matching_count = df1_count - only_in_df1_count - diff_count
+    match_percent = (matching_count / df1_count * 100) if df1_count > 0 else 0
+
+    # Create HTML content
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Data Comparison Report</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 20px;
+                line-height: 1.6;
+            }}
+            h1, h2 {{
+                color: #333;
+            }}
+            .container {{
+                max-width: 1200px;
+                margin: 0 auto;
+            }}
+            table {{
+                border-collapse: collapse;
+                width: 100%;
+                margin-bottom: 20px;
+            }}
+            th, td {{
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }}
+            th {{
+                background-color: #f2f2f2;
+            }}
+            tr:nth-child(even) {{
+                background-color: #f9f9f9;
+            }}
+            .summary-box {{
+                background-color: #f8f8f8;
+                border: 1px solid #ddd;
+                padding: 15px;
+                border-radius: 5px;
+                margin-bottom: 20px;
+            }}
+            .file-list {{
+                background-color: #f0f7ff;
+                padding: 10px 15px;
+                border-radius: 3px;
+            }}
+            .match-info {{
+                font-weight: bold;
+                color: {('#4CAF50' if match_percent > 90 else '#FFC107' if match_percent > 70 else '#F44336')};
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Data Comparison Report</h1>
+            <p>Comparison between <strong>{name1}</strong> and <strong>{name2}</strong></p>
+
+            <div class="summary-box">
+                <h2>Record Count Summary</h2>
+                <table>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Count</th>
+                        <th>Percentage</th>
+                    </tr>
+                    <tr>
+                        <td>Total records in {name1}</td>
+                        <td>{df1_count:,}</td>
+                        <td>100%</td>
+                    </tr>
+                    <tr>
+                        <td>Total records in {name2}</td>
+                        <td>{df2_count:,}</td>
+                        <td>{(df2_count / df1_count * 100):.2f}% of {name1}</td>
+                    </tr>
+                    <tr>
+                        <td>Records only in {name1}</td>
+                        <td>{only_in_df1_count:,}</td>
+                        <td>{(only_in_df1_count / df1_count * 100):.2f}%</td>
+                    </tr>
+                    <tr>
+                        <td>Records only in {name2}</td>
+                        <td>{only_in_df2_count:,}</td>
+                        <td>{(only_in_df2_count / df2_count * 100 if df2_count > 0 else 0):.2f}%</td>
+                    </tr>
+                    <tr>
+                        <td>Records with differences</td>
+                        <td>{diff_count:,}</td>
+                        <td>{(diff_count / df1_count * 100):.2f}%</td>
+                        <td>{(diff_count/df1_count*100):.2f}%</td>
+                    </tr>
+                    <tr>
+                        <td>Completely matching records</td>
+                        <td>{matching_count:,}</td>
+                        <td class="match-info">{match_percent:.2f}%</td>
+                    </tr>
+                </table>
+            </div>
+            
+            <h2>Column Difference Summary</h2>
+    """
+
+    # Add column difference table
+    if len(summary_pdf) > 0 and "No differences found" not in summary_pdf["column_name"].values:
+        html_content += """
+            <table>
+                <tr>
+                    <th>Column Name</th>
+                    <th>Difference Count</th>
+                    <th>Percentage</th>
+                </tr>
+        """
+
+        for _, row in summary_pdf.iterrows():
+            html_content += f"""
+                <tr>
+                    <td>{row['column_name']}</td>
+                    <td>{row['diff_count']:,}</td>
+                    <td>{row['percentage']:.2f}%</td>
+                </tr>
+            """
+
+        html_content += """
+            </table>
+        """
+    else:
+        html_content += """
+            <p>No column differences found in matching records.</p>
+        """
+
+    # Add output files section
+    html_content += f"""
+            <h2>Output Files</h2>
+            <div class="file-list">
+                <p>Records only in {name1}: <code>only_in_{name1}.csv</code></p>
+                <p>Records only in {name2}: <code>only_in_{name2}.csv</code></p>
+                <p>Detailed differences: <code>detailed_differences.csv</code></p>
+                <p>Column difference summary: <code>column_diff_summary.csv</code></p>
+            </div>
+            
+            <p>Report generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    # Save the HTML report
+    html_df = spark.createDataFrame([(html_content,)], ["html"])
+
+    # Write as a single file
+    html_df.coalesce(1).write.mode("overwrite").text(f"{result_dir}/comparison_report.html")
+
+    logger.info("HTML Report generated successfully")
+
+    return html_content
+
+
 def generate_report(spark, result_dir, df1_count, df2_count, only_in_df1_count, only_in_df2_count,
                     diff_count, column_diff_summary, name1, name2):
     """Generate a comprehensive report."""
     # Convert the summary to pandas for easier reporting
     summary_pdf = column_diff_summary.toPandas()
-
-    # Calculate matching records correctly
-    common_records = df1_count - only_in_df1_count
-    matching_records = common_records - diff_count
-
-    # Calculate match percentage based on common records to avoid division by zero
-    match_percent = (matching_records / common_records * 100) if common_records > 0 else 0.0
 
     # Create report lines
     report_lines = [
@@ -325,14 +471,19 @@ def generate_report(spark, result_dir, df1_count, df2_count, only_in_df1_count, 
         f"Total records in {name2}: {df2_count}",
         f"Records only in {name1}: {only_in_df1_count}",
         f"Records only in {name2}: {only_in_df2_count}",
-        f"Records common to both sources: {common_records}",
-        f"Records with differences: {diff_count}",
-        f"Completely matching records: {matching_records} ({match_percent:.2f}%)\n",
-        "COLUMN DIFFERENCE SUMMARY",
-        "-----------------------"
+        f"Records with differences: {diff_count}"
     ]
 
-    if not summary_pdf.empty and "No differences found" not in summary_pdf["column_name"].values:
+    matching_count = df1_count - only_in_df1_count - diff_count
+    match_percent = (matching_count / df1_count * 100) if df1_count > 0 else 0
+
+    report_lines.extend([
+        f"Completely matching records: {matching_count} ({match_percent:.2f}%)\n",
+        "COLUMN DIFFERENCE SUMMARY",
+        "-----------------------"
+    ])
+
+    if len(summary_pdf) > 0 and "No differences found" not in summary_pdf["column_name"].values:
         report_lines.append(f"{'Column Name':<30} {'Difference Count':<15} {'Percentage':<10}")
         report_lines.append(f"{'-' * 30} {'-' * 15} {'-' * 10}")
 
@@ -344,24 +495,25 @@ def generate_report(spark, result_dir, df1_count, df2_count, only_in_df1_count, 
     report_lines.extend([
         "\nOUTPUT FILES",
         "-----------",
-        f"Records only in {name1}: only_in_{name1}.parquet, only_in_{name1}.csv",
-        f"Records only in {name2}: only_in_{name2}.parquet, only_in_{name2}.csv",
-        "Detailed differences: detailed_differences.parquet, detailed_differences.csv",
-        "Column difference summary: column_diff_summary"
+        f"Records only in {name1}: only_in_{name1}.csv",
+        f"Records only in {name2}: only_in_{name2}.csv",
+        "Detailed differences: detailed_differences.csv",
+        "Column difference summary: column_diff_summary.csv"
     ])
 
     # Convert report to DataFrame for saving to S3
     report_df = spark.createDataFrame([(line,) for line in report_lines], ["line"])
-    report_df.coalesce(1).write.mode("overwrite").text(f"{result_dir}/comparison_report")
+    report_df.coalesce(1).write.mode("overwrite").text(f"{result_dir}/comparison_report.txt")
 
-    # Also create a CSV version of the report for easier viewing
-    header_schema = StructType([StructField("Report", StringType(), True)])
-    report_csv_df = spark.createDataFrame([(line,) for line in report_lines], header_schema)
-    report_csv_df.coalesce(1).write.mode("overwrite").option("header", "true").csv(
-        f"{result_dir}/comparison_report_formatted"
+    # Generate HTML report
+    generate_html_report(
+        spark, result_dir, df1_count, df2_count,
+        only_in_df1_count, only_in_df2_count, diff_count,
+        column_diff_summary, name1, name2
     )
 
-    logger.info("Report generated successfully")
+    logger.info("Reports generated successfully")
+
 
 def convert_date_column_data_type_to_str(df):
     # Alternative approach using a single expression
@@ -371,6 +523,7 @@ def convert_date_column_data_type_to_str(df):
             df_converted = df_converted.withColumn(column_name, col(column_name).cast("string"))
 
     return df_converted
+
 
 def main():
     # Parse arguments
