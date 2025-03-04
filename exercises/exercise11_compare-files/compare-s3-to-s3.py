@@ -259,25 +259,35 @@ def write_results(result_dir, only_in_df1, only_in_df2, diff_data, column_diff_s
     only_in_df1_path = f"{result_dir}/only_in_{name1}.parquet"
     only_in_df1.write.mode("overwrite").parquet(only_in_df1_path)
 
+    # Also save as CSV for easier viewing
+    only_in_df1.coalesce(1).write.mode("overwrite").option("header", "true").csv(
+        f"{result_dir}/only_in_{name1}.csv"
+    )
+
     # Write records only in second source
     logger.info(f"Writing records only in {name2}")
     only_in_df2_path = f"{result_dir}/only_in_{name2}.parquet"
     only_in_df2.write.mode("overwrite").parquet(only_in_df2_path)
+
+    # Also save as CSV for easier viewing
+    only_in_df2.coalesce(1).write.mode("overwrite").option("header", "true").csv(
+        f"{result_dir}/only_in_{name2}.csv"
+    )
 
     # Write detailed differences
     logger.info("Writing detailed differences")
     diff_data_path = f"{result_dir}/detailed_differences.parquet"
     diff_data.write.mode("overwrite").parquet(diff_data_path)
 
-    # Also save as CSV for easier viewing
-    diff_data.write.mode("overwrite").option("header", "true").csv(
+    # Also save as CSV for easier viewing - ensure it has only one file for easy access
+    diff_data.coalesce(1).write.mode("overwrite").option("header", "true").csv(
         f"{result_dir}/detailed_differences.csv"
     )
 
     # Write column difference summary
     logger.info("Writing column difference summary")
-    summary_path = f"{result_dir}/column_diff_summary.csv"
-    column_diff_summary.write.mode("overwrite").option("header", "true").csv(summary_path)
+    summary_path = f"{result_dir}/column_diff_summary"
+    column_diff_summary.coalesce(1).write.mode("overwrite").option("header", "true").csv(summary_path)
 
     # Write a simple text summary for quick viewing
     summary_text = column_diff_summary.toPandas()
@@ -297,6 +307,13 @@ def generate_report(spark, result_dir, df1_count, df2_count, only_in_df1_count, 
     # Convert the summary to pandas for easier reporting
     summary_pdf = column_diff_summary.toPandas()
 
+    # Calculate matching records correctly
+    common_records = df1_count - only_in_df1_count
+    matching_records = common_records - diff_count
+
+    # Calculate match percentage based on common records to avoid division by zero
+    match_percent = (matching_records / common_records * 100) if common_records > 0 else 0.0
+
     # Create report lines
     report_lines = [
         "DATA COMPARISON REPORT",
@@ -308,19 +325,14 @@ def generate_report(spark, result_dir, df1_count, df2_count, only_in_df1_count, 
         f"Total records in {name2}: {df2_count}",
         f"Records only in {name1}: {only_in_df1_count}",
         f"Records only in {name2}: {only_in_df2_count}",
-        f"Records with differences: {diff_count}"
-    ]
-
-    matching_count = df1_count - only_in_df1_count - diff_count
-    match_percent = (matching_count / df1_count * 100) if df1_count > 0 else 0
-
-    report_lines.extend([
-        f"Completely matching records: {matching_count} ({match_percent:.2f}%)\n",
+        f"Records common to both sources: {common_records}",
+        f"Records with differences: {diff_count}",
+        f"Completely matching records: {matching_records} ({match_percent:.2f}%)\n",
         "COLUMN DIFFERENCE SUMMARY",
         "-----------------------"
-    ])
+    ]
 
-    if len(summary_pdf) > 0 and "No differences found" not in summary_pdf["column_name"].values:
+    if not summary_pdf.empty and "No differences found" not in summary_pdf["column_name"].values:
         report_lines.append(f"{'Column Name':<30} {'Difference Count':<15} {'Percentage':<10}")
         report_lines.append(f"{'-' * 30} {'-' * 15} {'-' * 10}")
 
@@ -332,15 +344,22 @@ def generate_report(spark, result_dir, df1_count, df2_count, only_in_df1_count, 
     report_lines.extend([
         "\nOUTPUT FILES",
         "-----------",
-        f"Records only in {name1}: only_in_{name1}.parquet",
-        f"Records only in {name2}: only_in_{name2}.parquet",
+        f"Records only in {name1}: only_in_{name1}.parquet, only_in_{name1}.csv",
+        f"Records only in {name2}: only_in_{name2}.parquet, only_in_{name2}.csv",
         "Detailed differences: detailed_differences.parquet, detailed_differences.csv",
-        "Column difference summary: column_diff_summary.csv"
+        "Column difference summary: column_diff_summary"
     ])
 
     # Convert report to DataFrame for saving to S3
     report_df = spark.createDataFrame([(line,) for line in report_lines], ["line"])
     report_df.coalesce(1).write.mode("overwrite").text(f"{result_dir}/comparison_report")
+
+    # Also create a CSV version of the report for easier viewing
+    header_schema = StructType([StructField("Report", StringType(), True)])
+    report_csv_df = spark.createDataFrame([(line,) for line in report_lines], header_schema)
+    report_csv_df.coalesce(1).write.mode("overwrite").option("header", "true").csv(
+        f"{result_dir}/comparison_report_formatted"
+    )
 
     logger.info("Report generated successfully")
 
