@@ -142,30 +142,42 @@ def find_key_differences(df1, df2, key_columns, name1, name2):
 
 def compare_column_values(df1, df2, key_columns, name1, name2):
     """Compare column values for records that exist in both DataFrames."""
-    # Create a composite key column for the join
-    df1_with_key = df1.withColumn("composite_key", concat_ws("~", *[col(c) for c in key_columns]))
-    df2_with_key = df2.withColumn("composite_key", concat_ws("~", *[col(c) for c in key_columns]))
+    from pyspark.sql.functions import col, concat_ws, lit
+    from pyspark.sql.types import StructType, StructField, StringType
+    from functools import reduce
 
-    # Alias the DataFrames before joining
-    df1_with_key = df1_with_key.alias(name1)
-    df2_with_key = df2_with_key.alias(name2)
+    # Create composite keys with different names to avoid ambiguity
+    df1_with_key = df1.withColumn(f"{name1}_composite_key", concat_ws("~", *[col(c) for c in key_columns]))
+    df2_with_key = df2.withColumn(f"{name2}_composite_key", concat_ws("~", *[col(c) for c in key_columns]))
 
-    # Get the list of common columns for comparison
+    # Get common columns for comparison
     common_columns = list(set(df1.columns).intersection(set(df2.columns)))
-    logger.info(f"Found {len(common_columns)} common columns for comparison")
+    print(f"Found {len(common_columns)} common columns for comparison")
 
-    # Join with explicit column references using aliases
+    # Rename all columns except the key columns to avoid ambiguity
+    for column in df1.columns:
+        if column not in key_columns:
+            df1_with_key = df1_with_key.withColumnRenamed(column, f"{name1}_{column}")
+
+    for column in df2.columns:
+        if column not in key_columns:
+            df2_with_key = df2_with_key.withColumnRenamed(column, f"{name2}_{column}")
+
+    # Join the DataFrames on the composite keys
     joined_df = df1_with_key.join(
         df2_with_key,
-        df1_with_key.composite_key == df2_with_key.composite_key,
+        df1_with_key[f"{name1}_composite_key"] == df2_with_key[f"{name2}_composite_key"],
         "inner"
     )
 
-    # Initialize a DataFrames to collect differences
+    # Save one version of the composite key for results
+    joined_df = joined_df.withColumn("composite_key", df1_with_key[f"{name1}_composite_key"])
+
+    # Initialize differences DataFrame
     spark_session = df1.sparkSession
     diff_data = None
 
-    # Create a schema for the differences DataFrame
+    # Create schema for results
     diff_schema = StructType([
         StructField("composite_key", StringType(), True),
         StructField("column_name", StringType(), True),
@@ -173,76 +185,42 @@ def compare_column_values(df1, df2, key_columns, name1, name2):
         StructField(f"{name2}_value", StringType(), True)
     ])
 
-    # Find records with any differences
-    logger.info("Looking for records with column value differences")
+    # Build list of differences for each common column
+    all_diffs = []
 
-    # Create conditions to identify rows with differences in any column
-    diff_conditions = []
-
-    for col_name in common_columns:
-        # Skip the composite key column
-        if col_name == "composite_key":
+    for column in common_columns:
+        # Skip key columns
+        if column in key_columns:
             continue
 
-        # Reference columns with proper qualification
-        col1 = df1_with_key[col_name]
-        col2 = df2_with_key[col_name]
+        col1_name = f"{name1}_{column}"
+        col2_name = f"{name2}_{column}"
 
-        # Add null-safe comparison
-        diff_conditions.append(
-            (col1.isNull() & col2.isNotNull()) |
-            (col1.isNotNull() & col2.isNull()) |
-            ((col1 != col2) & col1.isNotNull() & col2.isNotNull())
+        # Create a separate DataFrame for each column with differences
+        col_diff = joined_df.filter(
+            (col(col1_name).isNull() & col(col2_name).isNotNull()) |
+            (col(col1_name).isNotNull() & col(col2_name).isNull()) |
+            ((col(col1_name) != col(col2_name)) & col(col1_name).isNotNull() & col(col2_name).isNotNull())
+        ).select(
+            col("composite_key"),
+            lit(column).alias("column_name"),
+            col(col1_name).cast("string").alias(f"{name1}_value"),
+            col(col2_name).cast("string").alias(f"{name2}_value")
         )
 
-    # Combine all conditions with OR
-    from functools import reduce
-    from pyspark.sql.functions import expr
+        all_diffs.append(col_diff)
 
-    if diff_conditions:
-        diff_condition = reduce(lambda a, b: a | b, diff_conditions)
-
-        # Filter rows with differences
-        different_rows = joined_df.filter(diff_condition)
-
-        # Count records with differences
-        diff_count = different_rows.count()
-        logger.info(f"Found {diff_count} records with differences")
-
-        if diff_count > 0:
-            # Process each column to extract specific differences
-            for col_name in common_columns:
-                # Skip the composite key column
-                if col_name == "composite_key":
-                    continue
-
-                # Create a DataFrame with just the differences for this column
-                col_diff = joined_df.filter(
-                    (col(f"{name1}.{col_name}").isNull() & col(f"{name2}.{col_name}").isNotNull()) |
-                    (col(f"{name1}.{col_name}").isNotNull() & col(f"{name2}.{col_name}").isNull()) |
-                    ((col(f"{name1}.{col_name}") != col(f"{name2}.{col_name}")) &
-                     col(f"{name1}.{col_name}").isNotNull() &
-                     col(f"{name2}.{col_name}").isNotNull())
-                ).select(
-                    col("composite_key"),
-                    lit(col_name).alias("column_name"),
-                    col(f"{name1}.{col_name}").cast("string").alias(f"{name1}_value"),
-                    col(f"{name2}.{col_name}").cast("string").alias(f"{name2}_value")
-                )
-
-                # Append to main differences DataFrame
-                if diff_data is None:
-                    diff_data = col_diff
-                else:
-                    diff_data = diff_data.union(col_diff)
-        else:
-            # Create an empty DataFrame for no differences
-            diff_data = spark_session.createDataFrame([], diff_schema)
+    # Union all differences if any were found
+    if all_diffs:
+        diff_data = all_diffs[0]
+        for diff in all_diffs[1:]:
+            diff_data = diff_data.union(diff)
+        diff_count = diff_data.count()
     else:
-        # Create an empty DataFrame if no columns to compare
         diff_data = spark_session.createDataFrame([], diff_schema)
         diff_count = 0
 
+    print(f"Found {diff_count} differences")
     return diff_data, diff_count
 
 
