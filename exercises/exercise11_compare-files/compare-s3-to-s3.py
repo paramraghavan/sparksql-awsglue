@@ -146,12 +146,20 @@ def compare_column_values(df1, df2, key_columns, name1, name2):
     df1_with_key = df1.withColumn("composite_key", concat_ws("~", *[col(c) for c in key_columns]))
     df2_with_key = df2.withColumn("composite_key", concat_ws("~", *[col(c) for c in key_columns]))
 
+    # Alias the DataFrames before joining
+    df1_with_key = df1_with_key.alias(name1)
+    df2_with_key = df2_with_key.alias(name2)
+
     # Get the list of common columns for comparison
     common_columns = list(set(df1.columns).intersection(set(df2.columns)))
     logger.info(f"Found {len(common_columns)} common columns for comparison")
 
-    # Join DataFrames based on composite key
-    joined_df = df1_with_key.join(df2_with_key, "composite_key", "inner")
+    # Join with explicit column references using aliases
+    joined_df = df1_with_key.join(
+        df2_with_key,
+        df1_with_key.composite_key == df2_with_key.composite_key,
+        "inner"
+    )
 
     # Initialize a DataFrames to collect differences
     spark_session = df1.sparkSession
@@ -176,9 +184,9 @@ def compare_column_values(df1, df2, key_columns, name1, name2):
         if col_name == "composite_key":
             continue
 
-        # Create condition for this column
-        col1 = col(f"{name1}.{col_name}")
-        col2 = col(f"{name2}.{col_name}")
+        # Reference columns with proper qualification
+        col1 = df1_with_key[col_name]
+        col2 = df2_with_key[col_name]
 
         # Add null-safe comparison
         diff_conditions.append(
