@@ -242,7 +242,7 @@ def compare_column_values(df1, df2, key_columns, name1, name2):
     return diff_data, diff_count
 
 
-def create_column_diff_summary(diff_data, total_records, name1, name2):
+def create_column_diff_summary(diff_data, diff_count, name1, name2):
     """Create a summary of differences by column."""
     if diff_data.count() == 0:
         return diff_data.sparkSession.createDataFrame(
@@ -256,10 +256,10 @@ def create_column_diff_summary(diff_data, total_records, name1, name2):
     )
 
     # Calculate percentage
-    if total_records > 0:
+    if diff_count > 0:
         summary = summary.withColumn(
             "percentage",
-            (col("diff_count") * 100 / total_records).cast("double")
+            (col("diff_count") * 100 / diff_count).cast("double")
         )
     else:
         summary = summary.withColumn("percentage", lit(0.0))
@@ -646,7 +646,7 @@ def main():
         # Create column difference summary
         matching_record_count = min(file_count, sf_count) - diff_count
         column_diff_summary = create_column_diff_summary(
-            diff_data, matching_record_count, "File", "Snowflake"
+            diff_data, diff_count, "File", "Snowflake"
         )
 
         # Write results to files
