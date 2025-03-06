@@ -1,0 +1,23 @@
+# Choose source type: "s3" or "local"
+source: "s3"
+
+# Base path for input files:
+#   - If "local": Provide a base directory path (e.g., "C:\\bucketname\\dataset_name")
+#   - If "s3": Provide "bucket-name/dataset_name_n"
+input_path: "bucket-name/dataset_name_n"
+
+# Columns (in CSV order)
+columns: ["id", "name", "value"]
+
+# Key column(s) used for updating existing records
+keys: ["id"]
+
+# File delimiter (e.g., comma ",", pipe "|", tab "\t") for input files
+input_delimiter: ","
+
+# Output settings
+output:
+  type: "s3"  # "local" or "s3"
+  path: "bucket-name/output/final_result.csv"  # File path or S3 key
+  format: "csv"  # "csv" or "parquet"
+  delimiter: "|"  # Output delimiter (e.g., ",", "|", "\t")
