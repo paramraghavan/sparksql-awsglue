@@ -1,0 +1,964 @@
+import yaml
+import logging
+import argparse
+import pandas as pd
+from datetime import datetime
+from snowflake.connector import connect
+from snowflake.connector.errors import Error as SnowflakeError
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("pk_anomaly_detector.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("pk_anomaly_detector")
+
+
+class SnowflakePKAnomalyDetector:
+    def __init__(self, config_path):
+        """Initialize the detector with configuration from a YAML file."""
+        self.config = self._load_config(config_path)
+        self.conn = None
+
+    def _load_config(self, config_path):
+        """Load configuration from YAML file."""
+        try:
+            with open(config_path, 'r') as file:
+                config = yaml.safe_load(file)
+                logger.info(f"Successfully loaded configuration from {config_path}")
+                return config
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {str(e)}")
+            raise
+
+    def connect_to_snowflake(self):
+        """Establish connection to Snowflake using config."""
+        try:
+            snowflake_config = self.config.get('snowflake', {})
+            self.conn = connect(
+                user=snowflake_config.get('user'),
+                password=snowflake_config.get('password'),
+                account=snowflake_config.get('account'),
+                warehouse=snowflake_config.get('warehouse'),
+                database=snowflake_config.get('database'),
+                schema=snowflake_config.get('schema'),
+                role=snowflake_config.get('role')
+            )
+            logger.info("Successfully connected to Snowflake")
+        except SnowflakeError as e:
+            logger.error(f"Failed to connect to Snowflake: {str(e)}")
+            raise
+
+    def close_connection(self):
+        """Close the Snowflake connection."""
+        if self.conn:
+            self.conn.close()
+            logger.info("Snowflake connection closed")
+
+    def analyze_table(self, table_name, source_pk_cols, pipeline_pk_cols):
+        """
+        Analyze a table for primary key anomalies.
+
+        Args:
+            table_name (str): Name of the table to analyze
+            source_pk_cols (list): List of column names that form the source pK
+            pipeline_pk_cols (list): List of column names that form the pipeline pK
+
+        Returns:
+            dict: Analysis results
+        """
+        if not self.conn:
+            self.connect_to_snowflake()
+
+        results = {
+            'table_name': table_name,
+            'source_pk_cols': source_pk_cols,
+            'pipeline_pk_cols': pipeline_pk_cols,
+            'total_rows': 0,
+            'source_pk_violations': 0,
+            'pipeline_pk_violations': 0,
+            'missing_data_violations': 0,
+            'anomalies': [],
+            'sample_violations': [],
+            'delete_insert_issues': []
+        }
+
+        try:
+            cursor = self.conn.cursor()
+
+            # Check if columns exist in the table
+            cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}'")
+            available_columns = [row[0] for row in cursor.fetchall()]
+
+            # Validate that all primary key columns exist
+            for col in source_pk_cols + pipeline_pk_cols:
+                if col.upper() not in [c.upper() for c in available_columns]:
+                    logger.error(f"Column '{col}' not found in table '{table_name}'")
+                    results['error'] = f"Column '{col}' not found in table"
+                    return results
+
+            # Get total row count
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            results['total_rows'] = cursor.fetchone()[0]
+
+            # Check for NULL values in PK columns
+            for col in set(source_pk_cols + pipeline_pk_cols):
+                cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE {col} IS NULL")
+                null_count = cursor.fetchone()[0]
+                if null_count > 0:
+                    results['missing_data_violations'] += null_count
+                    results['anomalies'].append({
+                        'type': 'null_values',
+                        'column': col,
+                        'count': null_count
+                    })
+
+            # Check for duplicates using source primary key
+            source_pk_cols_str = ", ".join(source_pk_cols)
+            cursor.execute(f"""
+                SELECT {source_pk_cols_str}, COUNT(*)
+                FROM {table_name}
+                GROUP BY {source_pk_cols_str}
+                HAVING COUNT(*) > 1
+            """)
+
+            source_violations = cursor.fetchall()
+            results['source_pk_violations'] = len(source_violations)
+
+            if source_violations:
+                # Get sample violations
+                for i, violation in enumerate(source_violations[:5]):
+                    pk_values = violation[:-1]
+                    count = violation[-1]
+
+                    # Construct WHERE clause for the specific PK values
+                    where_conditions = []
+                    for idx, col in enumerate(source_pk_cols):
+                        if pk_values[idx] is None:
+                            where_conditions.append(f"{col} IS NULL")
+                        else:
+                            where_conditions.append(f"{col} = '{pk_values[idx]}'")
+
+                    where_clause = " AND ".join(where_conditions)
+
+                    # Get sample rows with this violation
+                    cursor.execute(f"SELECT * FROM {table_name} WHERE {where_clause} LIMIT 5")
+                    sample_rows = cursor.fetchall()
+
+                    # Get column names for the sample rows
+                    cursor.execute(
+                        f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}'")
+                    column_names = [row[0] for row in cursor.fetchall()]
+
+                    # Format sample rows as dictionaries
+                    formatted_rows = []
+                    for row in sample_rows:
+                        formatted_rows.append(dict(zip(column_names, row)))
+
+                    results['sample_violations'].append({
+                        'type': 'source_pk_violation',
+                        'pk_columns': source_pk_cols,
+                        'pk_values': dict(zip(source_pk_cols, pk_values)),
+                        'duplicate_count': count,
+                        'sample_rows': formatted_rows
+                    })
+
+            # Check for duplicates using pipeline primary key
+            # curious to see, optional, can be removed
+            pipeline_pk_cols_str = ", ".join(pipeline_pk_cols)
+            cursor.execute(f"""
+                SELECT {pipeline_pk_cols_str}, COUNT(*)
+                FROM {table_name}
+                GROUP BY {pipeline_pk_cols_str}
+                HAVING COUNT(*) > 1
+            """)
+
+            pipeline_violations = cursor.fetchall()
+            results['pipeline_pk_violations'] = len(pipeline_violations)
+
+            if pipeline_violations:
+                # Get sample violations (similar to above)
+                for i, violation in enumerate(pipeline_violations[:5]):
+                    pk_values = violation[:-1]
+                    count = violation[-1]
+
+                    where_conditions = []
+                    for idx, col in enumerate(pipeline_pk_cols):
+                        if pk_values[idx] is None:
+                            where_conditions.append(f"{col} IS NULL")
+                        else:
+                            where_conditions.append(f"{col} = '{pk_values[idx]}'")
+
+                    where_clause = " AND ".join(where_conditions)
+
+                    cursor.execute(f"SELECT * FROM {table_name} WHERE {where_clause} LIMIT 5")
+                    sample_rows = cursor.fetchall()
+
+                    cursor.execute(
+                        f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}'")
+                    column_names = [row[0] for row in cursor.fetchall()]
+
+                    formatted_rows = []
+                    for row in sample_rows:
+                        formatted_rows.append(dict(zip(column_names, row)))
+
+                    results['sample_violations'].append({
+                        'type': 'pipeline_pk_violation',
+                        'pk_columns': pipeline_pk_cols,
+                        'pk_values': dict(zip(pipeline_pk_cols, pk_values)),
+                        'duplicate_count': count,
+                        'sample_rows': formatted_rows
+                    })
+
+            # Analyze key column relationships
+            self._analyze_pk_relationships(results, source_pk_cols, pipeline_pk_cols)
+
+            # Check for delete-insert operation issues
+            self._analyze_delete_insert_issues(cursor, table_name, source_pk_cols, pipeline_pk_cols, results)
+
+        # Check if EFFDT and UPDDT are always present
+        cursor.execute(f"""
+            SELECT
+                SUM(CASE WHEN EFFDT IS NULL THEN 1 ELSE 0 END) as effdt_null_count,
+                SUM(CASE WHEN UPDDT IS NULL THEN 1 ELSE 0 END) as upddt_null_count,
+                COUNT(*) as total_rows
+            FROM {table_name}
+        """)
+
+        try:
+            null_counts = cursor.fetchone()
+            if null_counts:
+                effdt_null_count, upddt_null_count, total_rows = null_counts
+
+                # Add results about EFFDT and UPDDT presence
+                results['table_characteristics'] = results.get('table_characteristics', {})
+                results['table_characteristics']['effdt_always_present'] = (effdt_null_count == 0)
+                results['table_characteristics']['upddt_always_present'] = (upddt_null_count == 0)
+
+                if effdt_null_count > 0:
+                    results['anomalies'].append({
+                        'type': 'missing_effdt_values',
+                        'null_count': effdt_null_count,
+                        'impact': f"Found {effdt_null_count} rows with NULL EFFDT values, which may affect historical tracking"
+                    })
+
+                if upddt_null_count > 0:
+                    results['anomalies'].append({
+                        'type': 'missing_upddt_values',
+                        'null_count': upddt_null_count,
+                        'impact': f"Found {upddt_null_count} rows with NULL UPDDT values, which may affect change tracking"
+                    })
+        except SnowflakeError as e:
+            logger.warning(f"Could not check for NULL EFFDT/UPDDT values: {str(e)}")
+            # Try alternative approach with column names
+            try:
+                # Get the actual column names for EFFDT and UPDDT
+                cursor.execute(f"""
+                    SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = '{table_name}'
+                    AND COLUMN_NAME IN ('EFFDT', 'UPDDT', 'EFFECTIVE_DATE', 'UPDATE_DATE')
+                """)
+                date_cols = [row[0] for row in cursor.fetchall()]
+
+                effdt_col = next((col for col in date_cols if col.upper() in ('EFFDT', 'EFFECTIVE_DATE')), None)
+                upddt_col = next((col for col in date_cols if col.upper() in ('UPDDT', 'UPDATE_DATE')), None)
+
+                if effdt_col and upddt_col:
+                    query = f"""
+                        SELECT
+                            SUM(CASE WHEN {effdt_col} IS NULL THEN 1 ELSE 0 END) as effdt_null_count,
+                            SUM(CASE WHEN {upddt_col} IS NULL THEN 1 ELSE 0 END) as upddt_null_count,
+                            COUNT(*) as total_rows
+                        FROM {table_name}
+                    """
+                    cursor.execute(query)
+                    null_counts = cursor.fetchone()
+
+                    if null_counts:
+                        effdt_null_count, upddt_null_count, total_rows = null_counts
+
+                        results['table_characteristics'] = results.get('table_characteristics', {})
+                        results['table_characteristics']['effdt_always_present'] = (effdt_null_count == 0)
+                        results['table_characteristics']['upddt_always_present'] = (upddt_null_count == 0)
+
+                        if effdt_null_count > 0:
+                            results['anomalies'].append({
+                                'type': 'missing_effdt_values',
+                                'null_count': effdt_null_count,
+                                'impact': f"Found {effdt_null_count} rows with NULL {effdt_col} values, which may affect historical tracking"
+                            })
+
+                        if upddt_null_count > 0:
+                            results['anomalies'].append({
+                                'type': 'missing_upddt_values',
+                                'null_count': upddt_null_count,
+                                'impact': f"Found {upddt_null_count} rows with NULL {upddt_col} values, which may affect change tracking"
+                            })
+            except SnowflakeError as e:
+                logger.warning(f"Could not check for NULL EFFDT/UPDDT values with alternative approach: {str(e)}")
+
+        cursor.close()
+
+        except SnowflakeError as e:
+        logger.error(f"Error analyzing table {table_name}: {str(e)}")
+        results['error'] = str(e)
+
+    return results
+
+
+def _analyze_pk_relationships(self, results, source_pk_cols, pipeline_pk_cols):
+    """
+    Analyze relationships between source and pipeline primary keys.
+
+    Args:
+        results (dict): Analysis results dictionary to update
+        source_pk_cols (list): Source primary key columns
+        pipeline_pk_cols (list): Pipeline primary key columns
+    """
+    # Identify columns present in source PK but missing in pipeline PK
+    missing_from_pipeline = [col for col in source_pk_cols if col not in pipeline_pk_cols]
+
+    # Identify columns present in pipeline PK but missing in source PK
+    extra_in_pipeline = [col for col in pipeline_pk_cols if col not in source_pk_cols]
+
+    # Add results
+    results['pk_relationship'] = {
+        'missing_from_pipeline': missing_from_pipeline,
+        'extra_in_pipeline': extra_in_pipeline,
+        'is_subset': len(missing_from_pipeline) > 0 and len(extra_in_pipeline) == 0,
+        'is_superset': len(missing_from_pipeline) == 0 and len(extra_in_pipeline) > 0,
+        'is_different': len(missing_from_pipeline) > 0 and len(extra_in_pipeline) > 0,
+        'is_same': len(missing_from_pipeline) == 0 and len(extra_in_pipeline) == 0
+    }
+
+    # Add anomalies based on relationship
+    if results['pk_relationship']['is_subset']:
+        results['anomalies'].append({
+            'type': 'incomplete_pipeline_pk',
+            'missing_columns': missing_from_pipeline,
+            'impact': 'Pipeline primary key is missing columns that are part of the source primary key, ' +
+                      'which may lead to uniqueness violations/data integrity issues'
+        })
+    elif results['pk_relationship']['is_superset']:
+        results['anomalies'].append({
+            'type': 'extra_pipeline_pk_columns',
+            'extra_columns': extra_in_pipeline,
+            'impact': 'Pipeline primary key includes additional columns not in the source primary key, ' +
+                      'which may be unnecessary or impact performance'
+        })
+    elif results['pk_relationship']['is_different']:
+        results['anomalies'].append({
+            'type': 'different_primary_keys',
+            'missing_columns': missing_from_pipeline,
+            'extra_columns': extra_in_pipeline,
+            'impact': 'Pipeline and source primary keys differ significantly, which may cause data integrity issues'
+        })
+
+
+def _analyze_delete_insert_issues(self, cursor, table_name, source_pk_cols, pipeline_pk_cols, results):
+    """
+    Analyze potential issues with delete-insert operations.
+
+    Args:
+        cursor: Snowflake cursor
+        table_name (str): Table name
+        source_pk_cols (list): Source primary key columns
+        pipeline_pk_cols (list): Pipeline primary key columns
+        results (dict): Results dictionary to update
+    """
+    try:
+        # Check for existence of effective date and update date columns
+        cursor.execute(f"""
+                SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = '{table_name}'
+                AND COLUMN_NAME IN ('EFFDT', 'UPDDT')
+            """)
+        timestamp_cols = [row[0] for row in cursor.fetchall()]
+
+        # Assuming EFFDT and UPDDT exists in all the tables
+        # Check specifically for EFFDT and UPDDT
+        has_effdt = any(col.upper() == 'EFFDT' for col in timestamp_cols)
+        has_upddt = any(col.upper() == 'UPDDT' for col in timestamp_cols)
+
+        if not has_effdt and not has_upddt:
+            results['delete_insert_issues'].append({
+                'type': 'missing_timestamp',
+                'impact': 'No effective date (EFFDT) or update date (UPDDT) columns detected, which are needed for proper change tracking'
+            })
+        elif has_effdt and not has_upddt:
+            results['delete_insert_issues'].append({
+                'type': 'missing_upddt',
+                'impact': 'Found effective date (EFFDT) but missing update date (UPDDT), which may affect change tracking'
+            })
+        elif not has_effdt and has_upddt:
+            results['delete_insert_issues'].append({
+                'type': 'missing_effdt',
+                'impact': 'Found update date (UPDDT) but missing effective date (EFFDT), which may affect historical tracking'
+            })
+
+        # Analyze potential over-deletion issues when pipeline PK is a subset of source PK
+        if results['pk_relationship']['is_subset']:
+            results['delete_insert_issues'].append({
+                'type': 'over_deletion_risk',
+                'missing_columns': results['pk_relationship']['missing_from_pipeline'],
+                'impact': 'Pipeline may delete more rows than necessary when using a subset of the source primary key'
+            })
+
+            # Simulate or check for actual over-deletion scenarios
+            common_cols = [col for col in pipeline_pk_cols if col in source_pk_cols]
+            missing_cols = results['pk_relationship']['missing_from_pipeline']
+
+            # If common columns exist
+            if common_cols and missing_cols:
+                common_cols_str = ", ".join(common_cols)
+                missing_cols_str = ", ".join(missing_cols)
+
+                # Check if there are distinct values in missing columns for the same pipeline PK
+                query = f"""
+                        SELECT {common_cols_str}, COUNT(DISTINCT {missing_cols_str}) as distinct_combinations
+                        FROM {table_name}
+                        GROUP BY {common_cols_str}
+                        HAVING distinct_combinations > 1
+                        LIMIT 5
+                    """
+
+                try:
+                    cursor.execute(query)
+                    over_deletion_examples = cursor.fetchall()
+
+                    if over_deletion_examples:
+                        for example in over_deletion_examples:
+                            pk_values = example[:-1]
+                            distinct_count = example[-1]
+
+                            results['delete_insert_issues'].append({
+                                'type': 'over_deletion_example',
+                                'pipeline_pk_values': dict(zip(common_cols, pk_values)),
+                                'distinct_combinations': distinct_count,
+                                'impact': f"Delete operation using pipeline PK would remove {distinct_count} distinct source records"
+                            })
+                except SnowflakeError as e:
+                    logger.warning(f"Could not analyze over-deletion scenarios: {str(e)}")
+
+        # Analyze potential under-deletion issues when pipeline PK is a superset or different
+        if results['pk_relationship']['is_superset'] or results['pk_relationship']['is_different']:
+            results['delete_insert_issues'].append({
+                'type': 'under_deletion_risk',
+                'extra_columns': results['pk_relationship'].get('extra_in_pipeline', []),
+                'impact': 'Pipeline may not delete all necessary rows when using different keys than the source'
+            })
+
+            # Check for stale data that might not be deleted properly
+            if timestamp_cols:
+                ts_col = 'UPDDT'  # timestamp_cols[0]  # Use the first timestamp column found
+                source_pk_cols_str = ", ".join(source_pk_cols)
+                pipeline_pk_cols_str = ", ".join(pipeline_pk_cols)
+
+                # This query attempts to identify rows with the same source PK but different pipeline PKs
+                # which might not be properly cleaned up during delete-insert
+                query = f"""
+                        WITH ranked_data AS (
+                            SELECT
+                                {source_pk_cols_str},
+                                {pipeline_pk_cols_str},
+                                {ts_col},
+                                ROW_NUMBER() OVER (PARTITION BY {source_pk_cols_str} ORDER BY {ts_col} DESC) as rn
+                            FROM {table_name}
+                        )
+                        SELECT
+                            {source_pk_cols_str},
+                            COUNT(DISTINCT {pipeline_pk_cols_str}) as distinct_pipeline_pks
+                        FROM ranked_data
+                        GROUP BY {source_pk_cols_str}
+                        HAVING distinct_pipeline_pks > 1
+                        LIMIT 5
+                    """
+
+                try:
+                    cursor.execute(query)
+                    under_deletion_examples = cursor.fetchall()
+
+                    if under_deletion_examples:
+                        for example in under_deletion_examples:
+                            pk_values = example[:-1]
+                            distinct_count = example[-1]
+
+                            results['delete_insert_issues'].append({
+                                'type': 'under_deletion_example',
+                                'source_pk_values': dict(zip(source_pk_cols, pk_values)),
+                                'distinct_pipeline_pks': distinct_count,
+                                'impact': f"Source record maps to {distinct_count} distinct pipeline records, risking stale data"
+                            })
+                except SnowflakeError as e:
+                    logger.warning(f"Could not analyze under-deletion scenarios: {str(e)}")
+
+    except SnowflakeError as e:
+        logger.error(f"Error analyzing delete-insert issues: {str(e)}")
+        results['delete_insert_issues'].append({
+            'type': 'analysis_error',
+            'error': str(e)
+        })
+
+
+def generate_report(self, results, output_format='csv'):
+    """
+    Generate a report from analysis results.
+
+    Args:
+        results (dict): Analysis results from analyze_table
+        output_format (str): Output format ('csv', 'json', 'html')
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    table_name = results['table_name']
+
+    summary_data = {
+        'Table Name': [table_name],
+        'Total Rows': [results['total_rows']],
+        'Source PK Columns': [', '.join(results['source_pk_cols'])],
+        'Pipeline PK Columns': [', '.join(results['pipeline_pk_cols'])],
+        'Source PK Violations': [results['source_pk_violations']],
+        'Pipeline PK Violations': [results['pipeline_pk_violations']],
+        'Missing Data Violations': [results['missing_data_violations']],
+        'PK Relationship': [self._format_pk_relationship(results.get('pk_relationship', {}))],
+    }
+
+    summary_df = pd.DataFrame(summary_data)
+
+    # Create anomalies DataFrame
+    anomalies_data = []
+    for anomaly in results.get('anomalies', []):
+        if anomaly['type'] == 'null_values':
+            anomalies_data.append({
+                'Anomaly Type': 'Null Values in Key Column',
+                'Details': f"Column '{anomaly['column']}' has {anomaly['count']} NULL values",
+                'Impact': 'NULL values in primary key columns violate uniqueness constraints'
+            })
+        elif anomaly['type'] == 'missing_pk_column_impact':
+            anomalies_data.append({
+                'Anomaly Type': 'Missing Primary Key Column Impact',
+                'Details': f"Missing columns {anomaly['missing_columns']} would resolve duplicates",
+                'Impact': f"Adding these columns to the pipeline PK would resolve {anomaly['distinct_values_count']} duplicates"
+            })
+        elif anomaly['type'] == 'incomplete_pipeline_pk':
+            anomalies_data.append({
+                'Anomaly Type': 'Incomplete Pipeline Primary Key',
+                'Details': f"Missing columns: {', '.join(anomaly['missing_columns'])}",
+                'Impact': anomaly['impact']
+            })
+        elif anomaly['type'] == 'extra_pipeline_pk_columns':
+            anomalies_data.append({
+                'Anomaly Type': 'Extra Pipeline Primary Key Columns',
+                'Details': f"Extra columns: {', '.join(anomaly['extra_columns'])}",
+                'Impact': anomaly['impact']
+            })
+        elif anomaly['type'] == 'different_primary_keys':
+            anomalies_data.append({
+                'Anomaly Type': 'Significantly Different Primary Keys',
+                'Details': f"Missing: {', '.join(anomaly['missing_columns'])}, Extra: {', '.join(anomaly['extra_columns'])}",
+                'Impact': anomaly['impact']
+            })
+        elif anomaly['type'] == 'effdt_not_in_pk':
+            anomalies_data.append({
+                'Anomaly Type': 'Effective Date Not in Primary Key',
+                'Details': "Effective date column is missing from primary keys",
+                'Impact': anomaly['impact']
+            })
+        elif anomaly['type'] == 'effdt_missing_from_pipeline_pk':
+            anomalies_data.append({
+                'Anomaly Type': 'EFFDT Missing from Pipeline PK',
+                'Details': "EFFDT is in source PK but missing from pipeline PK",
+                'Impact': anomaly['impact']
+            })
+        elif anomaly['type'] == 'missing_effdt_values':
+            anomalies_data.append({
+                'Anomaly Type': 'Missing EFFDT Values',
+                'Details': f"Found {anomaly['null_count']} rows with NULL EFFDT values",
+                'Impact': anomaly['impact']
+            })
+        elif anomaly['type'] == 'missing_upddt_values':
+            anomalies_data.append({
+                'Anomaly Type': 'Missing UPDDT Values',
+                'Details': f"Found {anomaly['null_count']} rows with NULL UPDDT values",
+                'Impact': anomaly['impact']
+            })
+
+    anomalies_df = pd.DataFrame(anomalies_data) if anomalies_data else pd.DataFrame({'No Anomalies Found': ['']})
+
+    # Create violations DataFrame
+    violations_data = []
+    for violation in results.get('sample_violations', []):
+        violation_type = 'Source System PK Violation' if violation[
+                                                             'type'] == 'source_pk_violation' else 'Pipeline PK Violation'
+        pk_cols = ', '.join(violation['pk_columns'])
+        pk_values = ', '.join([f"{k}={v}" for k, v in violation['pk_values'].items()])
+
+        violations_data.append({
+            'Violation Type': violation_type,
+            'PK Columns': pk_cols,
+            'PK Values': pk_values,
+            'Duplicate Count': violation['duplicate_count'],
+            'Sample Row Count': len(violation['sample_rows'])
+        })
+
+    violations_df = pd.DataFrame(violations_data) if violations_data else pd.DataFrame(
+        {'No Violations Found': ['']})
+
+    # Create delete-insert issues DataFrame
+    delete_insert_data = []
+    for issue in results.get('delete_insert_issues', []):
+        details = ""
+        if issue['type'] == 'missing_timestamp':
+            details = "No timestamp column for change tracking"
+        elif issue['type'] == 'missing_effdt':
+            details = "Missing effective date (EFFDT) column"
+        elif issue['type'] == 'missing_upddt':
+            details = "Missing update date (UPDDT) column"
+        elif issue['type'] == 'over_deletion_risk':
+            details = f"Missing columns: {', '.join(issue['missing_columns'])}"
+        elif issue['type'] == 'under_deletion_risk':
+            details = f"Extra columns: {', '.join(issue.get('extra_columns', []))}"
+        elif issue['type'] == 'over_deletion_example':
+            pk_values = ', '.join([f"{k}={v}" for k, v in issue['pipeline_pk_values'].items()])
+            details = f"Pipeline PK {pk_values} affects {issue['distinct_combinations']} distinct source records"
+        elif issue['type'] == 'under_deletion_example':
+            pk_values = ', '.join([f"{k}={v}" for k, v in issue['source_pk_values'].items()])
+            details = f"Source PK {pk_values} maps to {issue['distinct_pipeline_pks']} distinct pipeline records"
+        elif issue['type'] == 'effdt_upddt_pipeline_issue':
+            details = "EFFDT not in pipeline PK but records have multiple updates with same EFFDT"
+        elif issue['type'] == 'effdt_in_pk_upddt_changes':
+            details = "EFFDT in pipeline PK with changing UPDDT values"
+        elif issue['type'] == 'analysis_error':
+            details = f"Error: {issue['error']}"
+
+        delete_insert_data.append({
+            'Issue Type': ' '.join(issue['type'].split('_')).title(),
+            'Details': details,
+            'Impact': issue.get('impact', 'Unknown')
+        })
+
+    delete_insert_df = pd.DataFrame(delete_insert_data) if delete_insert_data else pd.DataFrame(
+        {'No Delete-Insert Issues Found': ['']})
+
+    # Create recommendation
+    recommendation = ""
+    if results['source_pk_violations'] > 0:
+        recommendation += "Source system primary key violations detected. Data quality issues may exist in the source system.\n"
+
+    if results.get('pk_relationship', {}).get('is_subset', False):
+        missing_cols = results.get('pk_relationship', {}).get('missing_from_pipeline', [])
+        recommendation += f"Pipeline primary key is incomplete. Consider adding {', '.join(missing_cols)} to the pipeline primary key.\n"
+
+    if results.get('pk_relationship', {}).get('is_different', False):
+        recommendation += "Source and pipeline primary keys have significant differences. Review key definitions.\n"
+
+    if results['missing_data_violations'] > 0:
+        recommendation += "NULL values found in primary key columns. Implement NOT NULL constraints and data validation.\n"
+
+    # Add EFFDT-specific recommendations
+    effdt_in_source_pk = any(col.upper() in ('EFFDT') for col in results['source_pk_cols'])
+    effdt_in_pipeline_pk = any(col.upper() in ('EFFDT') for col in results['pipeline_pk_cols'])
+
+    if effdt_in_source_pk and not effdt_in_pipeline_pk:
+        recommendation += "CRITICAL: EFFDT is part of the source primary key but missing from the pipeline primary key. " + \
+                          "This creates high risk of data loss during delete-insert operations as historical records may be overwritten. " + \
+                          "Add EFFDT to the pipeline primary key.\n"
+
+    # Check if any tables have missing EFFDT or UPDDT values
+    if any(anomaly['type'] == 'missing_effdt_values' for anomaly in results.get('anomalies', [])):
+        recommendation += "Some rows have NULL EFFDT values. This may cause issues with historical tracking. " + \
+                          "Consider implementing data validation to ensure EFFDT is always populated.\n"
+
+    if any(anomaly['type'] == 'missing_upddt_values' for anomaly in results.get('anomalies', [])):
+        recommendation += "Some rows have NULL UPDDT values. This may cause issues with change tracking. " + \
+                          "Consider implementing data validation to ensure UPDDT is always populated.\n"
+
+    # Add delete-insert specific recommendations
+    if any(issue['type'] == 'over_deletion_risk' for issue in results.get('delete_insert_issues', [])):
+        recommendation += "Risk of over-deletion detected. Pipeline may delete more rows than necessary. Consider using the complete source primary key for delete operations.\n"
+
+    if any(issue['type'] == 'under_deletion_risk' for issue in results.get('delete_insert_issues', [])):
+        recommendation += "Risk of under-deletion detected. Pipeline may not delete all necessary rows. Consider aligning pipeline primary key with source.\n"
+
+    # Add EFFDT and UPDDT specific recommendations for missing columns
+    if any(issue['type'] == 'missing_timestamp' for issue in results.get('delete_insert_issues', [])):
+        recommendation += "No effective date (EFFDT) or update date (UPDDT) columns detected. Consider adding these columns for proper change tracking.\n"
+
+    if any(issue['type'] == 'missing_effdt' for issue in results.get('delete_insert_issues', [])):
+        recommendation += "Missing effective date (EFFDT) column. Add this column to properly track record validity periods.\n"
+
+    if any(issue['type'] == 'missing_upddt' for issue in results.get('delete_insert_issues', [])):
+        recommendation += "Missing update date (UPDDT) column. Add this column to track when records are modified.\n"
+
+    if any(anomaly['type'] == 'effdt_not_in_pk' for anomaly in results.get('anomalies', [])):
+        recommendation += "Effective date (EFFDT) is not part of any primary key. Consider including it to properly track record versions.\n"
+
+    if any(issue['type'] == 'effdt_upddt_pipeline_issue' for issue in results.get('delete_insert_issues', [])):
+        recommendation += "Your data shows a pattern where EFFDT stays the same while UPDDT changes. Since EFFDT is not in the pipeline primary key, " + \
+                          "your delete-insert operations may incorrectly replace historical records. Consider including EFFDT in the pipeline PK or " + \
+                          "modifying your delete-insert logic to handle this pattern.\n"
+
+    if any(issue['type'] == 'effdt_in_pk_upddt_changes' for issue in results.get('delete_insert_issues', [])):
+        recommendation += "Your pipeline correctly includes EFFDT in the primary key while UPDDT can change. This preserves the history of records. " + \
+                          "Make sure your delete-insert logic properly handles this pattern to prevent data loss.\n"
+
+    # Design pattern recommendations for EFFDT/UPDDT handling
+    if effdt_in_source_pk and effdt_in_pipeline_pk:
+        recommendation += "\nBEST PRACTICE: Your table correctly includes EFFDT in both source and pipeline primary keys, which enables proper historical tracking. " + \
+                          "For delete-insert operations with this pattern:\n" + \
+                          "1. Use the complete primary key (including EFFDT) in the DELETE statement\n" + \
+                          "2. This will preserve different versions of records with different effective dates\n" + \
+                          "3. Only records with matching EFFDT will be replaced, preserving historical versions\n"
+
+    if not recommendation:
+        recommendation = "No significant issues found."
+        for issue in results.get('delete_insert_issues', []):
+            recommendation += "Missing update date (UPDDT) column. Add this column to track when records are modified.\n"
+
+        if any(anomaly['type'] == 'effdt_not_in_pk' for anomaly in results.get('anomalies', [])):
+            recommendation += "Effective date (EFFDT) is not part of any primary key. Consider including it to properly track record versions.\n"
+
+        if any(issue['type'] == 'effdt_in_source_not_pipeline' for issue in results.get('delete_insert_issues', [])):
+            recommendation += "CRITICAL: EFFDT is in source PK but missing from pipeline PK. This mismatch can cause records with different effective dates " + \
+                              "to be treated as duplicate records in your pipeline, potentially leading to data loss when using delete-insert operations.\n"
+        for issue in results.get('delete_insert_issues', []):
+            recommendation += "Missing update date (UPDDT) column. Add this column to track when records are modified.\n"
+
+        if any(anomaly['type'] == 'effdt_not_in_pk' for anomaly in results.get('anomalies', [])):
+            recommendation += "Effective date (EFFDT) is not part of any primary key. Consider including it to properly track record versions.\n"
+
+        if any(issue['type'] == 'effdt_upddt_pipeline_issue' for issue in results.get('delete_insert_issues', [])):
+            recommendation += "Your data shows a pattern where EFFDT stays the same while UPDDT changes. Since EFFDT is not in the pipeline primary key, " + \
+                              "your delete-insert operations may incorrectly replace historical records. Consider including EFFDT in the pipeline PK or " + \
+                              "modifying your delete-insert logic to handle this pattern.\n"
+
+        if any(issue['type'] == 'effdt_in_pk_upddt_changes' for issue in results.get('delete_insert_issues', [])):
+            recommendation += "Your pipeline correctly includes EFFDT in the primary key while UPDDT can change. This preserves the history of records. " + \
+                              "Make sure your delete-insert logic properly handles this pattern to prevent data loss.\n"
+
+        if not recommendation:
+            recommendation = "No significant issues found."
+
+        # Save reports
+        if output_format == 'csv':
+            summary_df.to_csv(f"{table_name}_summary_{timestamp}.csv", index=False)
+            anomalies_df.to_csv(f"{table_name}_anomalies_{timestamp}.csv", index=False)
+            violations_df.to_csv(f"{table_name}_violations_{timestamp}.csv", index=False)
+            delete_insert_df.to_csv(f"{table_name}_delete_insert_issues_{timestamp}.csv", index=False)
+
+            with open(f"{table_name}_recommendation_{timestamp}.txt", 'w') as f:
+                f.write(recommendation)
+
+            logger.info(f"CSV reports generated: {table_name}_*_{timestamp}.csv")
+
+        elif output_format == 'html':
+            with open(f"{table_name}_report_{timestamp}.html", 'w') as f:
+                f.write("<html><head><style>")
+            f.write("table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }")
+            f.write("th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }")
+            f.write("th { background-color: #f2f2f2; }")
+            f.write("h2 { color: #333; }")
+            f.write("</style></head><body>")
+
+            f.write(f"<h1>Primary Key Anomaly Report - {table_name}</h1>")
+            f.write(f"<p>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>")
+
+            f.write("<h2>Summary</h2>")
+            f.write(summary_df.to_html(index=False))
+
+            f.write("<h2>Anomalies</h2>")
+            f.write(anomalies_df.to_html(index=False))
+
+            f.write("<h2>Sample Violations</h2>")
+            f.write(violations_df.to_html(index=False))
+
+            f.write("<h2>Delete-Insert Operation Issues</h2>")
+            f.write(delete_insert_df.to_html(index=False))
+
+            f.write("<h2>Recommendations</h2>")
+            f.write(f"<p>{recommendation.replace('\\n', '<br>')}</p>")
+
+            f.write("</body></html>")
+
+            logger.info(f"HTML report generated: {table_name}_report_{timestamp}.html")
+
+    return {
+        'summary': summary_df,
+        'anomalies': anomalies_df,
+        'violations': violations_df,
+        'delete_insert_issues': delete_insert_df,
+        'recommendation': recommendation,
+        'timestamp': timestamp
+    }
+
+
+def _format_pk_relationship(self, pk_relationship):
+    """Format PK relationship for display in reports."""
+    if not pk_relationship:
+        return "Unknown"
+
+    if pk_relationship.get('is_same', False):
+        return "Identical"
+    elif pk_relationship.get('is_subset', False):
+        return f"Pipeline PK is a subset (missing {len(pk_relationship.get('missing_from_pipeline', []))} columns)"
+    elif pk_relationship.get('is_superset', False):
+        return f"Pipeline PK is a superset (extra {len(pk_relationship.get('extra_in_pipeline', []))} columns)"
+    elif pk_relationship.get('is_different', False):
+        return "Completely different keys"
+    return "Unknown"
+
+
+def analyze_with_sample_data(self, table_name, source_pk_cols, pipeline_pk_cols, sample_data=None):
+    """
+    Analyze using provided sample data instead of a real Snowflake table.
+    Useful for testing and demonstrations.
+
+    Args:
+        table_name (str): Name for the sample table
+        source_pk_cols (list): Source primary key columns
+        pipeline_pk_cols (list): Pipeline primary key columns
+        sample_data (list): List of dictionaries containing sample data
+
+    Returns:
+        dict: Analysis results
+    """
+    if not sample_data:
+        # Default sample data demonstrating various anomalies
+        sample_data = [
+            # Example of source PK violation (duplicate col1,col2,col3)
+            {"col1": "A", "col2": "B", "col3": "C", "col4": "D", "value": 100, "updated_at": "2023-01-01"},
+            {"col1": "A", "col2": "B", "col3": "C", "col4": "E", "value": 200, "updated_at": "2023-01-02"},
+
+            # Example of pipeline PK violation (duplicate col4,col1)
+            {"col1": "X", "col2": "Y1", "col3": "Z1", "col4": "W", "value": 300, "updated_at": "2023-01-03"},
+            {"col1": "X", "col2": "Y2", "col3": "Z2", "col4": "W", "value": 400, "updated_at": "2023-01-04"},
+
+            # Example of over-deletion risk
+            {"col1": "M", "col2": "N1", "col3": "O1", "col4": "P", "value": 500, "updated_at": "2023-01-05"},
+            {"col1": "M", "col2": "N2", "col3": "O2", "col4": "P", "value": 600, "updated_at": "2023-01-06"},
+
+            # Example of under-deletion risk (stale data)
+            {"col1": "R", "col2": "S", "col3": "T", "col4": "U1", "value": 700, "updated_at": "2023-01-07"},
+            {"col1": "R", "col2": "S", "col3": "T", "col4": "U2", "value": 800, "updated_at": "2023-01-08"},
+
+            # Example with NULL value in PK column
+            {"col1": None, "col2": "V", "col3": "W", "col4": "X", "value": 900, "updated_at": "2023-01-09"},
+        ]
+
+    results = {
+        'table_name': table_name,
+        'source_pk_cols': source_pk_cols,
+        'pipeline_pk_cols': pipeline_pk_cols,
+        'total_rows': len(sample_data),
+        'source_pk_violations': 0,
+        'pipeline_pk_violations': 0,
+        'missing_data_violations': 0,
+        'anomalies': [],
+        'sample_violations': [],
+        'delete_insert_issues': []
+    }
+
+    # Check for NULL values in PK columns
+    for row in sample_data:
+        for col in set(source_pk_cols + pipeline_pk_cols):
+            if col in row and row[col] is None:
+                results['missing_data_violations'] += 1
+                # Check if we already have this anomaly
+                if not any(a.get('type') == 'null_values' and a.get('column') == col for a in results['anomalies']):
+                    results['anomalies'].append({
+                        'type': 'null_values',
+                        'column': col,
+                        'count': 1
+                    })
+                else:
+                    # Increment the count for existing anomaly
+                    for anomaly in results['anomalies']:
+                        if anomaly.get('type') == 'null_values' and anomaly.get('column') == col:
+                            anomaly['count'] += 1
+
+    # Check for duplicates using source primary key
+    source_pk_groups = {}
+    for row in sample_data:
+        key = tuple(row.get(col) for col in source_pk_cols)
+        if key not in source_pk_groups:
+            source_pk_groups[key] = []
+        source_pk_groups[key].append(row)
+
+    for key, rows in source_pk_groups.items():
+        if len(rows) > 1:
+            results['source_pk_violations'] += 1
+            if len(results['sample_violations']) < 5:
+                results['sample_violations'].append({
+                    'type': 'source_pk_violation',
+                    'pk_columns': source_pk_cols,
+                    'pk_values': dict(zip(source_pk_cols, key)),
+                    'duplicate_count': len(rows),
+                    'sample_rows': rows[:5]
+                })
+
+    # Check for duplicates using pipeline primary key
+    pipeline_pk_groups = {}
+    for row in sample_data:
+        key = tuple(row.get(col) for col in pipeline_pk_cols)
+        if key not in pipeline_pk_groups:
+            pipeline_pk_groups[key] = []
+        pipeline_pk_groups[key].append(row)
+
+    for key, rows in pipeline_pk_groups.items():
+        if len(rows) > 1:
+            results['pipeline_pk_violations'] += 1
+            if len(results['sample_violations']) < 10:  # Limit to 10 total violations
+                results['sample_violations'].append({
+                    'type': 'pipeline_pk_violation',
+                    'pk_columns': pipeline_pk_cols,
+                    'pk_values': dict(zip(pipeline_pk_cols, key)),
+                    'duplicate_count': len(rows),
+                    'sample_rows': rows[:5]
+                })
+
+    # Analyze key column relationships
+    self._analyze_pk_relationships(results, source_pk_cols, pipeline_pk_cols)
+
+    # Analyze delete-insert operation issues with sample data
+    self._analyze_delete_insert_with_sample(sample_data, source_pk_cols, pipeline_pk_cols, results)
+
+    return results
+
+def main():
+    """Main function to run the anomaly detector."""
+    parser = argparse.ArgumentParser(description='Snowflake Primary Key Anomaly Detector')
+    parser.add_argument('--config', required=True, help='Path to configuration YAML file')
+    parser.add_argument('--table', required=True, help='Name of the table to analyze')
+    parser.add_argument('--source-pk', required=True, help='Comma-separated list of source primary key columns')
+    parser.add_argument('--pipeline-pk', required=True, help='Comma-separated list of pipeline primary key columns')
+    parser.add_argument('--output-format', choices=['csv', 'html'], default='csv', help='Output format for reports')
+
+    args = parser.parse_args()
+
+    source_pk_cols = [col.strip() for col in args.source_pk.split(',')]
+    pipeline_pk_cols = [col.strip() for col in args.pipeline_pk.split(',')]
+
+    detector = SnowflakePKAnomalyDetector(args.config)
+
+    try:
+        detector.connect_to_snowflake()
+        results = detector.analyze_table(args.table, source_pk_cols, pipeline_pk_cols)
+        detector.generate_report(results, args.output_format)
+    finally:
+        if not args.sample_mode:
+            detector.close_connection()
+
+    logger.info("Analysis complete")
+
+
+if __name__ == "__main__":
+    main()
+
+# # Normal mode (connects to Snowflake)
+# python pk_anomaly_detector.py --config config.yaml --table my_table --source-pk "col1,col2,col3" --pipeline-pk "col4,col1" --output-format html
+# # Sample mode (uses built-in sample data)
+# python pk_anomaly_detector.py --config config.yaml --table my_table --source-pk "col1,col2,col3" --pipeline-pk "col4,col1" --output-format html --sample-mode
+# python pk_anomaly_detector.py --config config.yaml --table my_table --source-pk "col1,col2,effdt" --pipeline-pk "col1,col4" --output-format html
