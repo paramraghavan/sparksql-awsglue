@@ -1,3 +1,29 @@
+"""
+Code below doesn't generate a UnicodeDecodeError even though it contains invalid UTF-8 bytes. Here's why
+
+1. **Schema Definition**: The code explicitly defines a schema where "content" is a StringType(). When reading the CSV, Spark uses this schema rather than inferring types.
+
+2. **Binary Handling**: When Spark reads CSV files, it attempts to decode the contents according to the schema. However, the specific way it's implemented here has a workaround:
+   - The content column with the invalid UTF-8 byte (0xff) is being read as a StringType
+   - When Spark encounters invalid UTF-8 bytes, it would typically throw an error, but in this case something else happens
+
+3. **Error Suppression**: Several factors contribute to error suppression:
+   - The UDF processing is somewhat isolated
+   - The small data volume doesn't trigger certain internal serialization mechanisms
+   - The local execution mode might handle this differently than distributed execution
+
+If you wanted to actually trigger the Unicode error, you might need to:
+
+1. Remove the explicit schema and let Spark infer types
+2. Increase the data volume significantly
+3. Force more complex serialization/deserialization cycles
+4. Use different Spark operations that handle string encoding differently
+5. Add configuration that makes Spark stricter about character encoding
+
+In a real production environment with distributed processing and larger data volumes, this type of invalid UTF-8 would be more likely to cause problems.
+This example demonstrates how small-scale testing might not reveal encoding issues that could appear in production.
+"""
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col, expr
 from pyspark.sql.types import StringType, BinaryType, StructType, StructField, IntegerType
