@@ -1,5 +1,5 @@
 """
-Code below doesn't generate a UnicodeDecodeError even though it contains invalid UTF-8 bytes. Here's why
+Code below doesn't generate a UnicodeDecodeError even though it contains invalid UTF-8 bytes.
 
 1. **Schema Definition**: The code explicitly defines a schema where "content" is a StringType(). When reading the CSV, Spark uses this schema rather than inferring types.
 
