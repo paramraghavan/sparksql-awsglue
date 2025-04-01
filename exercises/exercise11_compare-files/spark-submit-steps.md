@@ -123,6 +123,14 @@ spark-submit \
   --output-dir s3://your-output-bucket/comparison_results/
 ```
 
+## Running from client submitting job to master node
+```shell`
+aws emr add-steps \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --steps Type=Spark,Name="My Spark Job",ActionOnFailure=CONTINUE,Args=[--deploy-mode,cluster,--master,yarn,/user/john/sample_pyspark.py]
+```
+
+
 ## Parameter Explanation
 
 - `--dat-file`: Path to your 25GB DAT file in S3
