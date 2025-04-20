@@ -124,3 +124,54 @@ save_model(model, "models/customer_segmentation_model")
 
 This simplified structure maintains the key benefits of organization while being more approachable for teams that prefer
 a more streamlined workflow.
+
+# Convert the Production Notebooks for submitting to emr
+
+I'll help you convert your Jupyter notebook to a Spark submit script for EMR. Let me create a Python script version that
+can be submitted to EMR via spark-submit.
+
+Now I'll create a bash script to submit the Python script to EMR:
+
+You'll also need to package your dependencies:
+
+## Converting a Jupyter Notebook to a Spark-Submit Script for EMR
+
+Here's what I've created to help you convert your Jupyter notebook to run on EMR:
+
+1. **Python Script (customer_segmentation_pipeline.py)**: This is the main script converted from your notebook.
+    - Removed interactive elements and notebook-specific code
+    - Added proper entry point with `if __name__ == "__main__"`
+    - Modified Spark session initialization to be compatible with spark-submit
+    - Added error handling and logging
+    - Updated paths to use S3 locations for both input and output
+
+2. **Submit Script (submit_to_emr.sh)**: This script will:
+    - Upload your Python script to S3
+    - Submit the job to your EMR cluster with appropriate configurations
+    - Set memory, executor, and core parameters
+
+3. **Dependencies Packaging Script (package_dependencies.sh)**: This script:
+    - Packages your project's source code into a zip file
+    - Uploads it to S3 so it can be referenced in the spark-submit command
+
+### Key Modifications Made:
+
+1. **Spark Session Creation**: Modified to work with spark-submit rather than creating a new session from scratch
+2. **Error Handling**: Added proper structuring with main() function
+3. **Dependency Management**: Created a method to package and distribute your custom code
+4. **S3 Integration**: Updated paths to use S3 for EMR compatibility
+5. **Resource Configuration**: Added parameters for memory, cores, and executors
+
+### Usage Instructions:
+
+1. Run the dependencies packaging script first:
+   ```
+   chmod +x package_dependencies.sh
+   ./package_dependencies.sh
+   ```
+
+2. Submit your job to EMR:
+   ```
+   chmod +x submit_to_emr.sh
+   ./submit_to_emr.sh j-YOURCLUSTERID
+   ```
