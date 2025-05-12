@@ -18,6 +18,166 @@ Server configuration
 possible type - r6a.8xlarge, r5.12xlarge, and r5.16xlarge
 ```
 
+I see you're encountering a Java heap space error when trying to compare large S3 files using Spark. Let me provide
+configurations for different file sizes and a generic configuration that should work in most cases.
+
+# PySpark Configuration for Large S3 File Comparisons
+
+## Root Cause Analysis
+
+The `OutOfMemoryError: Java heap space` error occurs when the JVM doesn't have enough heap memory to perform the
+operations. When comparing very large datasets (50GB-1TB), this is a common issue.
+
+## Configuration by File Size
+
+### For 50GB Files
+
+```python
+spark = SparkSession.builder
+    .appName("S3 File Comparison 50GB")
+    .config("spark.driver.memory", "16g")
+    .config("spark.executor.memory", "24g")
+    .config("spark.executor.cores", 4)
+    .config("spark.dynamicAllocation.enabled", "true")
+    .config("spark.dynamicAllocation.minExecutors", 10)
+    .config("spark.dynamicAllocation.maxExecutors", 30)
+    .config("spark.executor.memoryOverhead", "6g")
+    .config("spark.driver.maxResultSize", "8g")
+    .config("spark.default.parallelism", 400)
+    .config("spark.sql.shuffle.partitions", 400)
+    .config("spark.memory.fraction", 0.8)
+    .config("spark.memory.storageFraction", 0.3)
+    .config("spark.executor.heartbeatInterval", "60s")
+    .getOrCreate()
+```
+
+### For 200GB Files
+
+```python
+spark = SparkSession.builder
+    .appName("S3 File Comparison 200GB")
+    .config("spark.driver.memory", "32g")
+    .config("spark.executor.memory", "48g")
+    .config("spark.executor.cores", 6)
+    .config("spark.dynamicAllocation.enabled", "true")
+    .config("spark.dynamicAllocation.minExecutors", 20)
+    .config("spark.dynamicAllocation.maxExecutors", 50)
+    .config("spark.executor.memoryOverhead", "10g")
+    .config("spark.driver.maxResultSize", "16g")
+    .config("spark.default.parallelism", 800)
+    .config("spark.sql.shuffle.partitions", 800)
+    .config("spark.memory.fraction", 0.85)
+    .config("spark.memory.storageFraction", 0.25)
+    .config("spark.executor.heartbeatInterval", "120s")
+    .getOrCreate()
+```
+
+### For 500GB Files
+
+```python
+spark = SparkSession.builder
+    .appName("S3 File Comparison 500GB")
+    .config("spark.driver.memory", "48g")
+    .config("spark.executor.memory", "64g")
+    .config("spark.executor.cores", 8)
+    .config("spark.dynamicAllocation.enabled", "true")
+    .config("spark.dynamicAllocation.minExecutors", 30)
+    .config("spark.dynamicAllocation.maxExecutors", 80)
+    .config("spark.executor.memoryOverhead", "16g")
+    .config("spark.driver.maxResultSize", "24g")
+    .config("spark.default.parallelism", 1600)
+    .config("spark.sql.shuffle.partitions", 1600)
+    .config("spark.memory.fraction", 0.9)
+    .config("spark.memory.storageFraction", 0.2)
+    .config("spark.executor.heartbeatInterval", "180s")
+    .getOrCreate()
+```
+
+### For 1TB Files
+
+```python
+spark = SparkSession.builder
+    .appName("S3 File Comparison 1TB")
+    .config("spark.driver.memory", "64g")
+    .config("spark.executor.memory", "96g")
+    .config("spark.executor.cores", 8)
+    .config("spark.dynamicAllocation.enabled", "true")
+    .config("spark.dynamicAllocation.minExecutors", 40)
+    .config("spark.dynamicAllocation.maxExecutors", 120)
+    .config("spark.executor.memoryOverhead", "24g")
+    .config("spark.driver.maxResultSize", "32g")
+    .config("spark.default.parallelism", 3200)
+    .config("spark.sql.shuffle.partitions", 3200)
+    .config("spark.memory.fraction", 0.9)
+    .config("spark.memory.storageFraction", 0.15)
+    .config("spark.executor.heartbeatInterval", "240s")
+    .getOrCreate()
+```
+
+## Generic "Works 90% of the Time" Configuration
+
+```python
+spark = SparkSession.builder
+    .appName("S3 File Comparison Generic")
+    .config("spark.driver.memory", "32g")
+    .config("spark.executor.memory", "64g")
+    .config("spark.executor.cores", 8)
+    .config("spark.dynamicAllocation.enabled", "true")
+    .config("spark.dynamicAllocation.minExecutors", 20)
+    .config("spark.dynamicAllocation.maxExecutors", 80)
+    .config("spark.executor.memoryOverhead", "16g")
+    .config("spark.driver.maxResultSize", "16g")
+    .config("spark.default.parallelism", 1200)
+    .config("spark.sql.shuffle.partitions", 1200)
+    .config("spark.memory.fraction", 0.85)
+    .config("spark.memory.storageFraction", 0.2)
+    .config("spark.speculation", "true")
+    .config("spark.sql.adaptive.enabled", "true")
+    .config("spark.sql.files.maxPartitionBytes", "256m")
+    .config("spark.network.timeout", "800s")
+    .config("spark.executor.heartbeatInterval", "120s")
+    .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
+    .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+    .getOrCreate()
+```
+
+## EMR Specific Configuration (Add to any of the above)
+
+Adding the following EMR-specific configurations to any of the above can further optimize for AWS EMR:
+
+```python
+# Add these to any of the above configurations
+spark = SparkSession.builder
+    # ... other configs
+.config("spark.yarn.maxAppAttempts", "4")
+    .config("spark.hadoop.fs.s3.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    .config("spark.hadoop.fs.s3a.connection.maximum", "400")
+    .config("spark.hadoop.fs.s3a.fast.upload", "true")
+    .config("spark.hadoop.fs.s3a.connection.timeout", "300000")
+    .config("spark.hadoop.fs.s3a.attempts.maximum", "10")
+    .config("spark.hadoop.fs.s3a.aws.credentials.provider", "com.amazonaws.auth.InstanceProfileCredentialsProvider")
+    .config("spark.yarn.executor.memoryOverheadFactor", "0.25")
+    .getOrCreate()
+```
+
+## Additional EMR Cluster Configuration
+
+For your specific EMR cluster (1 master, 1 core, 58 task nodes), I recommend these machine configurations:
+
+- Master node: r5.4xlarge (reasonable for coordination)
+- Core node: r5.12xlarge (for HDFS if needed)
+- Task nodes: r5.16xlarge (optimal for the memory-intensive comparison tasks)
+
+## JVM Settings
+
+To handle the OutOfMemoryError properly, add these to your EMR configuration:
+
+```
+--conf spark.driver.extraJavaOptions="-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/ -XX:OnOutOfMemoryError='kill -9 %p' -Dlog4j.configuration=file:///etc/spark/conf/log4j.properties"
+
+--conf spark.executor.extraJavaOptions="-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/ -XX:OnOutOfMemoryError='kill -9 %p' -Dlog4j.configuration=file:///etc/spark/conf/log4j.properties"
+```
+
 # Yes, A Core Can Handle Multiple Tasks (But Not Simultaneously)
 
 You're exactly right. A single core can process multiple tasks, but it processes them **sequentially**, not
