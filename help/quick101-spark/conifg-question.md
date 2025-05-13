@@ -34,111 +34,111 @@ operations. When comparing very large datasets (50GB-1TB), this is a common issu
 
 ```python
 spark = SparkSession.builder
-    .appName("S3 File Comparison 50GB")
-    .config("spark.driver.memory", "16g")
-    .config("spark.executor.memory", "24g")
-    .config("spark.executor.cores", 4)
-    .config("spark.dynamicAllocation.enabled", "true")
-    .config("spark.dynamicAllocation.minExecutors", 10)
-    .config("spark.dynamicAllocation.maxExecutors", 30)
-    .config("spark.executor.memoryOverhead", "6g")
-    .config("spark.driver.maxResultSize", "8g")
-    .config("spark.default.parallelism", 400)
-    .config("spark.sql.shuffle.partitions", 400)
-    .config("spark.memory.fraction", 0.8)
-    .config("spark.memory.storageFraction", 0.3)
-    .config("spark.executor.heartbeatInterval", "60s")
-    .getOrCreate()
+.appName("S3 File Comparison 50GB")
+.config("spark.driver.memory", "16g")
+.config("spark.executor.memory", "24g")
+.config("spark.executor.cores", 4)
+.config("spark.dynamicAllocation.enabled", "true")
+.config("spark.dynamicAllocation.minExecutors", 10)
+.config("spark.dynamicAllocation.maxExecutors", 30)
+.config("spark.executor.memoryOverhead", "6g")
+.config("spark.driver.maxResultSize", "8g")
+.config("spark.default.parallelism", 400)
+.config("spark.sql.shuffle.partitions", 400)
+.config("spark.memory.fraction", 0.8)
+.config("spark.memory.storageFraction", 0.3)
+.config("spark.executor.heartbeatInterval", "60s")
+.getOrCreate()
 ```
 
 ### For 200GB Files
 
 ```python
 spark = SparkSession.builder
-    .appName("S3 File Comparison 200GB")
-    .config("spark.driver.memory", "32g")
-    .config("spark.executor.memory", "48g")
-    .config("spark.executor.cores", 6)
-    .config("spark.dynamicAllocation.enabled", "true")
-    .config("spark.dynamicAllocation.minExecutors", 20)
-    .config("spark.dynamicAllocation.maxExecutors", 50)
-    .config("spark.executor.memoryOverhead", "10g")
-    .config("spark.driver.maxResultSize", "16g")
-    .config("spark.default.parallelism", 800)
-    .config("spark.sql.shuffle.partitions", 800)
-    .config("spark.memory.fraction", 0.85)
-    .config("spark.memory.storageFraction", 0.25)
-    .config("spark.executor.heartbeatInterval", "120s")
-    .getOrCreate()
+.appName("S3 File Comparison 200GB")
+.config("spark.driver.memory", "32g")
+.config("spark.executor.memory", "48g")
+.config("spark.executor.cores", 6)
+.config("spark.dynamicAllocation.enabled", "true")
+.config("spark.dynamicAllocation.minExecutors", 20)
+.config("spark.dynamicAllocation.maxExecutors", 50)
+.config("spark.executor.memoryOverhead", "10g")
+.config("spark.driver.maxResultSize", "16g")
+.config("spark.default.parallelism", 800)
+.config("spark.sql.shuffle.partitions", 800)
+.config("spark.memory.fraction", 0.85)
+.config("spark.memory.storageFraction", 0.25)
+.config("spark.executor.heartbeatInterval", "120s")
+.getOrCreate()
 ```
 
 ### For 500GB Files
 
 ```python
 spark = SparkSession.builder
-    .appName("S3 File Comparison 500GB")
-    .config("spark.driver.memory", "48g")
-    .config("spark.executor.memory", "64g")
-    .config("spark.executor.cores", 8)
-    .config("spark.dynamicAllocation.enabled", "true")
-    .config("spark.dynamicAllocation.minExecutors", 30)
-    .config("spark.dynamicAllocation.maxExecutors", 80)
-    .config("spark.executor.memoryOverhead", "16g")
-    .config("spark.driver.maxResultSize", "24g")
-    .config("spark.default.parallelism", 1600)
-    .config("spark.sql.shuffle.partitions", 1600)
-    .config("spark.memory.fraction", 0.9)
-    .config("spark.memory.storageFraction", 0.2)
-    .config("spark.executor.heartbeatInterval", "180s")
-    .getOrCreate()
+.appName("S3 File Comparison 500GB")
+.config("spark.driver.memory", "48g")
+.config("spark.executor.memory", "64g")
+.config("spark.executor.cores", 8)
+.config("spark.dynamicAllocation.enabled", "true")
+.config("spark.dynamicAllocation.minExecutors", 30)
+.config("spark.dynamicAllocation.maxExecutors", 80)
+.config("spark.executor.memoryOverhead", "16g")
+.config("spark.driver.maxResultSize", "24g")
+.config("spark.default.parallelism", 1600)
+.config("spark.sql.shuffle.partitions", 1600)
+.config("spark.memory.fraction", 0.9)
+.config("spark.memory.storageFraction", 0.2)
+.config("spark.executor.heartbeatInterval", "180s")
+.getOrCreate()
 ```
 
 ### For 1TB Files
 
 ```python
 spark = SparkSession.builder
-    .appName("S3 File Comparison 1TB")
-    .config("spark.driver.memory", "64g")
-    .config("spark.executor.memory", "96g")
-    .config("spark.executor.cores", 8)
-    .config("spark.dynamicAllocation.enabled", "true")
-    .config("spark.dynamicAllocation.minExecutors", 40)
-    .config("spark.dynamicAllocation.maxExecutors", 120)
-    .config("spark.executor.memoryOverhead", "24g")
-    .config("spark.driver.maxResultSize", "32g")
-    .config("spark.default.parallelism", 3200)
-    .config("spark.sql.shuffle.partitions", 3200)
-    .config("spark.memory.fraction", 0.9)
-    .config("spark.memory.storageFraction", 0.15)
-    .config("spark.executor.heartbeatInterval", "240s")
-    .getOrCreate()
+.appName("S3 File Comparison 1TB")
+.config("spark.driver.memory", "64g")
+.config("spark.executor.memory", "96g")
+.config("spark.executor.cores", 8)
+.config("spark.dynamicAllocation.enabled", "true")
+.config("spark.dynamicAllocation.minExecutors", 40)
+.config("spark.dynamicAllocation.maxExecutors", 120)
+.config("spark.executor.memoryOverhead", "24g")
+.config("spark.driver.maxResultSize", "32g")
+.config("spark.default.parallelism", 3200)
+.config("spark.sql.shuffle.partitions", 3200)
+.config("spark.memory.fraction", 0.9)
+.config("spark.memory.storageFraction", 0.15)
+.config("spark.executor.heartbeatInterval", "240s")
+.getOrCreate()
 ```
 
 ## Generic "Works 90% of the Time" Configuration
 
 ```python
 spark = SparkSession.builder
-    .appName("S3 File Comparison Generic")
-    .config("spark.driver.memory", "32g")
-    .config("spark.executor.memory", "64g")
-    .config("spark.executor.cores", 8)
-    .config("spark.dynamicAllocation.enabled", "true")
-    .config("spark.dynamicAllocation.minExecutors", 20)
-    .config("spark.dynamicAllocation.maxExecutors", 80)
-    .config("spark.executor.memoryOverhead", "16g")
-    .config("spark.driver.maxResultSize", "16g")
-    .config("spark.default.parallelism", 1200)
-    .config("spark.sql.shuffle.partitions", 1200)
-    .config("spark.memory.fraction", 0.85)
-    .config("spark.memory.storageFraction", 0.2)
-    .config("spark.speculation", "true")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.files.maxPartitionBytes", "256m")
-    .config("spark.network.timeout", "800s")
-    .config("spark.executor.heartbeatInterval", "120s")
-    .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
-    .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-    .getOrCreate()
+.appName("S3 File Comparison Generic")
+.config("spark.driver.memory", "32g")
+.config("spark.executor.memory", "64g")
+.config("spark.executor.cores", 8)
+.config("spark.dynamicAllocation.enabled", "true")
+.config("spark.dynamicAllocation.minExecutors", 20)
+.config("spark.dynamicAllocation.maxExecutors", 80)
+.config("spark.executor.memoryOverhead", "16g")
+.config("spark.driver.maxResultSize", "16g")
+.config("spark.default.parallelism", 1200)
+.config("spark.sql.shuffle.partitions", 1200)
+.config("spark.memory.fraction", 0.85)
+.config("spark.memory.storageFraction", 0.2)
+.config("spark.speculation", "true")
+.config("spark.sql.adaptive.enabled", "true")
+.config("spark.sql.files.maxPartitionBytes", "256m")
+.config("spark.network.timeout", "800s")
+.config("spark.executor.heartbeatInterval", "120s")
+.config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
+.config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+.getOrCreate()
 ```
 
 ## EMR Specific Configuration (Add to any of the above)
@@ -148,16 +148,16 @@ Adding the following EMR-specific configurations to any of the above can further
 ```python
 # Add these to any of the above configurations
 spark = SparkSession.builder
-    # ... other configs
+# ... other configs
 .config("spark.yarn.maxAppAttempts", "4")
-    .config("spark.hadoop.fs.s3.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-    .config("spark.hadoop.fs.s3a.connection.maximum", "400")
-    .config("spark.hadoop.fs.s3a.fast.upload", "true")
-    .config("spark.hadoop.fs.s3a.connection.timeout", "300000")
-    .config("spark.hadoop.fs.s3a.attempts.maximum", "10")
-    .config("spark.hadoop.fs.s3a.aws.credentials.provider", "com.amazonaws.auth.InstanceProfileCredentialsProvider")
-    .config("spark.yarn.executor.memoryOverheadFactor", "0.25")
-    .getOrCreate()
+.config("spark.hadoop.fs.s3.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+.config("spark.hadoop.fs.s3a.connection.maximum", "400")
+.config("spark.hadoop.fs.s3a.fast.upload", "true")
+.config("spark.hadoop.fs.s3a.connection.timeout", "300000")
+.config("spark.hadoop.fs.s3a.attempts.maximum", "10")
+.config("spark.hadoop.fs.s3a.aws.credentials.provider", "com.amazonaws.auth.InstanceProfileCredentialsProvider")
+.config("spark.yarn.executor.memoryOverheadFactor", "0.25")
+.getOrCreate()
 ```
 
 ## Additional EMR Cluster Configuration
@@ -236,3 +236,80 @@ For your large file comparisons (50GB-1TB), this means:
 3. For your cluster with approximately 3,700 cores (based on previous calculations), values like 1200-3200 for
    parallelism (as I suggested earlier) should provide good balance between having enough tasks for flexibility while
    avoiding excessive task creation overhead
+
+---------------------------------------------------------
+
+# Evaluating if spark.default.parallelism=800 is Too Large
+
+Whether `spark.default.parallelism=800` is too large depends on your specific cluster configuration and workload
+characteristics. Let me analyze this in detail:
+
+## Key Factors to Consider
+
+### 1. Total Cores in Your Cluster
+
+From your earlier description, you have:
+
+- 1 master, 1 core, and 58 task nodes
+- Possible instance types: r6a.8xlarge, r5.12xlarge, and r5.16xlarge
+
+Let's analyze based on r5.16xlarge instances (64 vCPUs per node):
+
+- 58 task nodes × 64 vCPUs = **3,712 total vCPUs**
+
+With a typical executor configuration (assuming 8 cores per executor):
+
+- 3,712 total cores ÷ 8 cores per executor = **~464 executors**
+
+### 2. Rule of Thumb for Parallelism
+
+The industry standard recommendation is:
+
+- `spark.default.parallelism` should be **2-3× the total number of cores** in your cluster
+
+For your cluster:
+
+- Lower bound: 3,712 × 2 = **7,424**
+- Upper bound: 3,712 × 3 = **11,136**
+
+### 3. Dataset Size Considerations
+
+For a 200GB dataset:
+
+- 800 partitions means each partition is ~256MB
+- This is within the **recommended range of 128MB-512MB per partition**
+
+## Analysis: Is 800 Too Large?
+
+Based on the above calculations:
+
+1. **Compared to your core count**: 800 is actually **significantly LOWER than recommended** based on your cluster
+   size (7,424 would be the recommended minimum)
+
+2. **For data volume**: 800 is **appropriate for 200GB** datasets (gives ~256MB per partition)
+
+3. **Potential issues**:
+    - With only 800 partitions, you're **not fully utilizing your cluster capacity**
+    - Some executors might sit idle because there aren't enough tasks
+
+## Recommendation
+
+For your specific cluster with ~3,700 cores:
+
+- 800 partitions is **not too large** - it's actually **too small** to fully utilize your cluster
+- Consider increasing to 2,000-4,000 for better cluster utilization
+- Monitor task duration - if tasks complete very quickly (<1 second), you might have too many partitions
+
+## When Would 800 Be Too Large?
+
+800 would be too large if:
+
+- Your cluster had fewer than 400 cores total
+- You were processing a much smaller dataset (e.g., <50GB)
+- You noticed excessive task scheduling overhead
+- You had memory constraints on your driver (tracking 800 tasks)
+
+## Bottom Line
+
+For your described setup (58 task nodes with high-memory instances) processing 200GB datasets, 800 is **not too large
+** - it's likely **too small** to maximize the processing power of your cluster.
