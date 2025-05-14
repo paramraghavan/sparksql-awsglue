@@ -966,24 +966,16 @@ class AdvancedNotebookAnalyzer:
         <html>
         <head>
             <title>Notebook Analysis Report</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                h1, h2, h3 { color: #333; }
-                .section { margin-bottom: 20px; }
-                .card { border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin-bottom: 10px; }
-                .highlight { background-color: #f8f9fa; padding: 10px; border-radius: 5px; }
-                .tag { display: inline-block; background-color: #e9ecef; padding: 2px 8px; border-radius: 3px; margin: 2px; }
-            </style>
         </head>
-        <body>
-            <h1>Notebook Analysis: {}</h1>
+        <body style="font-family: Arial, sans-serif; margin: 20px;">
+            <h1 style="color: #333;">Notebook Analysis Report: {}</h1>
         """.format(os.path.basename(self.notebook_path))
 
         # General Info
         html += """
-            <div class="section">
-                <h2>General Information</h2>
-                <div class="card">
+            <div style="margin-bottom: 20px;">
+                <h2 style="color: #333;">General Information</h2>
+                <div style="border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin-bottom: 10px;">
                     <p><b>Total Cells:</b> {total} (Code: {code}, Markdown: {markdown})</p>
                     <p><b>Kernel:</b> {kernel} ({language})</p>
                 </div>
