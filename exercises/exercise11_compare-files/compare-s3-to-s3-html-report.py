@@ -144,42 +144,34 @@ def find_key_differences(df1, df2, key_columns, name1, name2):
     return only_in_df1, only_in_df2, count_only_in_df1, count_only_in_df2
 
 
-def compare_column_values(df1, df2, key_columns, name1, name2):
-    """Compare column values for records that exist in both DataFrames."""
+def compare_column_values(df1, df2, key_columns, name1, name2, batch_size=20):
+    """Compare column values for records that exist in both DataFrames, processing in batches.
+
+    Args:
+        df1: First DataFrame
+        df2: Second DataFrame
+        key_columns: List of columns to use as keys
+        name1: Name of first DataFrame (for column renaming)
+        name2: Name of second DataFrame (for column renaming)
+        batch_size: Number of columns to process in each batch
+        The code only joins the specific columns needed for each batch, rather than joining entire dataframes.
+
+    Returns:
+        Tuple of (difference DataFrame, difference count)
+    """
     from pyspark.sql.functions import col, concat_ws, lit
     from pyspark.sql.types import StructType, StructField, StringType
-    from functools import reduce
+    import math
 
-    # Create composite keys with different names to avoid ambiguity
-    df1_with_key = df1.withColumn(f"{name1}_composite_key", concat_ws("~", *[col(c) for c in key_columns]))
-    df2_with_key = df2.withColumn(f"{name2}_composite_key", concat_ws("~", *[col(c) for c in key_columns]))
+    # Create composite keys for joining
+    df1_with_key = df1.withColumn("composite_key", concat_ws("~", *[col(c) for c in key_columns]))
+    df2_with_key = df2.withColumn("composite_key", concat_ws("~", *[col(c) for c in key_columns]))
 
-    # Get common columns for comparison
+    # Get common columns for comparison, excluding key columns
     common_columns = list(set(df1.columns).intersection(set(df2.columns)))
+    common_columns = [c for c in common_columns if c not in key_columns]
+
     print(f"Found {len(common_columns)} common columns for comparison")
-
-    # Rename all columns except the key columns to avoid ambiguity
-    for column in df1.columns:
-        if column not in key_columns:
-            df1_with_key = df1_with_key.withColumnRenamed(column, f"{name1}_{column}")
-
-    for column in df2.columns:
-        if column not in key_columns:
-            df2_with_key = df2_with_key.withColumnRenamed(column, f"{name2}_{column}")
-
-    # Join the DataFrames on the composite keys
-    joined_df = df1_with_key.join(
-        df2_with_key,
-        df1_with_key[f"{name1}_composite_key"] == df2_with_key[f"{name2}_composite_key"],
-        "inner"
-    )
-
-    # Save one version of the composite key for results
-    joined_df = joined_df.withColumn("composite_key", df1_with_key[f"{name1}_composite_key"])
-
-    # Initialize differences DataFrame
-    spark_session = df1.sparkSession
-    diff_data = None
 
     # Create schema for results
     diff_schema = StructType([
@@ -189,42 +181,74 @@ def compare_column_values(df1, df2, key_columns, name1, name2):
         StructField(f"{name2}_value", StringType(), True)
     ])
 
-    # Build list of differences for each common column
-    all_diffs = []
+    # Initialize differences DataFrame
+    spark_session = df1.sparkSession
+    diff_data = spark_session.createDataFrame([], diff_schema)
+    diff_count = 0
 
-    for column in common_columns:
-        # Skip key columns
-        if column in key_columns:
-            continue
+    # Process columns in batches
+    num_batches = math.ceil(len(common_columns) / batch_size)
+    print(f"Processing columns in {num_batches} batches of {batch_size}")
 
-        col1_name = f"{name1}_{column}"
-        col2_name = f"{name2}_{column}"
+    for batch_num in range(num_batches):
+        start_idx = batch_num * batch_size
+        end_idx = min((batch_num + 1) * batch_size, len(common_columns))
+        batch_columns = common_columns[start_idx:end_idx]
 
-        # Create a separate DataFrame for each column with differences
-        col_diff = joined_df.filter(
-            (col(col1_name).isNull() & col(col2_name).isNotNull()) |
-            (col(col1_name).isNotNull() & col(col2_name).isNull()) |
-            ((col(col1_name) != col(col2_name)) & col(col1_name).isNotNull() & col(col2_name).isNotNull())
-        ).select(
-            col("composite_key"),
-            lit(column).alias("column_name"),
-            col(col1_name).cast("string").alias(f"{name1}_value"),
-            col(col2_name).cast("string").alias(f"{name2}_value")
-        )
+        print(f"Processing batch {batch_num + 1}/{num_batches}, columns {start_idx + 1}-{end_idx}")
 
-        all_diffs.append(col_diff)
+        # For this batch, select only needed columns from both dataframes
+        df1_batch = df1_with_key.select("composite_key", *batch_columns)
 
-    # Union all differences if any were found
-    if all_diffs:
-        diff_data = all_diffs[0]
-        for diff in all_diffs[1:]:
-            diff_data = diff_data.union(diff)
-        diff_count = diff_data.count()
-    else:
-        diff_data = spark_session.createDataFrame([], diff_schema)
-        diff_count = 0
+        df2_batch = df2_with_key.select("composite_key", *batch_columns)
 
-    print(f"Found {diff_count} differences")
+        # Join the DataFrames just for this batch of columns
+        joined_batch = df1_batch.join(
+            df2_batch,
+            df1_batch["composite_key"] == df2_batch["composite_key"],
+            "inner"
+        ).cache()  # Cache this smaller joined dataset
+
+        # Process each column in this batch
+        batch_diffs = []
+
+        for column in batch_columns:
+            # Create a separate DataFrame for each column with differences
+            col_diff = joined_batch.filter(
+                (df1_batch[column].isNull() & df2_batch[column].isNotNull()) |
+                (df1_batch[column].isNotNull() & df2_batch[column].isNull()) |
+                ((df1_batch[column] != df2_batch[column]) &
+                 df1_batch[column].isNotNull() & df2_batch[column].isNotNull())
+            ).select(
+                df1_batch["composite_key"],
+                lit(column).alias("column_name"),
+                df1_batch[column].cast("string").alias(f"{name1}_value"),
+                df2_batch[column].cast("string").alias(f"{name2}_value")
+            )
+
+            batch_diffs.append(col_diff)
+
+        # Union all differences in this batch
+        if batch_diffs:
+            batch_diff_data = batch_diffs[0]
+            for diff in batch_diffs[1:]:
+                batch_diff_data = batch_diff_data.union(diff)
+
+            # Union with the main diff_data
+            if diff_data.count() == 0:
+                diff_data = batch_diff_data
+            else:
+                diff_data = diff_data.union(batch_diff_data)
+
+            # Update the diff count
+            batch_count = batch_diff_data.count()
+            diff_count += batch_count
+            print(f"Batch {batch_num + 1}: Found {batch_count} differences")
+
+        # Uncache the joined batch to free memory
+        joined_batch.unpersist()
+
+    print(f"Total: Found {diff_count} differences across all columns")
     return diff_data, diff_count
 
 
