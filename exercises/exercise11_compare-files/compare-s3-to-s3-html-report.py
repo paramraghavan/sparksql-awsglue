@@ -42,6 +42,10 @@ def parse_args():
                         help='Comma-separated list of column names for the DAT file (if no header)')
     parser.add_argument('--output-dir', type=str, default='s3://your-bucket/comparison_results',
                         help='Directory to store comparison results')
+    parser.add_argument('--batch-size', type=int, default=3,
+                        help='Number of columns to process in each batch')
+    parser.add_argument('--sample-mode', action='store_true',
+                        help='Use sampling for large datasets (>1M rows)')
     return parser.parse_args()
 
 
@@ -144,8 +148,9 @@ def find_key_differences(df1, df2, key_columns, name1, name2):
     return only_in_df1, only_in_df2, count_only_in_df1, count_only_in_df2
 
 
-def compare_column_values(df1, df2, key_columns, name1, name2, batch_size=20):
+def compare_column_values(df1, df2, key_columns, name1, name2, batch_size=2):
     """Compare column values for records that exist in both DataFrames, processing in batches.
+    Optimized version for handling large datasets with limited resources (40 task nodes).
 
     Args:
         df1: First DataFrame
@@ -153,25 +158,43 @@ def compare_column_values(df1, df2, key_columns, name1, name2, batch_size=20):
         key_columns: List of columns to use as keys
         name1: Name of first DataFrame (for column renaming)
         name2: Name of second DataFrame (for column renaming)
-        batch_size: Number of columns to process in each batch
-        The code only joins the specific columns needed for each batch, rather than joining entire dataframes.
+        batch_size: Number of columns to process in each batch (default 2 for resource-constrained clusters)
 
     Returns:
         Tuple of (difference DataFrame, difference count)
     """
-    from pyspark.sql.functions import col, concat_ws, lit
+    from pyspark.sql.functions import col, concat_ws, lit, count
     from pyspark.sql.types import StructType, StructField, StringType
     import math
 
-    # Create composite keys for joining
+    logger.info(f"Starting column value comparison with optimized batch processing (batch size: {batch_size})")
+
+    # Create composite keys for joining - do this once
+    logger.info("Creating composite keys for joining")
     df1_with_key = df1.withColumn("composite_key", concat_ws("~", *[col(c) for c in key_columns]))
     df2_with_key = df2.withColumn("composite_key", concat_ws("~", *[col(c) for c in key_columns]))
+
+    # Cache the keyed dataframes to avoid recomputing
+    logger.info("Caching keyed dataframes")
+    df1_with_key.cache()
+    df2_with_key.cache()
+
+    # Get common keys between the two datasets (important optimization)
+    logger.info("Finding common keys between datasets")
+    df1_keys = df1_with_key.select("composite_key")
+    df2_keys = df2_with_key.select("composite_key")
+    common_keys = df1_keys.intersect(df2_keys)
+
+    # Cache common keys to avoid recomputation
+    common_keys.cache()
+    common_key_count = common_keys.count()
+    logger.info(f"Found {common_key_count} common keys between datasets")
 
     # Get common columns for comparison, excluding key columns
     common_columns = list(set(df1.columns).intersection(set(df2.columns)))
     common_columns = [c for c in common_columns if c not in key_columns]
 
-    print(f"Found {len(common_columns)} common columns for comparison")
+    logger.info(f"Found {len(common_columns)} common columns for comparison")
 
     # Create schema for results
     diff_schema = StructType([
@@ -181,74 +204,145 @@ def compare_column_values(df1, df2, key_columns, name1, name2, batch_size=20):
         StructField(f"{name2}_value", StringType(), True)
     ])
 
-    # Initialize differences DataFrame
+    # Initialize differences DataFrame and count
     spark_session = df1.sparkSession
     diff_data = spark_session.createDataFrame([], diff_schema)
     diff_count = 0
 
+    # Reduced checkpoint interval for lower memory usage
+    # With 40 nodes instead of 120, we need to checkpoint more frequently
+    checkpoint_interval = max(1, round(len(common_columns) / batch_size / 10))  # Checkpoint ~every 10% of batches
+    logger.info(f"Will checkpoint results every {checkpoint_interval} batches")
+
+    # For resource constrained environments, process in smaller chunks
+    # with more frequent checkpointing and memory cleanup
+
     # Process columns in batches
     num_batches = math.ceil(len(common_columns) / batch_size)
-    print(f"Processing columns in {num_batches} batches of {batch_size}")
+    logger.info(f"Processing columns in {num_batches} batches of {batch_size}")
+
+    # Keep track of batch progress for reporting
+    total_columns_processed = 0
+    start_time = time.time()
 
     for batch_num in range(num_batches):
+        batch_start_time = time.time()
         start_idx = batch_num * batch_size
         end_idx = min((batch_num + 1) * batch_size, len(common_columns))
         batch_columns = common_columns[start_idx:end_idx]
 
-        print(f"Processing batch {batch_num + 1}/{num_batches}, columns {start_idx + 1}-{end_idx}")
+        total_columns_processed += len(batch_columns)
+        progress_percent = (total_columns_processed / len(common_columns)) * 100
 
-        # For this batch, select only needed columns from both dataframes
-        df1_batch = df1_with_key.select("composite_key", *batch_columns)
+        logger.info(f"Processing batch {batch_num + 1}/{num_batches} ({progress_percent:.1f}% complete), "
+                    f"columns {start_idx + 1}-{end_idx}: {batch_columns}")
 
-        df2_batch = df2_with_key.select("composite_key", *batch_columns)
-
-        # Join the DataFrames just for this batch of columns
-        joined_batch = df1_batch.join(
-            df2_batch,
-            df1_batch["composite_key"] == df2_batch["composite_key"],
-            "inner"
-        ).cache()  # Cache this smaller joined dataset
-
-        # Process each column in this batch
+        # Process in smaller chunks to reduce memory pressure
+        # For smaller clusters, process one column at a time for each batch
+        batch_diff_count = 0
         batch_diffs = []
 
-        for column in batch_columns:
-            # Create a separate DataFrame for each column with differences
-            col_diff = joined_batch.filter(
-                (df1_batch[column].isNull() & df2_batch[column].isNotNull()) |
-                (df1_batch[column].isNotNull() & df2_batch[column].isNull()) |
-                ((df1_batch[column] != df2_batch[column]) &
-                 df1_batch[column].isNotNull() & df2_batch[column].isNotNull())
-            ).select(
-                df1_batch["composite_key"],
-                lit(column).alias("column_name"),
-                df1_batch[column].cast("string").alias(f"{name1}_value"),
-                df2_batch[column].cast("string").alias(f"{name2}_value")
+        for column_idx, column in enumerate(batch_columns):
+            logger.info(f"Processing column ({column_idx + 1}/{len(batch_columns)}): {column}")
+
+            # Create temporary key-column dataframes for just this column
+            # This reduces memory pressure significantly
+            df1_col = df1_with_key.select("composite_key", column)
+            df2_col = df2_with_key.select("composite_key", column).withColumnRenamed(column, f"{column}_df2")
+
+            # Join with common keys for just this column
+            df1_col_filtered = df1_col.join(common_keys, "composite_key")
+            df2_col_filtered = df2_col.join(common_keys, "composite_key")
+
+            # Join on composite_key for just this column
+            joined_col = df1_col_filtered.join(
+                df2_col_filtered,
+                "composite_key",
+                "inner"
             )
 
-            batch_diffs.append(col_diff)
+            # Find differences for this column
+            col_diff = joined_col.filter(
+                (col(column).isNull() & col(f"{column}_df2").isNotNull()) |
+                (col(column).isNotNull() & col(f"{column}_df2").isNull()) |
+                ((col(column) != col(f"{column}_df2")) &
+                 col(column).isNotNull() & col(f"{column}_df2").isNotNull())
+            ).select(
+                col("composite_key"),
+                lit(column).alias("column_name"),
+                col(column).cast("string").alias(f"{name1}_value"),
+                col(f"{column}_df2").cast("string").alias(f"{name2}_value")
+            )
 
-        # Union all differences in this batch
+            # Count differences for this column and add to the list if there are differences
+            col_diff_count = col_diff.count()
+            if col_diff_count > 0:
+                logger.info(f"Found {col_diff_count} differences in column {column}")
+                batch_diffs.append(col_diff)
+                batch_diff_count += col_diff_count
+                diff_count += col_diff_count
+
+            # Clean up column-specific dataframes to free memory
+            if 'df1_col' in locals():
+                df1_col.unpersist()
+            if 'df2_col' in locals():
+                df2_col.unpersist()
+            if 'df1_col_filtered' in locals():
+                df1_col_filtered.unpersist()
+            if 'df2_col_filtered' in locals():
+                df2_col_filtered.unpersist()
+            if 'joined_col' in locals():
+                joined_col.unpersist()
+
+        # Union all differences in this batch and add to main results
         if batch_diffs:
-            batch_diff_data = batch_diffs[0]
-            for diff in batch_diffs[1:]:
-                batch_diff_data = batch_diff_data.union(diff)
+            batch_diff_data = None
+            for diff in batch_diffs:
+                if batch_diff_data is None:
+                    batch_diff_data = diff
+                else:
+                    batch_diff_data = batch_diff_data.union(diff)
 
-            # Union with the main diff_data
-            if diff_data.count() == 0:
-                diff_data = batch_diff_data
-            else:
-                diff_data = diff_data.union(batch_diff_data)
+            # Add to main diff_data
+            if batch_diff_data:
+                if diff_data.count() == 0:
+                    diff_data = batch_diff_data
+                else:
+                    diff_data = diff_data.union(batch_diff_data)
 
-            # Update the diff count
-            batch_count = batch_diff_data.count()
-            diff_count += batch_count
-            print(f"Batch {batch_num + 1}: Found {batch_count} differences")
+                logger.info(f"Batch {batch_num + 1}: Added {batch_diff_count} differences to results")
+        else:
+            logger.info(f"Batch {batch_num + 1}: No differences found")
 
-        # Uncache the joined batch to free memory
-        joined_batch.unpersist()
+        # Calculate and log batch timing information
+        batch_duration = time.time() - batch_start_time
+        avg_column_time = batch_duration / len(batch_columns)
+        estimated_remaining_time = avg_column_time * (len(common_columns) - total_columns_processed)
 
-    print(f"Total: Found {diff_count} differences across all columns")
+        logger.info(f"Batch {batch_num + 1} completed in {batch_duration:.2f} seconds "
+                    f"({avg_column_time:.2f} sec/column). "
+                    f"Estimated remaining time: {estimated_remaining_time / 60:.1f} minutes")
+
+        # Checkpoint diff_data more frequently with limited resources
+        if (batch_num + 1) % checkpoint_interval == 0 and diff_data.count() > 0:
+            logger.info(f"Checkpointing diff_data after batch {batch_num + 1}")
+            diff_data_collected = diff_data.collect()
+            diff_data = spark_session.createDataFrame(diff_data_collected, diff_schema)
+            logger.info(f"Checkpoint complete - current difference count: {len(diff_data_collected)}")
+
+            # Force garbage collection to free memory
+            import gc
+            gc.collect()
+
+    total_duration = time.time() - start_time
+    logger.info(f"Column comparison completed in {total_duration / 60:.2f} minutes")
+    logger.info(f"Total: Found {diff_count} differences across all columns")
+
+    # Unpersist cached DataFrames
+    df1_with_key.unpersist()
+    df2_with_key.unpersist()
+    common_keys.unpersist()
+
     return diff_data, diff_count
 
 
@@ -601,21 +695,46 @@ def main():
     # Parse arguments
     args = parse_args()
 
-    # Initialize Spark session
+    # Add configurations for handling large datasets with 40 task nodes
     spark = SparkSession.builder \
         .appName("S3 File Comparison") \
         .config("spark.sql.broadcastTimeout", "3600") \
-        .config("spark.sql.shuffle.partitions", "200") \
+        .config("spark.sql.shuffle.partitions", "320") \  # 8 partitions per task node
+    .config("spark.executor.memory", "6g") \  # Slightly reduced from 10g
+    .config("spark.executor.instances", "35") \  # Reserve some for driver
+    .config("spark.executor.cores", "4") \  # 4 cores per executor
+    .config("spark.driver.memory", "8g") \
+        .config("spark.memory.offHeap.enabled", "true") \
+        .config("spark.memory.offHeap.size", "4g") \  # Reduced from 10g
+    .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+        .config("spark.sql.adaptive.skewJoin.enabled", "true") \
+        .config("spark.dynamicAllocation.enabled", "false") \  # Disable for more predictable resource usage
+    .config("spark.checkpoint.dir", "/tmp/spark-checkpoint") \
         .getOrCreate()
+
+
+    # Set checkpoint directory
+    spark.sparkContext.setCheckpointDir("/tmp/spark-checkpoint")
 
     try:
         # Create output directory
         result_dir = create_output_directory(args.output_dir)
 
+        # Parse key columns
+        key_columns = [col.strip() for col in args.key_columns.split(',')]
+        logger.info(f"Using key columns: {key_columns}")
+
         # Read the Snowflake data from S3
+        logger.info(f"Reading Snowflake data: {args.snowflake_data}")
         sf_df = read_snowflake_data_from_s3(
             spark, args.snowflake_data, args.snowflake_format
         )
+
+        # Print schema and basic stats
+        logger.info("Snowflake data schema:")
+        sf_df.printSchema()
+        logger.info(f"Snowflake columns count: {len(sf_df.columns)}")
 
         # Get column names from Snowflake data for the DAT file if none provided
         column_names = args.column_names
@@ -625,13 +744,15 @@ def main():
             logger.info(f"Using column names from Snowflake data: {column_names}")
 
         # Read the input file
+        logger.info(f"Reading file: {args.dat_file}")
         file_df = read_file_to_spark(
             spark, args.dat_file, args.file_type,
             args.delimiter, column_names
         )
 
-        # Parse key columns
-        key_columns = [col.strip() for col in args.key_columns.split(',')]
+        logger.info("File data schema:")
+        file_df.printSchema()
+        logger.info(f"File columns count: {len(file_df.columns)}")
 
         # Make sure key columns exist in both DataFrames
         for key_col in key_columns:
@@ -641,31 +762,40 @@ def main():
                 raise ValueError(f"Key column '{key_col}' not found in Snowflake DataFrame")
 
         # Compare record counts
+        logger.info("Comparing record counts")
         file_count, sf_count = compare_record_counts(file_df, sf_df, "File", "Snowflake")
 
         # Find key differences
+        logger.info("Finding key differences")
         only_in_file, only_in_sf, only_in_file_count, only_in_sf_count = find_key_differences(
             file_df, sf_df, key_columns, "File", "Snowflake"
         )
 
-        # Compare column values
+        # Use a smaller batch size for limited resources
+        batch_size = args.batch_size or 2  # Default to 2 for 40 nodes
+
+        # Compare column values with the appropriate batch size
+        logger.info(f"Comparing column values with batch size {batch_size}")
         diff_data, diff_count = compare_column_values(
-            file_df, sf_df, key_columns, "File", "Snowflake"
+            file_df, sf_df, key_columns, "File", "Snowflake", batch_size=batch_size
         )
 
         # Create column difference summary
+        logger.info("Creating column difference summary")
         matching_record_count = min(file_count, sf_count) - diff_count
         column_diff_summary = create_column_diff_summary(
             diff_data, diff_count, "File", "Snowflake"
         )
 
         # Write results to files
+        logger.info("Writing results to files")
         write_results(
             result_dir, only_in_file, only_in_sf,
             diff_data, column_diff_summary, "File", "Snowflake"
         )
 
         # Generate HTML report
+        logger.info("Generating HTML report")
         report_path = generate_html_report(
             result_dir, file_count, sf_count,
             only_in_file_count, only_in_sf_count, diff_count,
@@ -680,7 +810,6 @@ def main():
         raise
     finally:
         spark.stop()
-
 
 if __name__ == "__main__":
     main()
