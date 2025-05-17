@@ -1,0 +1,135 @@
+{
+  "Name": "CustomScalingCluster",
+  "LogUri": "s3://my-emr-logs/",
+  "ReleaseLabel": "emr-6.10.0",
+  "Applications": [
+    { "Name": "Spark" },
+    { "Name": "Hadoop" }
+  ],
+  "Instances": {
+    "InstanceGroups": [
+      {
+        "Name": "Master nodes",
+        "InstanceRole": "MASTER",
+        "InstanceType": "m5.xlarge",
+        "InstanceCount": 1
+      },
+      {
+        "Name": "Core nodes",
+        "InstanceRole": "CORE",
+        "InstanceType": "r5.2xlarge",
+        "InstanceCount": 2
+      }
+    ],
+    "Ec2KeyName": "my-key-pair",
+    "KeepJobFlowAliveWhenNoSteps": true,
+    "TerminationProtected": false
+  },
+  "AutoScalingRole": "EMR_AutoScaling_DefaultRole",
+
+  "InstanceFleetConfig": {
+    "TaskFleetConfig": {
+      "TargetSpotCapacity": 0,
+      "TargetOnDemandCapacity": 0,
+
+      "LaunchSpecifications": {
+        "SpotSpecification": {
+          "TimeoutDurationMinutes": 20,
+          "TimeoutAction": "SWITCH_TO_ON_DEMAND"
+        }
+      },
+
+      "InstanceTypeConfigs": [
+        {
+          "InstanceType": "r5.xlarge",
+          "WeightedCapacity": 1,
+          "BidPriceAsPercentageOfOnDemandPrice": 100
+        },
+        {
+          "InstanceType": "r5.2xlarge",
+          "WeightedCapacity": 2,
+          "BidPriceAsPercentageOfOnDemandPrice": 100
+        },
+        {
+          "InstanceType": "r5.4xlarge",
+          "WeightedCapacity": 4,
+          "BidPriceAsPercentageOfOnDemandPrice": 100
+        }
+      ]
+    }
+  },
+
+  "CustomScalingPolicy": {
+    "AppNameToScalingConfig": {
+      "data-processing-app": {
+        "MaxCapacity": 20,
+        "MinCapacity": 2,
+        "InstanceMix": {
+          "OnDemandPercentage": 20,
+          "SpotPercentage": 80
+        },
+        "InstanceTypes": {
+          "r5.xlarge": 8,
+          "r5.2xlarge": 4,
+          "r5.4xlarge": 2
+        }
+      },
+      "ml-training-app": {
+        "MaxCapacity": 30,
+        "MinCapacity": 4,
+        "InstanceMix": {
+          "OnDemandPercentage": 40,
+          "SpotPercentage": 60
+        },
+        "InstanceTypes": {
+          "p3.2xlarge": 6,
+          "p3.8xlarge": 2,
+          "g4dn.12xlarge": 4
+        }
+      },
+      "etl-job": {
+        "MaxCapacity": 15,
+        "MinCapacity": 2,
+        "InstanceMix": {
+          "OnDemandPercentage": 10,
+          "SpotPercentage": 90
+        },
+        "InstanceTypes": {
+          "r5.2xlarge": 10,
+          "r5.4xlarge": 5
+        }
+      }
+    }
+  },
+
+  "ScalingTriggers": {
+    "YARNMemoryAvailablePercentage": {
+      "Min": 15,
+      "Max": 75,
+      "ScaleOutThreshold": 20,
+      "ScaleInThreshold": 70,
+      "ScaleOutAfterMinutes": 5,
+      "ScaleInAfterMinutes": 30
+    },
+    "ContainerPendingRatio": {
+      "ScaleOutThreshold": 0.75,
+      "ScaleInThreshold": 0.2,
+      "ScaleOutAfterMinutes": 3,
+      "ScaleInAfterMinutes": 15
+    }
+  },
+
+  "StepConcurrencyLevel": 10,
+  "JobFlowRole": "EMR_EC2_DefaultRole",
+  "ServiceRole": "EMR_DefaultRole",
+  "Tags": [
+    {
+      "Key": "Environment",
+      "Value": "Production"
+    },
+    {
+      "Key": "Department",
+      "Value": "DataEngineering"
+    }
+  ]
+}
