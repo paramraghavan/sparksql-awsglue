@@ -133,3 +133,71 @@ If you're on **Databricks**, ensure:
 
 ---
 
+## Manage spot instance resizing
+
+I can help you create a SparkSession builder configuration that will prevent your Spark cluster from continuously
+resizing spot instances from 0 and back up. This configuration will help maintain your spot instances until your job
+completes.
+
+Here's a SparkSession builder configuration that addresses this issue:
+
+```python
+from pyspark.sql import SparkSession
+
+# Create a SparkSession with spot instance stability configurations
+spark = SparkSession.builder
+    .appName("StableSpotInstanceJob")
+    .config("spark.dynamicAllocation.enabled", "false")
+    .config("spark.executor.instances", "5")
+    .config("spark.speculation", "false")
+    .config("spark.task.maxFailures", "10")
+    .config("spark.blacklist.enabled", "false")
+    .config("spark.scheduler.mode", "FAIR")
+    .config("spark.executor.extraJavaOptions", "-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp")
+    .config("spark.executor.heartbeatInterval", "20s")
+    .config("spark.network.timeout", "800s")
+    .config("spark.storage.blockManagerSlaveTimeoutMs", "300000")
+    .config("spark.executor.extraJavaOptions", "-Djava.io.tmpdir=/tmp -Dio.netty.tryReflectionSetAccessible=true")
+    .config("spark.hadoop.fs.s3a.multipart.size", "104857600")
+    .getOrCreate()
+```
+
+Key configurations explained:
+
+1. `spark.dynamicAllocation.enabled = false` - Disables dynamic allocation which prevents Spark from automatically
+   scaling up/down executors.
+
+2. `spark.executor.instances = 5` - Sets a fixed number of executors (adjust this number based on your workload).
+
+3. `spark.speculation = false` - Disables speculative execution which can cause duplicate tasks and unnecessary resource
+   scaling.
+
+4. `spark.task.maxFailures = 10` - Increases tolerance for task failures before giving up.
+
+5. `spark.blacklist.enabled = false` - Prevents Spark from blacklisting nodes, which could lead to instances being
+   terminated.
+
+6. `spark.scheduler.mode = FAIR` - Uses fair scheduling to better distribute work.
+
+7. `spark.executor.heartbeatInterval` and `spark.network.timeout` - Increases timeouts to handle temporary network
+   issues without terminating executors.
+
+If you're using AWS EMR specifically, you might also want to add these configurations to your EMR cluster properties:
+
+```
+{
+  "classification": "spark-defaults",
+  "properties": {
+    "spark.scheduler.allocation.file": "/etc/spark/conf/fairscheduler.xml",
+    "spark.scheduler.mode": "FAIR",
+    "maximizeResourceAllocation": "true"
+  }
+}
+```
+
+Additionally, for the AWS EMR cluster configuration itself, consider setting:
+
+- Disable "Scale down behavior" in the EMR configuration
+- Set a consistent Availability Zone for all instances
+- Use Instance Fleets with multiple instance types as fallbacks
+
