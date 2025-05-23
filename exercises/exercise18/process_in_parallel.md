@@ -423,3 +423,253 @@ def monitor_executor_usage():
 
 **Bottom Line**: Yes, all 72 executors will be utilized. Use 6-8 threads with the enhanced spark-submit configuration
 above for optimal performance.
+
+## Independent vs Same dataframe
+Great question! Let me explain these scenarios in detail with concrete examples:
+
+## Scenario 1: Independent Operations (GOOD - High Utilization)
+
+### What "Independent" Means:
+- Each thread processes **different data** or **different DataFrames**
+- No shared state or dependencies between threads
+- Operations don't interfere with each other
+
+### Example Code:
+```python
+def process_model_type_a(dict1, dict2, dict3, dict4, dict5, iteration):
+    """Thread 1: Processing model type A data"""
+    # Each thread works on different subset/different DataFrame
+    df_type_a = spark.sql(f"SELECT * FROM data WHERE model_type = 'A' AND batch = {iteration}")
+    
+    result = df_type_a.filter(df_type_a.score > dict1['threshold']) \
+                     .groupBy('category') \
+                     .agg({'sales': 'sum', 'count': 'count'}) \
+                     .collect()
+    return result
+
+def process_model_type_b(dict1, dict2, dict3, dict4, dict5, iteration):
+    """Thread 2: Processing model type B data"""
+    df_type_b = spark.sql(f"SELECT * FROM data WHERE model_type = 'B' AND batch = {iteration}")
+    
+    result = df_type_b.filter(df_type_b.revenue > dict2['min_revenue']) \
+                     .groupBy('region') \
+                     .agg({'profit': 'avg'}) \
+                     .collect()
+    return result
+
+# ThreadPool execution
+with ThreadPoolExecutor(max_workers=4) as executor:
+    futures = []
+    
+    # Each iteration processes different data slices
+    for i in range(15):
+        future1 = executor.submit(process_model_type_a, dict1, dict2, dict3, dict4, dict5, i)
+        future2 = executor.submit(process_model_type_b, dict1, dict2, dict3, dict4, dict5, i)
+        futures.extend([future1, future2])
+```
+
+### How Executors Are Utilized:
+```
+Time: T1
+┌─ Thread 1 ──────────────────────┐    ┌─ Spark Cluster ──────────────┐
+│ process_model_type_a(iter=0)    │───►│ Executors 1-24: Processing   │
+│                                 │    │ df_type_a operations          │
+└─────────────────────────────────┘    └───────────────────────────────┘
+
+┌─ Thread 2 ──────────────────────┐    ┌─ Spark Cluster ──────────────┐
+│ process_model_type_b(iter=0)    │───►│ Executors 25-48: Processing  │
+│                                 │    │ df_type_b operations          │
+└─────────────────────────────────┘    └───────────────────────────────┘
+
+┌─ Thread 3 ──────────────────────┐    ┌─ Spark Cluster ──────────────┐
+│ process_model_type_a(iter=1)    │───►│ Executors 49-72: Processing  │
+│                                 │    │ df_type_a operations          │
+└─────────────────────────────────┘    └───────────────────────────────┘
+```
+
+**Result**: All 72 executors are busy with different operations simultaneously = **Maximum utilization**
+
+## Scenario 2: Competing for Same Resources (BAD - Resource Contention)
+
+### What "Competing" Means:
+- Multiple threads try to access **the same DataFrame**
+- Operations block each other or compete for same data partitions
+- Spark scheduler has to juggle conflicting resource requests
+
+### Example Code:
+```python
+# PROBLEMATIC: All threads working on same large DataFrame
+large_shared_df = spark.read.parquet("/huge/dataset/")  # 1TB dataset
+large_shared_df.cache()  # Cached in executor memory
+
+def competing_function_1(dict1, dict2, dict3, dict4, dict5, iteration):
+    """All threads use the same DataFrame - BAD!"""
+    # Everyone tries to use the same large_shared_df
+    result = large_shared_df.filter(large_shared_df.id > dict1['min_id']) \
+                           .groupBy('category') \
+                           .agg({'amount': 'sum'}) \
+                           .orderBy('category') \
+                           .collect()  # Expensive operation
+    return result
+
+def competing_function_2(dict1, dict2, dict3, dict4, dict5, iteration):
+    """Another thread also using same DataFrame"""
+    result = large_shared_df.filter(large_shared_df.status == dict2['status']) \
+                           .groupBy('region') \
+                           .agg({'count': 'count'}) \
+                           .orderBy('region') \
+                           .collect()  # Another expensive operation
+    return result
+
+# ThreadPool execution - PROBLEMATIC
+with ThreadPoolExecutor(max_workers=4) as executor:
+    futures = []
+    for i in range(15):
+        # All threads compete for same resources
+        future1 = executor.submit(competing_function_1, dict1, dict2, dict3, dict4, dict5, i)
+        future2 = executor.submit(competing_function_2, dict1, dict2, dict3, dict4, dict5, i)
+        futures.extend([future1, future2])
+```
+
+### How Resource Contention Occurs:
+```
+Time: T1 - Resource Conflict!
+┌─ Thread 1 ──────────────────────┐    ┌─ Spark Cluster ──────────────┐
+│ large_shared_df.groupBy()...    │───►│ Executors 1-72: Reading      │
+│ collect()                       │    │ same data partitions          │
+└─────────────────────────────────┘    │ ⚠️  I/O Bottleneck            │
+                                       └───────────────────────────────┘
+┌─ Thread 2 ──────────────────────┐              │
+│ large_shared_df.groupBy()...    │──── WAITING ─┘ (Blocked!)
+│ collect()                       │    
+└─────────────────────────────────┘    
+
+┌─ Thread 3 ──────────────────────┐    
+│ large_shared_df.filter()...     │──── WAITING ─┐ (Blocked!)
+└─────────────────────────────────┘              │
+                                                  ▼
+                                    ┌─ Disk I/O Saturated ──┐
+                                    │ Same files being read  │
+                                    │ by multiple operations │
+                                    └────────────────────────┘
+```
+
+### Specific Problems in Scenario 2:
+
+#### 1. **Memory Contention**
+```python
+# All threads try to cache same data
+large_shared_df.cache()  # 500GB dataset
+
+# Thread 1: Tries to load partitions 1-100 into memory
+# Thread 2: Tries to load partitions 1-100 into memory  
+# Thread 3: Tries to load partitions 1-100 into memory
+# Result: Memory thrashing, cache evictions
+```
+
+#### 2. **Disk I/O Bottleneck**
+```python
+# All threads read from same Parquet files
+thread1_result = large_shared_df.filter(...).collect()  # Reads files A,B,C
+thread2_result = large_shared_df.filter(...).collect()  # Reads files A,B,C again!
+thread3_result = large_shared_df.filter(...).collect()  # Reads files A,B,C again!
+
+# Result: Same disk blocks read multiple times unnecessarily
+```
+
+#### 3. **Spark Scheduler Conflicts**
+```python
+# Spark task scheduler gets confused
+# Thread 1 submits: Job 1 (1000 tasks)
+# Thread 2 submits: Job 2 (1000 tasks) 
+# Thread 3 submits: Job 3 (1000 tasks)
+
+# All 3000 tasks compete for same 72 executors
+# Result: Context switching overhead, poor resource allocation
+```
+
+## How to Fix Scenario 2: Convert to Scenario 1
+
+### Solution 1: Partition the Data
+```python
+# GOOD: Pre-partition data by thread
+def create_independent_dataframes():
+    base_df = spark.read.parquet("/huge/dataset/")
+    
+    # Create separate DataFrames for each thread
+    df_partitions = {}
+    for i in range(15):
+        df_partitions[i] = base_df.filter(base_df.partition_id == i).cache()
+    
+    return df_partitions
+
+df_partitions = create_independent_dataframes()
+
+def fixed_function_1(dict1, dict2, dict3, dict4, dict5, iteration):
+    # Each thread works on its own partition - GOOD!
+    my_df = df_partitions[iteration]
+    result = my_df.groupBy('category').agg({'amount': 'sum'}).collect()
+    return result
+```
+
+### Solution 2: Use Different Data Sources
+```python
+def independent_function_1(dict1, dict2, dict3, dict4, dict5, iteration):
+    # Each thread reads different files
+    df = spark.read.parquet(f"/data/batch_{iteration}/")
+    result = df.groupBy('category').agg({'amount': 'sum'}).collect()
+    return result
+
+def independent_function_2(dict1, dict2, dict3, dict4, dict5, iteration):
+    # Different thread reads from different table
+    df = spark.sql(f"SELECT * FROM table_b WHERE date = '{get_date(iteration)}'")
+    result = df.groupBy('region').count().collect()
+    return result
+```
+
+### Solution 3: Sequential Operations with Parallel Stages
+```python
+# If you must use same DataFrame, do operations sequentially
+# but make each operation use all executors efficiently
+
+def hybrid_approach():
+    large_df = spark.read.parquet("/huge/dataset/").cache()
+    
+    # Stage 1: All preprocessing (uses all 72 executors)
+    preprocessed_df = large_df.filter(...).withColumn(...).cache()
+    
+    # Stage 2: Parallel processing of different aspects
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = []
+        
+        # Each thread does different analysis on preprocessed data
+        futures.append(executor.submit(analyze_sales, preprocessed_df))
+        futures.append(executor.submit(analyze_geography, preprocessed_df))
+        futures.append(executor.submit(analyze_time_trends, preprocessed_df))
+        futures.append(executor.submit(analyze_customer_segments, preprocessed_df))
+        
+        results = [f.result() for f in futures]
+    
+    return results
+```
+
+## Performance Impact Comparison:
+
+```
+Scenario 1 (Independent):
+Thread 1: ████████████████ (100% executor utilization)
+Thread 2: ████████████████ (100% executor utilization)  
+Thread 3: ████████████████ (100% executor utilization)
+Thread 4: ████████████████ (100% executor utilization)
+Total Speedup: ~4x
+
+Scenario 2 (Competing):
+Thread 1: ████████░░░░░░░░ (60% executor utilization)
+Thread 2: ██░░░░░░░░░░░░░░ (15% executor utilization, waiting)
+Thread 3: ██░░░░░░░░░░░░░░ (15% executor utilization, waiting)  
+Thread 4: ██░░░░░░░░░░░░░░ (10% executor utilization, waiting)
+Total Speedup: ~1.2x (worse than expected!)
+```
+
+**Key Takeaway**: Design your threaded functions to work on independent data subsets or different DataFrames to achieve maximum executor utilization with ThreadPool + Spark.
+
