@@ -259,6 +259,283 @@ spark-submit \
   myjob.py
 ```
 
+## Configure Spark for Better Distribution to increase task nodes usage
+
+```shell
+# In your spark-submit command, add these configurations:
+spark-submit \
+  --master yarn \
+  --deploy-mode client \
+  --driver-memory 32g \
+  --driver-cores 8 \
+  --executor-memory 16g \
+  --executor-cores 4 \
+  --num-executors 72 \
+  --conf spark.dynamicAllocation.enabled=false \
+  --conf spark.sql.adaptive.enabled=true \
+  --conf spark.sql.adaptive.coalescePartitions.enabled=false \
+  --conf spark.sql.shuffle.partitions=500 \
+  --conf spark.default.parallelism=500 \
+  --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=128MB \
+  myjob.py
+```
+
+### explain partitions, parallelism and advisoryPartitionSizeInBytes
+
+```markdown
+Great question! These three configurations control how Spark distributes work across your cluster. Let me explain each
+one and how they work together:
+
+####  1. `spark.sql.shuffle.partitions=500`
+
+### What it controls:
+
+The number of partitions created during **shuffle operations** (joins, groupBy, aggregations, window functions).
+
+### Default behavior:
+
+```python
+# Default: spark.sql.shuffle.partitions=200
+df.groupBy('category').sum('amount')  # Creates 200 partitions regardless of cluster size
+```
+
+### With your setting:
+
+```python
+# With spark.sql.shuffle.partitions=500
+df.groupBy('category').sum('amount')  # Creates 500 partitions
+```
+
+### Visual example:
+
+```
+Default (200 partitions):
+┌─ 72 Executors ─────────────────┐
+│ Executor 1-36: Handle 200 partitions │ ← Some executors get multiple partitions
+│ Executor 37-72: IDLE           │ ← Many executors are unused!
+└────────────────────────────────┘
+
+With 500 partitions:
+┌─ 72 Executors ─────────────────┐
+│ Executor 1-72: Each gets ~7 partitions │ ← All executors busy!
+└────────────────────────────────┘
+```
+
+### When it matters:
+
+```python
+# These operations use shuffle partitions:
+df.groupBy('column').agg(...)  # Grouping
+df1.join(df2, 'key')  # Joins  
+df.orderBy('column')  # Sorting
+df.repartition(10)  # Explicit repartitioning
+df.withColumn('rank', rank().over(window))  # Window functions
+```
+
+## 2. `spark.default.parallelism=500`
+
+### What it controls:
+
+The default number of partitions for **RDD operations** (lower-level Spark operations).
+
+### Default behavior:
+
+```python
+# Default: Usually 2 * number of CPU cores in cluster
+# With 72 executors × 4 cores = 288 default parallelism
+rdd = spark.sparkContext.parallelize(data)  # Creates 288 partitions
+```
+
+### With your setting:
+
+```python
+# With spark.default.parallelism=500
+rdd = spark.sparkContext.parallelize(data)  # Creates 500 partitions
+```
+
+### When it matters:
+
+```python
+# These operations use default parallelism:
+spark.sparkContext.parallelize(data)  # Creating RDDs
+rdd.map(func)  # RDD transformations
+rdd.filter(func)  # RDD filtering
+df.rdd.mapPartitions(func)  # Converting DF to RDD
+```
+
+### Example impact:
+
+```python
+# Your 15 iterations with default parallelism (288)
+params_rdd = spark.sparkContext.parallelize(params_list)  # 15 items → 288 partitions
+# Result: Most partitions are empty, work concentrated on few executors
+
+# With spark.default.parallelism=500  
+params_rdd = spark.sparkContext.parallelize(params_list)  # 15 items → 500 partitions
+# Result: Better distribution, but still many empty partitions for small datasets
+```
+
+## 3. `spark.sql.adaptive.advisoryPartitionSizeInBytes=128MB`
+
+### What it controls:
+
+Target size for each partition when **Adaptive Query Execution (AQE)** is enabled.
+
+### How it works:
+
+```python
+# Without AQE: Fixed 500 partitions regardless of data size
+df.groupBy('category').sum('amount')  # Always 500 partitions
+
+# With AQE + 128MB target:
+# Small dataset (1GB): AQE creates ~8 partitions (1GB ÷ 128MB)
+# Large dataset (64GB): AQE creates ~512 partitions (64GB ÷ 128MB)
+```
+
+### Visual example:
+
+```
+Fixed Partitions (without AQE):
+Dataset: 2GB, 500 partitions
+┌─────┬─────┬─────┬─────┬─────┬─...─┬─────┐
+│ 4MB │ 4MB │ 4MB │ 4MB │ 4MB │     │ 4MB │  ← 500 tiny partitions
+└─────┴─────┴─────┴─────┴─────┴─...─┴─────┘
+Result: Overhead from managing 500 small tasks
+
+Adaptive Partitions (with AQE):
+Dataset: 2GB, ~16 partitions  
+┌────────┬────────┬────────┬─...─┬────────┐
+│ 128MB  │ 128MB  │ 128MB  │     │ 128MB  │  ← Optimal size partitions
+└────────┴────────┴────────┴─...─┴────────┘
+Result: Efficient processing with right-sized partitions
+```
+
+## How They Work Together
+
+### Scenario: Your 72-executor cluster with large dataset
+
+```python
+# Large aggregation operation
+large_df.groupBy('category', 'region', 'product').agg({
+    'sales': 'sum',
+    'profit': 'avg',
+    'count': 'count'
+}).collect()
+```
+
+### Step-by-step execution:
+
+```
+1. Initial read: Data loaded with default partitions (varies by file size)
+
+2. Shuffle for groupBy: 
+   - Without config: 200 partitions → only 36 executors used
+   - With spark.sql.shuffle.partitions=500 → all 72 executors used
+
+3. AQE optimization:
+   - Analyzes actual data size during execution
+   - If total shuffle data is 32GB:
+     32GB ÷ 128MB = 256 optimal partitions
+   - AQE overrides 500 setting and uses 256 partitions
+
+4. Final distribution:
+   - 256 partitions across 72 executors
+   - Each executor gets ~3-4 partitions
+   - All executors actively working
+```
+
+## Optimal Settings for Your 72-Executor Cluster
+
+```bash
+# Recommended configuration
+spark-submit \
+  --num-executors 72 \
+  --executor-cores 4 \
+  --conf spark.sql.shuffle.partitions=288 \      # 72 executors × 4 cores
+  --conf spark.default.parallelism=288 \         # Match shuffle partitions  
+  --conf spark.sql.adaptive.enabled=true \       # Enable AQE
+  --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+  --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=256MB \  # Larger for better efficiency
+  myjob.py
+```
+
+### Why these numbers:
+
+- **288 partitions**: Matches your total cores (72 × 4), ensuring each core gets work
+- **256MB partition size**: Good balance between parallelism and overhead
+- **AQE enabled**: Automatically optimizes based on actual data sizes
+
+## Common Mistakes and Fixes
+
+### Mistake 1: Too many small partitions
+
+```bash
+# Bad: Creates overhead
+--conf spark.sql.shuffle.partitions=2000  # 2000 tiny tasks
+
+# Good: Match your cluster capacity  
+--conf spark.sql.shuffle.partitions=288   # Optimal for 72 × 4-core executors
+```
+
+### Mistake 2: Partition size too small
+
+```bash
+# Bad: Many tiny partitions
+--conf spark.sql.adaptive.advisoryPartitionSizeInBytes=16MB  # Too small
+
+# Good: Reasonable partition sizes
+--conf spark.sql.adaptive.advisoryPartitionSizeInBytes=128MB  # Good balance
+```
+
+### Mistake 3: Ignoring data size
+
+```python
+# For small datasets (< 1GB): Use fewer partitions
+small_df = spark.read.parquet("/small_data/")
+small_df.coalesce(10).groupBy('col').sum('val')  # Don't use 500 partitions!
+
+# For large datasets (> 100GB): May need more partitions
+huge_df = spark.read.parquet("/huge_data/")
+# AQE will automatically adjust to optimal size
+```
+
+## Quick Test to Verify Settings
+
+```python
+def test_partition_distribution():
+    """Test if your settings distribute work properly"""
+
+    # Create test DataFrame
+    test_df = spark.range(1000000).repartition(72)
+
+    # Perform shuffle operation
+    result = test_df.groupBy((test_df.id % 100).alias('group')).count()
+
+    # Check execution plan
+    print("=== Execution Plan ===")
+    result.explain()
+
+    # Count actual partitions
+    print(f"Number of partitions after groupBy: {result.rdd.getNumPartitions()}")
+
+    # Trigger execution and time it
+    import time
+    start = time.time()
+    result.collect()
+    end = time.time()
+
+    print(f"Execution time: {end - start:.2f} seconds")
+
+
+# Run this to verify your configuration works
+test_partition_distribution()
+```
+
+**Bottom line**: These settings ensure your shuffle operations create enough partitions to keep all 72 executors busy,
+while AQE automatically optimizes partition sizes based on your actual data size for maximum efficiency.
+
+```
+
 ### Key Configuration Points:
 
 1. **`--driver-cores 8`**: More driver cores to handle multiple threads
@@ -425,42 +702,47 @@ def monitor_executor_usage():
 above for optimal performance.
 
 ## Independent vs Same dataframe
+
 Great question! Let me explain these scenarios in detail with concrete examples:
 
 ## Scenario 1: Independent Operations (GOOD - High Utilization)
 
 ### What "Independent" Means:
+
 - Each thread processes **different data** or **different DataFrames**
 - No shared state or dependencies between threads
 - Operations don't interfere with each other
 
 ### Example Code:
+
 ```python
 def process_model_type_a(dict1, dict2, dict3, dict4, dict5, iteration):
     """Thread 1: Processing model type A data"""
     # Each thread works on different subset/different DataFrame
     df_type_a = spark.sql(f"SELECT * FROM data WHERE model_type = 'A' AND batch = {iteration}")
-    
-    result = df_type_a.filter(df_type_a.score > dict1['threshold']) \
-                     .groupBy('category') \
-                     .agg({'sales': 'sum', 'count': 'count'}) \
-                     .collect()
+
+    result = df_type_a.filter(df_type_a.score > dict1['threshold'])
+        .groupBy('category')
+        .agg({'sales': 'sum', 'count': 'count'})
+        .collect()
     return result
+
 
 def process_model_type_b(dict1, dict2, dict3, dict4, dict5, iteration):
     """Thread 2: Processing model type B data"""
     df_type_b = spark.sql(f"SELECT * FROM data WHERE model_type = 'B' AND batch = {iteration}")
-    
-    result = df_type_b.filter(df_type_b.revenue > dict2['min_revenue']) \
-                     .groupBy('region') \
-                     .agg({'profit': 'avg'}) \
-                     .collect()
+
+    result = df_type_b.filter(df_type_b.revenue > dict2['min_revenue'])
+        .groupBy('region')
+        .agg({'profit': 'avg'})
+        .collect()
     return result
+
 
 # ThreadPool execution
 with ThreadPoolExecutor(max_workers=4) as executor:
     futures = []
-    
+
     # Each iteration processes different data slices
     for i in range(15):
         future1 = executor.submit(process_model_type_a, dict1, dict2, dict3, dict4, dict5, i)
@@ -469,6 +751,7 @@ with ThreadPoolExecutor(max_workers=4) as executor:
 ```
 
 ### How Executors Are Utilized:
+
 ```
 Time: T1
 ┌─ Thread 1 ──────────────────────┐    ┌─ Spark Cluster ──────────────┐
@@ -492,34 +775,39 @@ Time: T1
 ## Scenario 2: Competing for Same Resources (BAD - Resource Contention)
 
 ### What "Competing" Means:
+
 - Multiple threads try to access **the same DataFrame**
 - Operations block each other or compete for same data partitions
 - Spark scheduler has to juggle conflicting resource requests
 
 ### Example Code:
+
 ```python
 # PROBLEMATIC: All threads working on same large DataFrame
 large_shared_df = spark.read.parquet("/huge/dataset/")  # 1TB dataset
 large_shared_df.cache()  # Cached in executor memory
 
+
 def competing_function_1(dict1, dict2, dict3, dict4, dict5, iteration):
     """All threads use the same DataFrame - BAD!"""
     # Everyone tries to use the same large_shared_df
-    result = large_shared_df.filter(large_shared_df.id > dict1['min_id']) \
-                           .groupBy('category') \
-                           .agg({'amount': 'sum'}) \
-                           .orderBy('category') \
-                           .collect()  # Expensive operation
+    result = large_shared_df.filter(large_shared_df.id > dict1['min_id'])
+        .groupBy('category')
+        .agg({'amount': 'sum'})
+        .orderBy('category')
+        .collect()  # Expensive operation
     return result
+
 
 def competing_function_2(dict1, dict2, dict3, dict4, dict5, iteration):
     """Another thread also using same DataFrame"""
-    result = large_shared_df.filter(large_shared_df.status == dict2['status']) \
-                           .groupBy('region') \
-                           .agg({'count': 'count'}) \
-                           .orderBy('region') \
-                           .collect()  # Another expensive operation
+    result = large_shared_df.filter(large_shared_df.status == dict2['status'])
+        .groupBy('region')
+        .agg({'count': 'count'})
+        .orderBy('region')
+        .collect()  # Another expensive operation
     return result
+
 
 # ThreadPool execution - PROBLEMATIC
 with ThreadPoolExecutor(max_workers=4) as executor:
@@ -532,6 +820,7 @@ with ThreadPoolExecutor(max_workers=4) as executor:
 ```
 
 ### How Resource Contention Occurs:
+
 ```
 Time: T1 - Resource Conflict!
 ┌─ Thread 1 ──────────────────────┐    ┌─ Spark Cluster ──────────────┐
@@ -557,6 +846,7 @@ Time: T1 - Resource Conflict!
 ### Specific Problems in Scenario 2:
 
 #### 1. **Memory Contention**
+
 ```python
 # All threads try to cache same data
 large_shared_df.cache()  # 500GB dataset
@@ -568,6 +858,7 @@ large_shared_df.cache()  # 500GB dataset
 ```
 
 #### 2. **Disk I/O Bottleneck**
+
 ```python
 # All threads read from same Parquet files
 thread1_result = large_shared_df.filter(...).collect()  # Reads files A,B,C
@@ -578,6 +869,7 @@ thread3_result = large_shared_df.filter(...).collect()  # Reads files A,B,C agai
 ```
 
 #### 3. **Spark Scheduler Conflicts**
+
 ```python
 # Spark task scheduler gets confused
 # Thread 1 submits: Job 1 (1000 tasks)
@@ -591,19 +883,22 @@ thread3_result = large_shared_df.filter(...).collect()  # Reads files A,B,C agai
 ## How to Fix Scenario 2: Convert to Scenario 1
 
 ### Solution 1: Partition the Data
+
 ```python
 # GOOD: Pre-partition data by thread
 def create_independent_dataframes():
     base_df = spark.read.parquet("/huge/dataset/")
-    
+
     # Create separate DataFrames for each thread
     df_partitions = {}
     for i in range(15):
         df_partitions[i] = base_df.filter(base_df.partition_id == i).cache()
-    
+
     return df_partitions
 
+
 df_partitions = create_independent_dataframes()
+
 
 def fixed_function_1(dict1, dict2, dict3, dict4, dict5, iteration):
     # Each thread works on its own partition - GOOD!
@@ -613,12 +908,14 @@ def fixed_function_1(dict1, dict2, dict3, dict4, dict5, iteration):
 ```
 
 ### Solution 2: Use Different Data Sources
+
 ```python
 def independent_function_1(dict1, dict2, dict3, dict4, dict5, iteration):
     # Each thread reads different files
     df = spark.read.parquet(f"/data/batch_{iteration}/")
     result = df.groupBy('category').agg({'amount': 'sum'}).collect()
     return result
+
 
 def independent_function_2(dict1, dict2, dict3, dict4, dict5, iteration):
     # Different thread reads from different table
@@ -628,28 +925,29 @@ def independent_function_2(dict1, dict2, dict3, dict4, dict5, iteration):
 ```
 
 ### Solution 3: Sequential Operations with Parallel Stages
+
 ```python
 # If you must use same DataFrame, do operations sequentially
 # but make each operation use all executors efficiently
 
 def hybrid_approach():
     large_df = spark.read.parquet("/huge/dataset/").cache()
-    
+
     # Stage 1: All preprocessing (uses all 72 executors)
     preprocessed_df = large_df.filter(...).withColumn(...).cache()
-    
+
     # Stage 2: Parallel processing of different aspects
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = []
-        
+
         # Each thread does different analysis on preprocessed data
         futures.append(executor.submit(analyze_sales, preprocessed_df))
         futures.append(executor.submit(analyze_geography, preprocessed_df))
         futures.append(executor.submit(analyze_time_trends, preprocessed_df))
         futures.append(executor.submit(analyze_customer_segments, preprocessed_df))
-        
+
         results = [f.result() for f in futures]
-    
+
     return results
 ```
 
@@ -671,5 +969,6 @@ Thread 4: ██░░░░░░░░░░░░░░ (10% executor utiliza
 Total Speedup: ~1.2x (worse than expected!)
 ```
 
-**Key Takeaway**: Design your threaded functions to work on independent data subsets or different DataFrames to achieve maximum executor utilization with ThreadPool + Spark.
+**Key Takeaway**: Design your threaded functions to work on independent data subsets or different DataFrames to achieve
+maximum executor utilization with ThreadPool + Spark.
 
