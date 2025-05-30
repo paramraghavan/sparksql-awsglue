@@ -22,6 +22,79 @@ spark-submit \
   ./myjob.py
 ```
 
+Equivalent in SparkSession.builder.config
+
+```markdown
+Here's how to set those spark-submit configurations using SparkSession.config:
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder \
+    .appName("YourAppName") \
+    .master("yarn") \
+    .config("spark.submit.deployMode", "client") \
+    .config("spark.driver.memory", "32g") \
+    .config("spark.executor.cores", "4") \
+    .config("spark.executor.instances", "72") \
+    .config("spark.executor.memory", "16g") \
+    .config("spark.dynamicAllocation.enabled", "false") \
+    .getOrCreate()
+```
+
+## Key Mapping:
+
+| spark-submit option                            | SparkSession.config equivalent                        |
+|------------------------------------------------|-------------------------------------------------------|
+| `--deploy-mode client`                         | `.config("spark.submit.deployMode", "client")`        |
+| `--master yarn`                                | `.master("yarn")`                                     |
+| `--driver-memory 32g`                          | `.config("spark.driver.memory", "32g")`               |
+| `--executor-cores 4`                           | `.config("spark.executor.cores", "4")`                |
+| `--num-executors 72`                           | `.config("spark.executor.instances", "72")`           |
+| `--executor-memory 16g`                        | `.config("spark.executor.memory", "16g")`             |
+| `--conf spark.dynamicAllocation.enabled=false` | `.config("spark.dynamicAllocation.enabled", "false")` |
+
+## Alternative Approach - Using spark-defaults.conf
+
+You can also set these in your `spark-defaults.conf` file:
+
+```conf
+spark.submit.deployMode              client
+spark.master                         yarn
+spark.driver.memory                  32g
+spark.executor.cores                 4
+spark.executor.instances             72
+spark.executor.memory                16g
+spark.dynamicAllocation.enabled      false
+```
+
+Then create a simpler SparkSession:
+
+```python
+spark = SparkSession.builder
+    .appName("YourAppName")
+    .getOrCreate()
+```
+
+## Important Notes:
+
+1. **Order matters**: Some configurations (like memory settings) must be set before the SparkSession is created and
+   cannot be changed after.
+
+2. **YARN considerations**: When using YARN, some settings might be overridden by YARN configurations.
+
+3. **Dynamic allocation**: Since you're setting `spark.executor.instances=72`
+   and `spark.dynamicAllocation.enabled=false`, you're using static allocation.
+
+4. **Memory validation**: Ensure your cluster has enough resources for 72 executors × 16GB each = ~1.15TB total executor
+   memory.
+
+The SparkSession approach is equivalent to your spark-submit command and will create a Spark application with the same
+resource allocation.
+
+```
+
+
 ### 2. Why Only 3-4 Nodes Are Used
 
 **Root Cause**: Your **loop with pandas conversion** is forcing everything to run on the driver node sequentially.
