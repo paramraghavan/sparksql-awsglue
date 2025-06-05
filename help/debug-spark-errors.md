@@ -333,3 +333,10 @@ print(f"JVM options: {spark.conf.get('spark.driver.extraJavaOptions')}")
 Try Method 1 first - it's the most reliable for Jupyter environments. Make sure to restart your kernel completely before
 running this.
 
+## evrything same on jupyter notebook and spark-submit, spark-submit job runs to compeletion, try this
+```shell
+# Convert notebook to Python script
+jupyter nbconvert --to script your_notebook.ipynb
+# Run with spark-submit
+spark-submit your_notebook.py
+```
