@@ -206,6 +206,77 @@ def schema_check_alternative(bucket: str, base_prefix: str, output_path: str = N
   spark.stop()
 
 
+def schema_check_column_and_data_type(bucket: str, base_prefix: str, output_path: str = None) -> pd.DataFrame:
+ """
+ Alternative implementation that creates a more structured output with one row per subfolder.
+ Includes column names with their corresponding data types.
+
+ Args:
+     bucket (str): S3 bucket name
+     base_prefix (str): Base prefix/path in S3 bucket
+     output_path (str, optional): Path to save the CSV file
+
+ Returns:
+     pd.DataFrame: DataFrame with subfolders, their column lists, and data types
+ """
+
+ spark = SparkSession.builder \
+  .appName("SchemaCheckAlternative") \
+  .config("spark.sql.adaptive.enabled", "true") \
+  .getOrCreate()
+
+ s3_client = boto3.client('s3')
+ schema_data = []
+
+ try:
+  subfolders = get_s3_subfolders(s3_client, bucket, base_prefix)
+
+  for subfolder in subfolders:
+   try:
+    s3_path = f"s3a://{bucket}/{subfolder}"
+    df = spark.read.parquet(s3_path)
+
+    # Get schema information (column name and data type)
+    schema_info = [(field.name, str(field.dataType)) for field in df.schema.fields]
+
+    # Sort by column name
+    schema_info_sorted = sorted(schema_info, key=lambda x: x[0])
+
+    # Create prefixed column names with data types
+    subfolder_name = subfolder.split('/')[-1]
+    columns_with_types = [f"{subfolder_name}_{col_name} ({data_type})"
+                          for col_name, data_type in schema_info_sorted]
+
+    # Create separate lists for just column names and just data types
+    column_names = [col_name for col_name, _ in schema_info_sorted]
+    data_types = [data_type for _, data_type in schema_info_sorted]
+    prefixed_columns = [f"{subfolder_name}_{col}" for col in column_names]
+
+    # Add row with subfolder and its schema information
+    schema_data.append({
+     'subfolder': subfolder,
+     'column_count': len(column_names),
+     'columns': ', '.join(prefixed_columns),
+     'data_types': ', '.join(data_types),
+     'columns_with_types': ', '.join(columns_with_types)
+    })
+
+   except Exception as e:
+    logging.error(f"Error processing {subfolder}: {str(e)}")
+    continue
+
+  result_df = pd.DataFrame(schema_data)
+
+  if output_path:
+   result_df.to_csv(output_path, index=False)
+   logging.info(f"Schema saved to: {output_path}")
+
+  return result_df
+
+ finally:
+  spark.stop()
+
+
 # Example usage
 if __name__ == "__main__":
  # Configure logging
