@@ -251,7 +251,15 @@ def create_column_diff_summary(diff_data, total_records, name1, name2):
 
     return summary
 
+"""
+Memory issues	.repartition(n)	Smaller, even-sized partitions
+Good memory, fast write	No repartition()	Avoids shuffle for speed
 
+Spark's default parallelism is not always 200 partitions, and your DataFrame won’t automatically have
+ 200 partitions unless it came from something like a file read operation that created them.
+
+
+"""
 def write_results(result_dir, only_in_df1, only_in_df2, diff_data, column_diff_summary, name1, name2):
     """Write comparison results to files."""
     # Write records only in first source
@@ -272,17 +280,19 @@ def write_results(result_dir, only_in_df1, only_in_df2, diff_data, column_diff_s
     # Write column difference summary
     logger.info("Writing column difference summary")
     summary_path = f"{result_dir}/column_diff_summary.csv"
-    column_diff_summary.write.mode("overwrite").option("header", "true").csv(summary_path)
+    column_diff_summary.repartition(200).write.mode("overwrite").option("header", "true").csv(summary_path)
 
     # Write a simple text summary for quick viewing
-    summary_text = column_diff_summary.toPandas()
+    #summary_text = column_diff_summary.toPandas()
+    summary_rows = column_diff_summary.collect()
 
     if not result_dir.startswith("s3://"):
         # Only try to write local file if not on S3
         with open(f"{result_dir}/column_summary.txt", "w") as f:
             f.write(f"Column Difference Summary:\n")
             f.write(f"------------------------\n")
-            for _, row in summary_text.iterrows():
+            #for _, row in summary_text.iterrows():
+            for row in summary_rows:
                 f.write(f"{row['column_name']}: {row['diff_count']} differences ({row['percentage']:.2f}%)\n")
 
 

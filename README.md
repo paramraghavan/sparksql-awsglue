@@ -850,5 +850,109 @@ https://hudi.apache.org/docs/next/table_management/
 - [Python 3.9 vs 3.10](https://www.analyticsvidhya.com/blog/2021/08/differences-between-python-3-10-and-python-3-9-which-you-need-to-know)
 - [MIT Videos and Lecture Notes](http://nil.csail.mit.edu/6.824/2020/schedule.html%0A%0AMIT%20Distributed%20systems%20/%20distributed%20databases%20course%20online.%20%0A%0AVideo%20and%20lecture%20notes%0A)
  
+## out of memeory scenarios
 
- 
+For **out-of-memory (OOM)** scenarios when writing large datasets, this is generally better:
+
+```python
+column_diff_summary.repartition(200).write.mode("overwrite").option("header", "true").csv(summary_path)
+```
+
+### ✅ Why `repartition()` is better for OOM scenarios:
+
+1. **Reduces partition size → less memory per executor**:
+
+   * If your DataFrame has few partitions (e.g., 10), each executor may need to handle millions of rows per partition.
+   * With `repartition(200)`, each partition becomes smaller, lowering the memory burden.
+
+2. **Avoids skew-induced memory pressure**:
+
+   * Without `repartition`, some partitions may be large (skew), causing OOM on the executor handling it.
+   * `repartition(n)` redistributes data evenly (hash-based), preventing large single partitions.
+
+3. **Enables better parallelism**:
+
+   * More partitions = more tasks = better use of cluster resources → avoids memory pressure on any single executor.
+
+---
+
+### ⚠️ But: `repartition()` triggers a **full shuffle**.
+
+* This adds **network overhead**, but the benefit is **smaller, balanced partitions**, which is the key to avoiding OOM.
+* Use a **moderate number of partitions**. A good rule:
+
+  ```
+  num_partitions = 2–4 × number of executor cores
+  ```
+
+---
+
+### ✅ Extra Tip: Avoid `.coalesce()` in OOM scenarios
+
+* `.coalesce(n)` reduces the number of partitions **without shuffle**, often resulting in larger partitions → **worse for memory**.
+
+---
+
+### 🧠 In Summary:
+
+| Scenario                | Best Option        | Why                            |
+| ----------------------- | ------------------ | ------------------------------ |
+| Memory issues           | `.repartition(n)`  | Smaller, even-sized partitions |
+| Good memory, fast write | No `repartition()` | Avoids shuffle for speed       |
+
+## is the default partiton not 200 
+Great question — it touches on a common confusion in Spark.
+
+### 🔍 Short Answer:
+
+> **Spark's default parallelism is not always 200 partitions**, and your DataFrame **won’t automatically have 200 partitions** unless it came from something like a file read operation that created them.
+
+---
+
+### ✅ Detailed Explanation:
+
+#### 1. **`spark.sql.shuffle.partitions` = 200**
+
+* This controls how many **partitions are created *after a shuffle*** (e.g., `groupBy`, `join`, `repartition`, etc.).
+* **It does *not*** determine how many partitions your DataFrame currently has *before* writing.
+
+✅ Example:
+
+```python
+spark.conf.get("spark.sql.shuffle.partitions")  # Usually 200
+```
+
+#### 2. **How many partitions does a DataFrame have?**
+
+It depends on **how it was created**:
+
+| DataFrame Source            | Typical Partition Count                                    |
+| --------------------------- | ---------------------------------------------------------- |
+| `spark.read.csv(...)`       | One partition per file, or per block                       |
+| Result of `groupBy().agg()` | Controlled by `spark.sql.shuffle.partitions` (default 200) |
+| Small local collection      | Often 1 partition                                          |
+| From join/filter/etc.       | Depends on the lineage/transformations                     |
+
+✅ You can check:
+
+```python
+df.rdd.getNumPartitions()
+```
+
+---
+
+### 🧠 Why would you see only n and not 200 partitions?
+
+* Maybe your DataFrame came from **a single file**, or a **small local table**, or a **small intermediate result**.
+* In EMR or Databricks, **you must explicitly repartition** if you want consistent write performance or to avoid OOM errors.
+
+---
+
+### ✅ TL;DR
+
+* Spark does **not always give you 200 partitions** by default.
+* The `200` value from `spark.sql.shuffle.partitions` only applies **after shuffles**.
+* Always **check your actual partition count** with `rdd.getNumPartitions()`, and **use `repartition(n)`** when writing large data or preventing OOM.
+
+
+
