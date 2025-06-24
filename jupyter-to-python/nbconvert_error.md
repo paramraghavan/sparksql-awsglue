@@ -22,16 +22,22 @@ The easiest solution is to use the `normalize()` function as the error suggests:
 import nbformat
 
 # Read the notebook
-with open('your_notebook.ipynb', 'r') as f:
+notebook_path = 'your_notebook.ipynb'
+with open(notebook_path, 'r', encoding='utf-8') as f:
     nb = nbformat.read(f, as_version=4)
 
-# Normalize it (this adds missing IDs)
+# Normalize it (adds missing IDs and fixes format issues)
 nb = nbformat.v4.upgrade(nb)
 nbformat.validate(nb)
 
 # Write it back
-with open('your_notebook.ipynb', 'w') as f:
+with open(notebook_path, 'w', encoding='utf-8') as f:
     nbformat.write(nb, f)
+
+print(f"Notebook {notebook_path} has been normalized and upgraded")
+```
+```shell
+jupyter nbconvert --to python your_notebook.ipynb
 ```
 
 **Alternative quick fixes:**
@@ -39,12 +45,8 @@ with open('your_notebook.ipynb', 'w') as f:
 1. **Open and save in Jupyter**: Simply open the notebook in Jupyter Lab/Notebook and save it - this will automatically
    add the missing IDs
 
-2. **Use nbformat command line**:
-   ```bash
-   python -m nbformat --upgrade your_notebook.ipynb
-   ```
 
-3. **Force nbconvert to ignore the validation**:
+2. **Force nbconvert to ignore the validation**:
    ```bash
    jupyter nbconvert --to html your_notebook.ipynb --allow-errors
    ```
