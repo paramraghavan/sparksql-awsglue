@@ -208,7 +208,7 @@ def run_spark_job(cluster_id, script_path, region='us-east-1'):
 
     return success
 
-
+#See @script_packaging_emr_add_step.md
 if __name__ == "__main__":
     # Configuration - Update these values
     CLUSTER_ID = "j-XXXXXXXXXX"  # Replace with your EMR cluster ID
