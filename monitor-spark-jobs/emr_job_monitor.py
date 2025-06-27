@@ -204,16 +204,21 @@ def main():
                 st.subheader("Job Details")
 
                 # Add filters
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
+                    job_names = ['All'] + sorted(running_jobs['Job Name'].unique().tolist())
+                    selected_job = st.selectbox("Filter by Job Name", job_names, key="running_job_filter")
+                with col2:
                     users = ['All'] + sorted(running_jobs['User'].unique().tolist())
                     selected_user = st.selectbox("Filter by User", users, key="running_user_filter")
-                with col2:
+                with col3:
                     min_memory = st.number_input("Min Memory (GB)", min_value=0.0, value=0.0,
                                                  key="running_memory_filter")
 
                 # Apply filters
                 filtered_df = running_jobs.copy()
+                if selected_job != 'All':
+                    filtered_df = filtered_df[filtered_df['Job Name'].str.contains(selected_job, case=False, na=False)]
                 if selected_user != 'All':
                     filtered_df = filtered_df[filtered_df['User'] == selected_user]
                 if min_memory > 0:
@@ -255,14 +260,18 @@ def main():
                     st.metric("Success Rate", f"{success_rate:.1f}%")
 
                 # Filters
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
+                    job_names = ['All'] + sorted(
+                        [name for name in completed_jobs['Job Name'].unique() if pd.notna(name)])
+                    selected_job = st.selectbox("Filter by Job Name", job_names, key="completed_job_filter")
+                with col2:
                     users = ['All'] + sorted(completed_jobs['User'].unique().tolist())
                     selected_user = st.selectbox("Filter by User", users, key="completed_user_filter")
-                with col2:
+                with col3:
                     status_options = ['All'] + sorted(completed_jobs['Status'].unique().tolist())
                     selected_status = st.selectbox("Filter by Status", status_options, key="completed_status_filter")
-                with col3:
+                with col4:
                     hours_back = st.number_input("Show jobs from last N hours", min_value=1, value=24,
                                                  key="completed_hours_filter")
 
@@ -274,6 +283,8 @@ def main():
                 filtered_df['Submit DateTime'] = pd.to_datetime(filtered_df['Submit Time'])
                 filtered_df = filtered_df[filtered_df['Submit DateTime'] >= cutoff_time]
 
+                if selected_job != 'All':
+                    filtered_df = filtered_df[filtered_df['Job Name'].str.contains(selected_job, case=False, na=False)]
                 if selected_user != 'All':
                     filtered_df = filtered_df[filtered_df['User'] == selected_user]
                 if selected_status != 'All':
@@ -355,9 +366,9 @@ def main():
                 st.info("No completed jobs available for aggregation")
 
         with tab4:
-            st.header("User Summary")
+            st.header("Job Summary")
 
-            # Combine running and completed jobs for user summary
+            # Combine running and completed jobs for job summary
             all_jobs = []
 
             if not running_jobs.empty:
@@ -373,36 +384,60 @@ def main():
             if all_jobs:
                 combined_df = pd.concat(all_jobs, ignore_index=True)
 
-                # User aggregation
-                user_summary = combined_df.groupby('User').agg({
+                # Job aggregation instead of user aggregation
+                job_summary = combined_df.groupby('Job Name').agg({
                     'Job ID': 'count',
-                    'Memory (GB)': 'sum',
-                    'vCores': 'sum',
+                    'Memory (GB)': ['sum', 'mean', 'max'],
+                    'vCores': ['sum', 'mean', 'max'],
                     'Memory-Hours': 'sum',
                     'vCore-Hours': 'sum',
-                    'Duration (mins)': 'mean'
+                    'Duration (mins)': 'mean',
+                    'User': lambda x: ', '.join(x.unique())  # Show all users who ran this job
                 }).round(2)
 
-                user_summary.columns = [
-                    'Total Jobs', 'Total Memory (GB)', 'Total vCores',
-                    'Total Memory-Hours', 'Total vCore-Hours', 'Avg Duration (mins)'
+                # Flatten column names
+                job_summary.columns = [
+                    'Total Runs', 'Total Memory (GB)', 'Avg Memory (GB)', 'Max Memory (GB)',
+                    'Total vCores', 'Avg vCores', 'Max vCores',
+                    'Total Memory-Hours', 'Total vCore-Hours', 'Avg Duration (mins)', 'Users'
                 ]
 
-                # Add running vs completed breakdown
-                user_job_types = combined_df.groupby(['User', 'Job Type']).size().unstack(fill_value=0)
-                user_summary = user_summary.join(user_job_types, how='left').fillna(0)
+                # Add job type breakdown (running vs completed)
+                job_types = combined_df.groupby(['Job Name', 'Job Type']).size().unstack(fill_value=0)
+                job_summary = job_summary.join(job_types, how='left').fillna(0)
 
                 # Sort by total resource usage
-                user_summary = user_summary.sort_values('Total Memory-Hours', ascending=False)
+                job_summary = job_summary.sort_values('Total Memory-Hours', ascending=False)
 
-                st.dataframe(user_summary, use_container_width=True)
+                # Add filters for job summary
+                col1, col2 = st.columns(2)
+                with col1:
+                    min_runs = st.number_input("Min number of runs", min_value=1, value=1, key="job_summary_min_runs")
+                with col2:
+                    min_memory_hours = st.number_input("Min Memory-Hours", min_value=0.0, value=0.0,
+                                                       key="job_summary_min_memory")
+
+                # Apply filters
+                filtered_job_summary = job_summary[
+                    (job_summary['Total Runs'] >= min_runs) &
+                    (job_summary['Total Memory-Hours'] >= min_memory_hours)
+                    ]
+
+                st.subheader("Job Resource Usage Summary")
+                st.dataframe(filtered_job_summary, use_container_width=True)
+
+                # Show top resource consuming jobs
+                st.subheader("Top 10 Resource Consuming Jobs")
+                top_jobs = filtered_job_summary.head(10)[
+                    ['Total Runs', 'Total Memory-Hours', 'Total vCore-Hours', 'Avg Duration (mins)', 'Users']]
+                st.dataframe(top_jobs, use_container_width=True)
 
                 # Export
-                csv_users = user_summary.to_csv()
-                st.download_button("Download User Summary CSV", csv_users, "user_summary.csv", "text/csv")
+                csv_jobs = job_summary.to_csv()
+                st.download_button("Download Job Summary CSV", csv_jobs, "job_summary.csv", "text/csv")
 
             else:
-                st.info("No job data available for user summary")
+                st.info("No job data available for job summary")
 
     # Auto-refresh option
     st.sidebar.header("Settings")
