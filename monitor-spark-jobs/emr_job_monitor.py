@@ -19,8 +19,31 @@ class JobResourceMonitor:
 
         running_jobs = []
         for app in apps:
-            start_time = datetime.fromtimestamp(app.get('startedTime', 0) / 1000)
-            elapsed_seconds = app.get('elapsedTime', 0) / 1000
+            started_time = app.get('startedTime', 0)
+            elapsed_time = app.get('elapsedTime', 0)
+
+            # Handle string timestamps and convert to int
+            try:
+                started_time = int(started_time) if started_time else 0
+                elapsed_time = int(elapsed_time) if elapsed_time else 0
+            except (ValueError, TypeError):
+                started_time = 0
+                elapsed_time = 0
+
+            start_time = datetime.fromtimestamp(started_time / 1000) if started_time > 0 else datetime.now()
+            elapsed_seconds = elapsed_time / 1000
+
+            # Safe conversion of numeric fields
+            try:
+                allocated_mb = float(app.get('allocatedMB', 0))
+                allocated_vcores = int(app.get('allocatedVCores', 0))
+                running_containers = int(app.get('runningContainers', 0))
+                progress = float(app.get('progress', 0))
+            except (ValueError, TypeError):
+                allocated_mb = 0
+                allocated_vcores = 0
+                running_containers = 0
+                progress = 0
 
             job_info = {
                 'Job ID': app.get('id'),
@@ -30,13 +53,13 @@ class JobResourceMonitor:
                 'App Type': app.get('applicationType'),
                 'Submit Time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
                 'Elapsed Time (mins)': round(elapsed_seconds / 60, 1),
-                'Memory (GB)': round(app.get('allocatedMB', 0) / 1024, 2),
-                'vCores': app.get('allocatedVCores', 0),
-                'Containers': app.get('runningContainers', 0),
-                'Progress (%)': round(app.get('progress', 0), 1),
+                'Memory (GB)': round(allocated_mb / 1024, 2),
+                'vCores': allocated_vcores,
+                'Containers': running_containers,
+                'Progress (%)': round(progress, 1),
                 'Status': 'RUNNING',
-                'Memory-Hours': round((app.get('allocatedMB', 0) / 1024) * (elapsed_seconds / 3600), 2),
-                'vCore-Hours': round(app.get('allocatedVCores', 0) * (elapsed_seconds / 3600), 2)
+                'Memory-Hours': round((allocated_mb / 1024) * (elapsed_seconds / 3600), 2),
+                'vCore-Hours': round(allocated_vcores * (elapsed_seconds / 3600), 2)
             }
             running_jobs.append(job_info)
 
@@ -59,18 +82,38 @@ class JobResourceMonitor:
                 executors_response = requests.get(executors_url)
                 executors = executors_response.json()
 
-                # Calculate metrics
-                total_cores = sum(ex.get('totalCores', 0) for ex in executors)
-                max_memory_mb = sum(ex.get('maxMemory', 0) for ex in executors) // (1024 * 1024)
+                # Calculate metrics with safe type conversion
+                total_cores = 0
+                max_memory_mb = 0
 
-                # Time calculations
+                for ex in executors:
+                    try:
+                        cores = int(ex.get('totalCores', 0))
+                        memory = int(ex.get('maxMemory', 0))
+                        total_cores += cores
+                        max_memory_mb += memory
+                    except (ValueError, TypeError):
+                        continue
+
+                max_memory_mb = max_memory_mb // (1024 * 1024)  # Convert bytes to MB
+
+                # Time calculations with safe conversion
                 start_time_ms = app.get('attempts', [{}])[0].get('startTime', 0)
                 end_time_ms = app.get('attempts', [{}])[0].get('endTime', 0)
                 duration_ms = app.get('attempts', [{}])[0].get('duration', 0)
 
-                start_time = datetime.fromtimestamp(start_time_ms / 1000) if start_time_ms else None
-                end_time = datetime.fromtimestamp(end_time_ms / 1000) if end_time_ms else None
-                duration_hours = duration_ms / (1000 * 60 * 60) if duration_ms else 0
+                try:
+                    start_time_ms = int(start_time_ms) if start_time_ms else 0
+                    end_time_ms = int(end_time_ms) if end_time_ms else 0
+                    duration_ms = int(duration_ms) if duration_ms else 0
+                except (ValueError, TypeError):
+                    start_time_ms = 0
+                    end_time_ms = 0
+                    duration_ms = 0
+
+                start_time = datetime.fromtimestamp(start_time_ms / 1000) if start_time_ms > 0 else None
+                end_time = datetime.fromtimestamp(end_time_ms / 1000) if end_time_ms > 0 else None
+                duration_hours = duration_ms / (1000 * 60 * 60) if duration_ms > 0 else 0
 
                 job_info = {
                     'Job ID': app_id,
@@ -88,9 +131,13 @@ class JobResourceMonitor:
                 completed_jobs.append(job_info)
 
             except Exception as e:
-                # For failed requests, add minimal info
+                # For failed requests, add minimal info with safe conversions
                 start_time_ms = app.get('attempts', [{}])[0].get('startTime', 0)
-                start_time = datetime.fromtimestamp(start_time_ms / 1000) if start_time_ms else None
+                try:
+                    start_time_ms = int(start_time_ms) if start_time_ms else 0
+                    start_time = datetime.fromtimestamp(start_time_ms / 1000) if start_time_ms > 0 else None
+                except (ValueError, TypeError):
+                    start_time = None
 
                 job_info = {
                     'Job ID': app_id,
