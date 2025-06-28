@@ -162,8 +162,32 @@ class JobResourceMonitor:
         if df.empty:
             return pd.DataFrame()
 
-        # Convert submit time to datetime
-        df['Submit DateTime'] = pd.to_datetime(df['Submit Time'])
+        # Safe datetime conversion
+        def safe_datetime_convert(time_str):
+            if pd.isna(time_str) or time_str == 'Unknown' or time_str == 'Error':
+                return pd.NaT
+
+            try:
+                # Try different datetime formats
+                if isinstance(time_str, str):
+                    # Format: "2024-01-01 10:30:00"
+                    if len(time_str) >= 19:
+                        return pd.to_datetime(time_str, format='%Y-%m-%d %H:%M:%S', errors='coerce')
+                    else:
+                        return pd.to_datetime(time_str, errors='coerce')
+                else:
+                    return pd.to_datetime(time_str, errors='coerce')
+            except:
+                return pd.NaT
+
+        # Convert submit time to datetime with error handling
+        df['Submit DateTime'] = df['Submit Time'].apply(safe_datetime_convert)
+
+        # Remove rows with invalid dates
+        df = df.dropna(subset=['Submit DateTime'])
+
+        if df.empty:
+            return pd.DataFrame()
 
         # Create time windows (hourly aggregation)
         df['Submit Hour'] = df['Submit DateTime'].dt.floor('H')
@@ -325,10 +349,26 @@ def main():
                 # Apply filters
                 filtered_df = completed_jobs.copy()
 
-                # Time filter
+                # Time filter with safe datetime conversion
                 cutoff_time = datetime.now() - timedelta(hours=hours_back)
-                filtered_df['Submit DateTime'] = pd.to_datetime(filtered_df['Submit Time'])
-                filtered_df = filtered_df[filtered_df['Submit DateTime'] >= cutoff_time]
+
+                def safe_parse_submit_time(time_str):
+                    if pd.isna(time_str) or time_str == 'Unknown' or time_str == 'Error':
+                        return pd.NaT
+                    try:
+                        if isinstance(time_str, str):
+                            return pd.to_datetime(time_str, format='%Y-%m-%d %H:%M:%S', errors='coerce')
+                        else:
+                            return pd.to_datetime(time_str, errors='coerce')
+                    except:
+                        return pd.NaT
+
+                filtered_df['Submit DateTime'] = filtered_df['Submit Time'].apply(safe_parse_submit_time)
+
+                # Filter out invalid dates and apply time filter
+                filtered_df = filtered_df.dropna(subset=['Submit DateTime'])
+                if not filtered_df.empty:
+                    filtered_df = filtered_df[filtered_df['Submit DateTime'] >= cutoff_time]
 
                 if selected_job != 'All':
                     filtered_df = filtered_df[filtered_df['Job Name'].str.contains(selected_job, case=False, na=False)]
