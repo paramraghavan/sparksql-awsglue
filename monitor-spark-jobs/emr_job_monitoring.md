@@ -1,4 +1,5 @@
 # How to use Sparkand uarn history server api exposed by emr
+
 How YARN and Spark History Server work together in EMR, and how this monitoring code leverages both
 services to collect comprehensive job data.
 
@@ -262,21 +263,21 @@ if st.button("Refresh Data"):
 
 ### YARN Strengths:
 
--  Real-time cluster state
--  All application types (not just Spark)
--  Resource allocation and queuing
--  Container management
--  Limited detail on Spark internals     X
--  No historical data after job completion X
+- Real-time cluster state
+- All application types (not just Spark)
+- Resource allocation and queuing
+- Container management
+- Limited detail on Spark internals X
+- No historical data after job completion X
 
 ### Spark History Server Strengths:
 
--  Detailed Spark execution metrics
--  Historical data persistence
--  Per-executor resource breakdown
--  Stage and task-level details
--  Only Spark applications       X
--  No real-time data for running jobs X
+- Detailed Spark execution metrics
+- Historical data persistence
+- Per-executor resource breakdown
+- Stage and task-level details
+- Only Spark applications X
+- No real-time data for running jobs X
 
 ### Combined Power:
 
@@ -378,6 +379,571 @@ except Exception as e:
     continue  # Don't crash, just skip to next job
 ```
 
-This architecture allows  monitoring tool to provide both real-time visibility into current cluster usage (via YARN)
+This architecture allows monitoring tool to provide both real-time visibility into current cluster usage (via YARN)
 and detailed historical analysis of job performance (via Spark History Server), giving users a complete picture of their
 EMR cluster resource utilization.
+==============================================================================================================
+
+# EMR Job Monitor - DataFrame Processing Flow
+
+## 1. Initial Data Collection Phase
+
+### From YARN Resource Manager (Running Jobs)
+
+```python
+def get_running_jobs_detailed(self):
+    # API Call to YARN RM
+    url = f"{self.yarn_rm_url}/ws/v1/cluster/apps"
+    params = {'states': 'RUNNING'}
+    response = requests.get(url, params=params)
+    apps = response.json().get('apps', {}).get('app', [])
+```
+
+**What happens:**
+
+- Makes REST API call to YARN Resource Manager
+- Gets JSON response with running applications
+- Extracts the 'app' array containing job details
+
+### DataFrame Creation for Running Jobs
+
+```python
+# For each app, creates a dictionary with processed data
+job_info = {
+    'Job ID': app.get('id'),
+    'Job Name': app.get('name', 'Unknown')[:50],
+    'User': app.get('user'),
+    'Queue': app.get('queue'),
+    'App Type': app.get('applicationType'),
+    'Submit Time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
+    'Elapsed Time (mins)': round(elapsed_seconds / 60, 1),
+    'Memory (GB)': round(allocated_mb / 1024, 2),
+    'vCores': allocated_vcores,
+    'Containers': running_containers,
+    'Progress (%)': round(progress, 1),
+    'Status': 'RUNNING',
+    'Memory-Hours': round((allocated_mb / 1024) * (elapsed_seconds / 3600), 2),
+    'vCore-Hours': round(allocated_vcores * (elapsed_seconds / 3600), 2)
+}
+
+# Creates pandas DataFrame
+return pd.DataFrame(running_jobs)
+```
+
+**DataFrame Structure for Running Jobs:**
+| Column | Type | Description |
+|--------|------|-------------|
+| Job ID | string | YARN application ID |
+| Job Name | string | Application name (truncated) |
+| User | string | Username who submitted |
+| Memory (GB) | float | Current memory allocation |
+| vCores | int | Current vCore allocation |
+| Elapsed Time (mins) | float | Time since job started |
+| Progress (%) | float | Job completion percentage |
+
+---
+
+## 2. Spark History Server Data (Completed Jobs)
+
+### API Calls and DataFrame Creation
+
+```python
+def get_completed_jobs_detailed(self, limit=100):
+    # Main applications API
+    url = f"{self.spark_history_url}/api/v1/applications"
+    response = requests.get(url, params={'limit': limit})
+    apps = response.json()
+
+    # For each app, get executor details
+    for app in apps:
+        app_id = app['id']
+        executors_url = f"{self.spark_history_url}/api/v1/applications/{app_id}/executors"
+        executors_response = requests.get(executors_url)
+        executors = executors_response.json()
+```
+
+**DataFrame Structure for Completed Jobs:**
+| Column | Type | Description |
+|--------|------|-------------|
+| Job ID | string | Spark application ID |
+| Job Name | string | Application name |
+| User | string | Spark user |
+| Submit Time | string | When job was submitted |
+| End Time | string | When job finished |
+| Duration (mins) | float | Total execution time |
+| Memory (GB) | float | Total memory used |
+| vCores | int | Total vCores used |
+| Status | string | COMPLETED/FAILED/ERROR |
+
+---
+
+## 3. Streamlit Data Storage and Session Management
+
+### Session State Storage
+
+```python
+if st.button("Refresh Data") or 'data_loaded' not in st.session_state:
+    with st.spinner("Loading job data..."):
+        monitor = JobResourceMonitor(spark_url, yarn_url)
+
+        # Load data into DataFrames
+        running_jobs = monitor.get_running_jobs_detailed()
+        completed_jobs = monitor.get_completed_jobs_detailed(limit=200)
+
+        # Store in Streamlit session state
+        st.session_state['running_jobs'] = running_jobs
+        st.session_state['completed_jobs'] = completed_jobs
+        st.session_state['data_loaded'] = True
+```
+
+**Purpose:**
+
+- Avoids re-fetching data on every Streamlit interaction
+- Maintains DataFrames across tab switches
+- Enables refresh functionality
+
+---
+
+## 4. Tab 1: Running Jobs DataFrame Operations
+
+### Filtering Operations
+
+```python
+# Create working copy
+filtered_df = running_jobs.copy()
+
+# Apply filters using pandas operations
+if selected_job != 'All':
+    filtered_df = filtered_df[filtered_df['Job Name'].str.contains(selected_job, case=False, na=False)]
+
+if selected_user != 'All':
+    filtered_df = filtered_df[filtered_df['User'] == selected_user]
+
+if min_memory > 0:
+    filtered_df = filtered_df[filtered_df['Memory (GB)'] >= min_memory]
+```
+
+### Sorting and Display
+
+```python
+# Sort DataFrame
+filtered_df = filtered_df.sort_values(sort_by, ascending=sort_ascending)
+
+# Display in Streamlit
+st.dataframe(filtered_df, use_container_width=True, height=400)
+```
+
+**DataFrame Operations Used:**
+
+- `.copy()` - Creates independent copy for filtering
+- `.str.contains()` - String pattern matching for job names
+- Boolean indexing - Filters rows based on conditions
+- `.sort_values()` - Sorts by selected column
+
+---
+
+## 5. Tab 2: Completed Jobs DataFrame Operations
+
+### Time-based Filtering
+
+```python
+# Create datetime column for filtering
+def safe_parse_submit_time(time_str):
+    try:
+        return pd.to_datetime(time_str, format='%Y-%m-%d %H:%M:%S', errors='coerce')
+    except:
+        return pd.NaT
+
+
+filtered_df['Submit DateTime'] = filtered_df['Submit Time'].apply(safe_parse_submit_time)
+
+# Time filter
+cutoff_time = datetime.now() - timedelta(hours=hours_back)
+filtered_df = filtered_df[filtered_df['Submit DateTime'] >= cutoff_time]
+```
+
+### DataFrame Styling
+
+```python
+def style_status(val):
+    if val == 'COMPLETED':
+        return 'background-color: #d4edda; color: #155724'  # Green
+    elif val == 'FAILED':
+        return 'background-color: #f8d7da; color: #721c24'  # Red
+    else:
+        return ''
+
+
+styled_df = display_df.style.applymap(style_status, subset=['Status'])
+st.dataframe(styled_df, use_container_width=True, height=500)
+```
+
+**DataFrame Operations Used:**
+
+- `.apply()` - Applies function to parse datetime strings
+- `.dropna()` - Removes rows with invalid dates
+- Time-based boolean indexing
+- `.style.applymap()` - Applies conditional formatting
+
+---
+
+## 6. Tab 3: Hourly Aggregation DataFrame Operations
+
+### Time Window Creation
+
+```python
+def get_aggregated_by_job_submission(self, df, time_window_hours=24):
+    # Convert to datetime
+    df['Submit DateTime'] = df['Submit Time'].apply(safe_datetime_convert)
+
+    # Create hourly time windows
+    df['Submit Hour'] = df['Submit DateTime'].dt.floor('H')
+```
+
+### Groupby Aggregation
+
+```python
+# Aggregate by hour
+hourly_agg = df.groupby('Submit Hour').agg({
+    'Job ID': 'count',
+    'Memory (GB)': ['sum', 'mean', 'max'],
+    'vCores': ['sum', 'mean', 'max'],
+    'Duration (mins)': ['mean', 'max'],
+    'Memory-Hours': 'sum',
+    'vCore-Hours': 'sum',
+    'User': lambda x: len(x.unique())
+}).round(2)
+```
+
+### Column Flattening
+
+```python
+# Flatten multi-level column names
+hourly_agg.columns = [
+    'Job Count', 'Total Memory (GB)', 'Avg Memory (GB)', 'Max Memory (GB)',
+    'Total vCores', 'Avg vCores', 'Max vCores',
+    'Avg Duration (mins)', 'Max Duration (mins)',
+    'Total Memory-Hours', 'Total vCore-Hours', 'Unique Users'
+]
+```
+
+**DataFrame Operations Used:**
+
+- `.dt.floor('H')` - Rounds datetime to nearest hour
+- `.groupby()` - Groups data by time windows
+- `.agg()` - Applies multiple aggregation functions
+- Multi-level column flattening
+- `.round()` - Rounds numeric values
+
+---
+
+## 7. Tab 4: Job Summary DataFrame Operations
+
+### DataFrame Combination
+
+```python
+# Combine running and completed jobs
+all_jobs = []
+
+if not running_jobs.empty:
+    running_summary = running_jobs.copy()
+    running_summary['Job Type'] = 'RUNNING'
+    all_jobs.append(running_summary)
+
+if not completed_jobs.empty:
+    completed_summary = completed_jobs.copy()
+    completed_summary['Job Type'] = 'COMPLETED'
+    all_jobs.append(completed_summary)
+
+# Concatenate DataFrames
+combined_df = pd.concat(all_jobs, ignore_index=True, sort=False)
+```
+
+### Data Type Cleaning
+
+```python
+# Clean numeric columns
+numeric_columns = ['Memory (GB)', 'vCores', 'Memory-Hours', 'vCore-Hours']
+for col in numeric_columns:
+    if col in combined_df.columns:
+        combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce').fillna(0)
+```
+
+### Complex Aggregation
+
+```python
+# Aggregate by job name
+job_summary = combined_df.groupby('Job Name').agg({
+    'Job ID': 'count',
+    'Memory (GB)': ['sum', 'mean', 'max'],
+    'vCores': ['sum', 'mean', 'max'],
+    'Memory-Hours': 'sum',
+    'vCore-Hours': 'sum',
+    'Effective Duration (mins)': 'mean',
+    'User': lambda x: ', '.join(x.dropna().unique()[:5])
+}).round(2)
+```
+
+### Cross-tabulation
+
+```python
+# Job type breakdown
+job_types = combined_df.groupby(['Job Name', 'Job Type']).size().unstack(fill_value=0)
+job_summary = job_summary.join(job_types, how='left').fillna(0)
+```
+
+**DataFrame Operations Used:**
+
+- `.concat()` - Combines multiple DataFrames vertically
+- `.pd.to_numeric()` - Converts columns to numeric with error handling
+- Complex `.groupby().agg()` - Multiple aggregation functions per column
+- `.unstack()` - Pivots grouped data
+- `.join()` - Merges DataFrames on index
+
+---
+
+## 8. Common DataFrame Patterns Throughout
+
+### Error Handling Pattern
+
+```python
+try:
+    # DataFrame operation
+    result = df.some_operation()
+except Exception as e:
+    # Fallback or error display
+    st.error(f"Error: {e}")
+```
+
+### Safe Data Access Pattern
+
+```python
+# Safe numeric conversion
+value = pd.to_numeric(raw_value, errors='coerce')
+
+# Safe string operations
+filtered = df[df['column'].str.contains(pattern, case=False, na=False)]
+
+# Safe datetime conversion
+df['datetime_col'] = pd.to_datetime(df['string_col'], errors='coerce')
+```
+
+### Export Pattern
+
+```python
+# Convert DataFrame to CSV
+csv_data = filtered_df.to_csv(index=False)
+st.download_button("Download CSV", csv_data, "filename.csv", "text/csv")
+```
+
+## Summary of DataFrame Flow
+
+1. **Raw API Data** → **Structured Dictionaries** → **Initial DataFrames**
+2. **Session Storage** → **Working Copies** for each tab
+3. **Filtering & Sorting** → **Display DataFrames**
+4. **Aggregation & Analysis** → **Summary DataFrames**
+5. **Export & Visualization** → **Final Output**
+
+========================================================================================
+
+# Resource Metrics: Running vs Completed Jobs
+
+## Data Sources & What They Represent
+
+### Running Jobs (from YARN Resource Manager)
+
+**Source:** YARN ResourceManager REST API (`/ws/v1/cluster/apps`)
+**Nature:** Real-time, current allocations
+
+### Completed Jobs (from Spark History Server)
+
+**Source:** Spark History Server REST API (`/api/v1/applications`)
+**Nature:** Historical, actual usage data
+
+---
+
+## Memory Metrics Comparison
+
+### Running Jobs - Memory (GB)
+
+```python
+# From YARN API
+allocated_mb = float(app.get('allocatedMB', 0))
+'Memory (GB)': round(allocated_mb / 1024, 2)
+```
+
+**What it means:**
+
+- **Currently allocated memory** to the job RIGHT NOW
+- Memory that YARN has **reserved** for this job
+- **Not necessarily being used** - just reserved
+- Can change during job execution as containers are added/removed
+- Includes memory for driver + all executors currently running
+
+**Example:** Job shows 50 GB - means YARN has allocated 50 GB of cluster memory to this job currently
+
+### Completed Jobs - Memory (GB)
+
+```python
+# From Spark History Server
+for ex in executors:
+    memory = int(ex.get('maxMemory', 0))
+    max_memory_mb += memory
+max_memory_mb = max_memory_mb // (1024 * 1024)  # Convert bytes to MB
+```
+
+**What it means:**
+
+- **Peak memory usage** across all executors during the job's lifetime
+- Sum of `maxMemory` from all executors that ran during the job
+- Represents **actual memory capacity** that was available to the job
+- Fixed number - won't change since job is complete
+- Historical maximum, not average usage
+
+**Example:** Job shows 50 GB - means the job had access to 50 GB total memory capacity across all executors
+
+---
+
+## vCores Metrics Comparison
+
+### Running Jobs - vCores
+
+```python
+# From YARN API
+allocated_vcores = int(app.get('allocatedVCores', 0))
+```
+
+**What it means:**
+
+- **Currently allocated virtual cores** to the job
+- Number of CPU cores YARN has **reserved** for this job right now
+- Active allocation that can be used for parallel processing
+- Can fluctuate as containers start/stop
+
+**Example:** Job shows 20 vCores - means 20 CPU cores are currently reserved for this job
+
+### Completed Jobs - vCores
+
+```python
+# From Spark History Server
+for ex in executors:
+    cores = int(ex.get('totalCores', 0))
+    total_cores += cores
+```
+
+**What it means:**
+
+- **Total cores** that were available across all executors
+- Sum of all cores from all executors that participated in the job
+- Represents the job's **parallelism capacity**
+- Historical maximum core count
+
+**Example:** Job shows 20 vCores - means the job had 20 cores available for parallel processing across all executors
+
+---
+
+## Time Metrics: Key Differences
+
+### Running Jobs
+
+```python
+'Elapsed Time (mins)': round(elapsed_seconds / 60, 1)
+'Memory-Hours': round((allocated_mb / 1024) * (elapsed_seconds / 3600), 2)
+'vCore-Hours': round(allocated_vcores * (elapsed_seconds / 3600), 2)
+```
+
+**Meaning:**
+
+- **Elapsed Time:** How long the job has been running so far
+- **Memory-Hours:** Allocated memory × elapsed time (cost metric)
+- **vCore-Hours:** Allocated cores × elapsed time (cost metric)
+- **Still accumulating** - numbers grow until job completes
+
+### Completed Jobs
+
+```python
+'Duration (mins)': round(duration_ms / (1000 * 60), 1)
+'Memory-Hours': round((max_memory_mb / 1024) * duration_hours, 2)
+'vCore-Hours': round(total_cores * duration_hours, 2)
+```
+
+**Meaning:**
+
+- **Duration:** Total time the job took to complete
+- **Memory-Hours:** Peak memory × total duration (final cost)
+- **vCore-Hours:** Total cores × total duration (final cost)
+- **Fixed values** - final resource consumption
+
+---
+
+## Practical Implications
+
+### For Cost Analysis
+
+| Metric           | Running Jobs      | Completed Jobs      |
+|------------------|-------------------|---------------------|
+| **Memory-Hours** | Current burn rate | Final cost          |
+| **vCore-Hours**  | Ongoing cost      | Total cost          |
+| **Purpose**      | Monitor spending  | Historical analysis |
+
+### For Capacity Planning
+
+| Aspect       | Running Jobs            | Completed Jobs         |
+|--------------|-------------------------|------------------------|
+| **Memory**   | Current cluster load    | Historical peak usage  |
+| **vCores**   | Current CPU utilization | Historical parallelism |
+| **Use Case** | Real-time monitoring    | Pattern analysis       |
+
+### For Performance Optimization
+
+| Metric            | Running Jobs          | Completed Jobs       |
+|-------------------|-----------------------|----------------------|
+| **Progress %**    | Current completion    | Always 100%          |
+| **Resource/Time** | Efficiency monitoring | Post-mortem analysis |
+| **Containers**    | Active parallelism    | Not available        |
+
+---
+
+## Important Considerations
+
+### Running Jobs Caveats
+
+1. **Allocation ≠ Usage:** Job might be allocated 50 GB but only using 30 GB
+2. **Dynamic Allocation:** Resources can change during execution
+3. **Overprovisioning:** YARN might allocate more than actually needed
+4. **Container Overhead:** Includes YARN container overhead
+
+### Completed Jobs Caveats
+
+1. **Peak vs Average:** Shows maximum capacity, not average usage
+2. **Executor Churn:** Multiple executors over time are summed
+3. **Failed Executors:** May include resources from failed/restarted executors
+4. **Memory Overhead:** Includes Spark's memory overhead calculations
+
+### Code Example: Different Data Sources
+
+```python
+# Running Job (YARN API response)
+{
+    "allocatedMB": 51200,  # Currently allocated
+    "allocatedVCores": 20,  # Currently allocated
+    "runningContainers": 5,  # Active now
+    "progress": 45.5  # Current progress
+}
+
+# Completed Job (Spark History API + Executors API)
+{
+    "maxMemory": 53687091200,  # Peak capacity (bytes)
+    "totalCores": 20,  # Total cores used
+    "duration": 1800000,  # Total time (ms)
+    "completed": true  # Final status
+}
+```
+
+## Summary
+
+- **Running Jobs:** Show **current allocations** and **ongoing consumption**
+- **Completed Jobs:** Show **peak capacity** and **total consumption**
+- **Both are valuable** but answer different questions about resource usage
+- **Use running jobs** for real-time monitoring and intervention
+- **Use completed jobs** for historical analysis and optimization
