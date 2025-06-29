@@ -461,67 +461,212 @@ def main():
             if not running_jobs.empty:
                 running_summary = running_jobs.copy()
                 running_summary['Job Type'] = 'RUNNING'
+                # Ensure consistent columns - add missing columns with default values
+                if 'End Time' not in running_summary.columns:
+                    running_summary['End Time'] = 'Still Running'
+                if 'Duration (mins)' not in running_summary.columns:
+                    running_summary['Duration (mins)'] = running_summary.get('Elapsed Time (mins)', 0)
                 all_jobs.append(running_summary)
 
             if not completed_jobs.empty:
                 completed_summary = completed_jobs.copy()
                 completed_summary['Job Type'] = 'COMPLETED'
+                # Ensure consistent columns - add missing columns with default values
+                if 'Elapsed Time (mins)' not in completed_summary.columns:
+                    completed_summary['Elapsed Time (mins)'] = completed_summary.get('Duration (mins)', 0)
+                if 'Progress (%)' not in completed_summary.columns:
+                    completed_summary['Progress (%)'] = 100.0  # Completed jobs are 100%
+                if 'Containers' not in completed_summary.columns:
+                    completed_summary['Containers'] = 0  # Not available for completed jobs
                 all_jobs.append(completed_summary)
 
             if all_jobs:
-                combined_df = pd.concat(all_jobs, ignore_index=True)
+                try:
+                    # Align columns before concatenating
+                    if len(all_jobs) > 1:
+                        # Get all unique columns
+                        all_columns = set()
+                        for df in all_jobs:
+                            all_columns.update(df.columns)
 
-                # Job aggregation instead of user aggregation
-                job_summary = combined_df.groupby('Job Name').agg({
-                    'Job ID': 'count',
-                    'Memory (GB)': ['sum', 'mean', 'max'],
-                    'vCores': ['sum', 'mean', 'max'],
-                    'Memory-Hours': 'sum',
-                    'vCore-Hours': 'sum',
-                    'Duration (mins)': 'mean',
-                    'User': lambda x: ', '.join(x.unique())  # Show all users who ran this job
-                }).round(2)
+                        # Add missing columns to each dataframe
+                        for i, df in enumerate(all_jobs):
+                            for col in all_columns:
+                                if col not in df.columns:
+                                    if col in ['Memory (GB)', 'Memory-Hours', 'vCore-Hours']:
+                                        df[col] = 0.0
+                                    elif col in ['vCores', 'Containers']:
+                                        df[col] = 0
+                                    elif col in ['Progress (%)', 'Duration (mins)', 'Elapsed Time (mins)']:
+                                        df[col] = 0.0
+                                    else:
+                                        df[col] = 'N/A'
+                            all_jobs[i] = df
 
-                # Flatten column names
-                job_summary.columns = [
-                    'Total Runs', 'Total Memory (GB)', 'Avg Memory (GB)', 'Max Memory (GB)',
-                    'Total vCores', 'Avg vCores', 'Max vCores',
-                    'Total Memory-Hours', 'Total vCore-Hours', 'Avg Duration (mins)', 'Users'
-                ]
+                    combined_df = pd.concat(all_jobs, ignore_index=True, sort=False)
 
-                # Add job type breakdown (running vs completed)
-                job_types = combined_df.groupby(['Job Name', 'Job Type']).size().unstack(fill_value=0)
-                job_summary = job_summary.join(job_types, how='left').fillna(0)
+                    # Clean and ensure proper data types for aggregation
+                    numeric_columns = ['Memory (GB)', 'vCores', 'Memory-Hours', 'vCore-Hours']
+                    for col in numeric_columns:
+                        if col in combined_df.columns:
+                            # Convert to numeric, handling any non-numeric values
+                            combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce').fillna(0)
 
-                # Sort by total resource usage
-                job_summary = job_summary.sort_values('Total Memory-Hours', ascending=False)
+                    # Handle Duration columns - use Duration (mins) preferentially
+                    if 'Duration (mins)' in combined_df.columns and 'Elapsed Time (mins)' in combined_df.columns:
+                        # For running jobs, use Elapsed Time; for completed jobs, use Duration
+                        combined_df['Effective Duration (mins)'] = combined_df.apply(
+                            lambda row: row['Elapsed Time (mins)'] if row['Job Type'] == 'RUNNING' else row[
+                                'Duration (mins)'],
+                            axis=1
+                        )
+                    elif 'Duration (mins)' in combined_df.columns:
+                        combined_df['Effective Duration (mins)'] = combined_df['Duration (mins)']
+                    elif 'Elapsed Time (mins)' in combined_df.columns:
+                        combined_df['Effective Duration (mins)'] = combined_df['Elapsed Time (mins)']
+                    else:
+                        combined_df['Effective Duration (mins)'] = 0
 
-                # Add filters for job summary
-                col1, col2 = st.columns(2)
-                with col1:
-                    min_runs = st.number_input("Min number of runs", min_value=1, value=1, key="job_summary_min_runs")
-                with col2:
-                    min_memory_hours = st.number_input("Min Memory-Hours", min_value=0.0, value=0.0,
-                                                       key="job_summary_min_memory")
+                    # Ensure Effective Duration is numeric
+                    combined_df['Effective Duration (mins)'] = pd.to_numeric(
+                        combined_df['Effective Duration (mins)'], errors='coerce'
+                    ).fillna(0)
 
-                # Apply filters
-                filtered_job_summary = job_summary[
-                    (job_summary['Total Runs'] >= min_runs) &
-                    (job_summary['Total Memory-Hours'] >= min_memory_hours)
-                    ]
+                    # Remove rows with missing or invalid job names
+                    combined_df = combined_df.dropna(subset=['Job Name'])
+                    combined_df = combined_df[combined_df['Job Name'].str.strip() != '']
+                    combined_df = combined_df[combined_df['Job Name'] != 'Unknown']
 
-                st.subheader("Job Resource Usage Summary")
-                st.dataframe(filtered_job_summary, use_container_width=True)
+                    if combined_df.empty:
+                        st.info("No valid job data available for summary after cleaning")
+                    else:
+                        # Job aggregation with error handling
+                        try:
+                            agg_dict = {
+                                'Job ID': 'count',
+                                'User': lambda x: ', '.join(x.dropna().unique()[:5])  # Limit to first 5 users
+                            }
 
-                # Show top resource consuming jobs
-                st.subheader("Top 10 Resource Consuming Jobs")
-                top_jobs = filtered_job_summary.head(10)[
-                    ['Total Runs', 'Total Memory-Hours', 'Total vCore-Hours', 'Avg Duration (mins)', 'Users']]
-                st.dataframe(top_jobs, use_container_width=True)
+                            # Add numeric aggregations only for columns that exist and are numeric
+                            if 'Memory (GB)' in combined_df.columns:
+                                agg_dict['Memory (GB)'] = ['sum', 'mean', 'max']
+                            if 'vCores' in combined_df.columns:
+                                agg_dict['vCores'] = ['sum', 'mean', 'max']
+                            if 'Memory-Hours' in combined_df.columns:
+                                agg_dict['Memory-Hours'] = 'sum'
+                            if 'vCore-Hours' in combined_df.columns:
+                                agg_dict['vCore-Hours'] = 'sum'
+                            if 'Effective Duration (mins)' in combined_df.columns:
+                                agg_dict['Effective Duration (mins)'] = 'mean'
 
-                # Export
-                csv_jobs = job_summary.to_csv()
-                st.download_button("Download Job Summary CSV", csv_jobs, "job_summary.csv", "text/csv")
+                            job_summary = combined_df.groupby('Job Name').agg(agg_dict).round(2)
+
+                            # Flatten column names
+                            new_columns = []
+                            for col in job_summary.columns:
+                                if isinstance(col, tuple):
+                                    if col[1] == 'sum' and col[0] == 'Memory (GB)':
+                                        new_columns.append('Total Memory (GB)')
+                                    elif col[1] == 'mean' and col[0] == 'Memory (GB)':
+                                        new_columns.append('Avg Memory (GB)')
+                                    elif col[1] == 'max' and col[0] == 'Memory (GB)':
+                                        new_columns.append('Max Memory (GB)')
+                                    elif col[1] == 'sum' and col[0] == 'vCores':
+                                        new_columns.append('Total vCores')
+                                    elif col[1] == 'mean' and col[0] == 'vCores':
+                                        new_columns.append('Avg vCores')
+                                    elif col[1] == 'max' and col[0] == 'vCores':
+                                        new_columns.append('Max vCores')
+                                    elif col[1] == 'sum' and col[0] == 'Memory-Hours':
+                                        new_columns.append('Total Memory-Hours')
+                                    elif col[1] == 'sum' and col[0] == 'vCore-Hours':
+                                        new_columns.append('Total vCore-Hours')
+                                    elif col[1] == 'mean' and col[0] == 'Effective Duration (mins)':
+                                        new_columns.append('Avg Duration (mins)')
+                                    else:
+                                        new_columns.append(f"{col[0]} {col[1]}")
+                                else:
+                                    if col == 'Job ID':
+                                        new_columns.append('Total Runs')
+                                    else:
+                                        new_columns.append(col)
+
+                            job_summary.columns = new_columns
+
+                            # Add job type breakdown (running vs completed)
+                            try:
+                                job_types = combined_df.groupby(['Job Name', 'Job Type']).size().unstack(fill_value=0)
+                                job_summary = job_summary.join(job_types, how='left').fillna(0)
+                            except Exception as e:
+                                st.warning(f"Could not add job type breakdown: {e}")
+
+                            # Sort by total resource usage (use available column)
+                            sort_column = 'Total Memory-Hours'
+                            if sort_column not in job_summary.columns:
+                                if 'Total Memory (GB)' in job_summary.columns:
+                                    sort_column = 'Total Memory (GB)'
+                                elif 'Total Runs' in job_summary.columns:
+                                    sort_column = 'Total Runs'
+                                else:
+                                    sort_column = job_summary.columns[0]
+
+                            job_summary = job_summary.sort_values(sort_column, ascending=False)
+
+                            # Add filters for job summary
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                min_runs = st.number_input("Min number of runs", min_value=1, value=1,
+                                                           key="job_summary_min_runs")
+                            with col2:
+                                if 'Total Memory-Hours' in job_summary.columns:
+                                    min_memory_hours = st.number_input("Min Memory-Hours", min_value=0.0, value=0.0,
+                                                                       key="job_summary_min_memory")
+                                else:
+                                    min_memory_hours = 0.0
+
+                            # Apply filters
+                            if 'Total Runs' in job_summary.columns:
+                                filtered_job_summary = job_summary[job_summary['Total Runs'] >= min_runs]
+                            else:
+                                filtered_job_summary = job_summary.copy()
+
+                            if 'Total Memory-Hours' in job_summary.columns and min_memory_hours > 0:
+                                filtered_job_summary = filtered_job_summary[
+                                    filtered_job_summary['Total Memory-Hours'] >= min_memory_hours
+                                    ]
+
+                            st.subheader("Job Resource Usage Summary")
+                            st.dataframe(filtered_job_summary, use_container_width=True)
+
+                            # Show top resource consuming jobs
+                            st.subheader("Top 10 Jobs")
+                            display_columns = []
+                            for col in ['Total Runs', 'Total Memory-Hours', 'Total vCore-Hours', 'Avg Duration (mins)',
+                                        'User']:
+                                if col in filtered_job_summary.columns:
+                                    display_columns.append(col)
+
+                            if display_columns:
+                                top_jobs = filtered_job_summary.head(10)[display_columns]
+                                st.dataframe(top_jobs, use_container_width=True)
+
+                            # Export
+                            csv_jobs = job_summary.to_csv()
+                            st.download_button("Download Job Summary CSV", csv_jobs, "job_summary.csv", "text/csv")
+
+                        except Exception as agg_error:
+                            st.error(f"Error during aggregation: {agg_error}")
+                            st.write("Available columns in combined dataframe:")
+                            st.write(combined_df.columns.tolist())
+                            st.write("Data types:")
+                            st.write(combined_df.dtypes)
+
+                except Exception as combine_error:
+                    st.error(f"Error combining dataframes: {combine_error}")
+                    st.write("Running jobs columns:",
+                             running_jobs.columns.tolist() if not running_jobs.empty else "Empty")
+                    st.write("Completed jobs columns:",
+                             completed_jobs.columns.tolist() if not completed_jobs.empty else "Empty")
 
             else:
                 st.info("No job data available for job summary")
