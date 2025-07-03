@@ -7,6 +7,21 @@ import requests
 import json
 from urllib.parse import urljoin
 
+
+def get_time_range_dates(time_range):
+    """Convert time range selection to datetime objects"""
+    end_time = datetime.utcnow()
+    if time_range == "Last 1 Hour":
+        start_time = end_time - timedelta(hours=1)
+    elif time_range == "Last 6 Hours":
+        start_time = end_time - timedelta(hours=6)
+    elif time_range == "Last 24 Hours":
+        start_time = end_time - timedelta(hours=24)
+    else:  # Last 7 Days
+        start_time = end_time - timedelta(days=7)
+
+    return start_time, end_time
+
 # Configure page
 st.set_page_config(
     page_title="EMR Spark Resource Monitor",
