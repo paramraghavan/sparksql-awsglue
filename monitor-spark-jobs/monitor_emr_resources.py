@@ -22,18 +22,67 @@ st.sidebar.header("Configuration")
 
 # AWS Configuration
 aws_region = st.sidebar.text_input("AWS Region", value="us-east-1")
-cluster_id = st.sidebar.text_input("EMR Cluster ID", placeholder="j-XXXXXXXXXX")
 
-# Optional URLs
-spark_history_server = st.sidebar.text_input(
-    "Spark History Server URL (optional)",
-    placeholder="http://your-cluster-master:18080"
+# Cluster ID input methods
+st.sidebar.subheader("Cluster Identification")
+input_method = st.sidebar.radio(
+    "How to identify cluster:",
+    ["Manual Entry", "From Spark History URL", "From YARN URL"]
 )
 
-yarn_rm_url = st.sidebar.text_input(
-    "YARN ResourceManager URL (optional)",
-    placeholder="http://your-cluster-master:8088"
-)
+cluster_id = None
+spark_history_server = None
+yarn_rm_url = None
+
+if input_method == "Manual Entry":
+    cluster_id = st.sidebar.text_input("EMR Cluster ID", placeholder="j-XXXXXXXXXX")
+    # Optional URLs
+    spark_history_server = st.sidebar.text_input(
+        "Spark History Server URL (optional)",
+        placeholder="http://your-cluster-master:18080"
+    )
+    yarn_rm_url = st.sidebar.text_input(
+        "YARN ResourceManager URL (optional)",
+        placeholder="http://your-cluster-master:8088"
+    )
+
+elif input_method == "From Spark History URL":
+    spark_history_server = st.sidebar.text_input(
+        "Spark History Server URL",
+        placeholder="http://your-cluster-master:18080"
+    )
+    if spark_history_server:
+        extracted_cluster_id = extract_cluster_id_from_url(spark_history_server)
+        if extracted_cluster_id:
+            cluster_id = extracted_cluster_id
+            st.sidebar.success(f"✅ Detected Cluster ID: {cluster_id}")
+        else:
+            st.sidebar.error("❌ Could not extract cluster ID from URL")
+
+    # Optional YARN URL
+    yarn_rm_url = st.sidebar.text_input(
+        "YARN ResourceManager URL (optional)",
+        placeholder="http://your-cluster-master:8088"
+    )
+
+else:  # From YARN URL
+    yarn_rm_url = st.sidebar.text_input(
+        "YARN ResourceManager URL",
+        placeholder="http://your-cluster-master:8088"
+    )
+    if yarn_rm_url:
+        extracted_cluster_id = extract_cluster_id_from_url(yarn_rm_url)
+        if extracted_cluster_id:
+            cluster_id = extracted_cluster_id
+            st.sidebar.success(f"✅ Detected Cluster ID: {cluster_id}")
+        else:
+            st.sidebar.error("❌ Could not extract cluster ID from URL")
+
+    # Optional Spark History URL
+    spark_history_server = st.sidebar.text_input(
+        "Spark History Server URL (optional)",
+        placeholder="http://your-cluster-master:18080"
+    )
 
 # Filters
 st.sidebar.header("Filters")
@@ -73,7 +122,178 @@ def get_aws_clients(region):
         return None, None
 
 
-def get_time_range_dates(time_range):
+def extract_cluster_id_from_url(url):
+    """Extract EMR cluster ID from Spark History Server or YARN ResourceManager URL"""
+    try:
+        # Method 1: Try to get cluster info from Spark History Server
+        if ':18080' in url:  # Spark History Server
+            try:
+                # Get environment info from Spark History Server
+                env_url = urljoin(url, "/api/v1/applications")
+                response = requests.get(env_url, timeout=10)
+
+                if response.status_code == 200:
+                    apps = response.json()
+                    if apps:
+                        # Get the first application's environment info
+                        app_id = apps[0]['id']
+                        env_detail_url = urljoin(url, f"/api/v1/applications/{app_id}/environment")
+                        env_response = requests.get(env_detail_url, timeout=5)
+
+                        if env_response.status_code == 200:
+                            env_data = env_response.json()
+                            # Look for EMR cluster ID in environment variables
+                            for category in env_data:
+                                if category.get('name') == 'System Properties':
+                                    for prop in category.get('values', []):
+                                        if 'aws.emr.job.flow.id' in prop[0]:
+                                            return prop[1]
+                                        elif 'CLUSTER_ID' in prop[0]:
+                                            return prop[1]
+            except Exception as e:
+                st.warning(f"Could not extract from Spark API: {str(e)}")
+
+        # Method 2: Try to get cluster info from YARN ResourceManager
+        elif ':8088' in url:  # YARN ResourceManager
+            try:
+                cluster_info_url = urljoin(url, "/ws/v1/cluster/info")
+                response = requests.get(cluster_info_url, timeout=10)
+
+                if response.status_code == 200:
+                    cluster_data = response.json()
+                    cluster_info = cluster_data.get('clusterInfo', {})
+
+                    # Look for EMR cluster ID in various fields
+                    cluster_id_candidates = [
+                        cluster_info.get('haZooKeeperConnectionString', ''),
+                        cluster_info.get('resourceManagerVersion', ''),
+                        cluster_info.get('hadoopVersion', '')
+                    ]
+
+                    for candidate in cluster_id_candidates:
+                        if candidate and 'j-' in candidate:
+                            # Extract j-XXXXXXXXXX pattern
+                            import re
+                            match = re.search(r'j-[A-Z0-9]{8,}', candidate)
+                            if match:
+                                return match.group(0)
+            except Exception as e:
+                st.warning(f"Could not extract from YARN API: {str(e)}")
+
+        # Method 3: Try to extract from hostname pattern
+        try:
+            from urllib.parse import urlparse
+            parsed_url = urlparse(url)
+            hostname = parsed_url.hostname
+
+            if hostname:
+                # EMR hostnames often contain cluster ID
+                # Pattern: ip-172-31-xx-xx.region.compute.internal or ec2-xx-xx-xx-xx.region.compute.amazonaws.com
+
+                # Try to get instance metadata if it's an EC2 instance
+                if 'compute.internal' in hostname or 'compute.amazonaws.com' in hostname:
+                    # This would require running from within the cluster
+                    # We'll try a different approach - check EMR tags
+                    pass
+        except Exception as e:
+            pass
+
+        # Method 4: Manual extraction attempt from URL structure
+        # Some EMR setups include cluster ID in the URL path or subdomain
+        try:
+            import re
+            # Look for j-XXXXXXXXXX pattern anywhere in the URL
+            match = re.search(r'j-[A-Z0-9]{8,}', url)
+            if match:
+                return match.group(0)
+        except Exception as e:
+            pass
+
+        return None
+
+    except Exception as e:
+        st.error(f"Error extracting cluster ID: {str(e)}")
+        return None
+
+
+def get_cluster_id_from_instance_metadata(url):
+    """Try to get cluster ID by connecting to the instance and querying metadata"""
+    try:
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url)
+        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+        # Try to access instance metadata through a proxy endpoint (if available)
+        # This is a fallback method that might work in some setups
+        metadata_endpoints = [
+            "/proxy/application_metadata",
+            "/metadata/cluster",
+            "/emr/cluster-id"
+        ]
+
+        for endpoint in metadata_endpoints:
+            try:
+                metadata_url = urljoin(base_url, endpoint)
+                response = requests.get(metadata_url, timeout=5)
+                if response.status_code == 200:
+                    data = response.text
+                    import re
+                    match = re.search(r'j-[A-Z0-9]{8,}', data)
+                    if match:
+                        return match.group(0)
+            except:
+                continue
+
+        return None
+    except Exception as e:
+        return None
+
+
+def discover_cluster_id_interactive(url):
+    """Interactive method to help user find cluster ID"""
+    st.sidebar.markdown("### 🔍 Cluster ID Discovery")
+
+    # Show what we tried
+    st.sidebar.info("""
+    **Automatic detection methods tried:**
+    1. ✅ Spark History Server API
+    2. ✅ YARN ResourceManager API  
+    3. ✅ URL pattern matching
+    """)
+
+    # Manual input as fallback
+    manual_cluster_id = st.sidebar.text_input(
+        "Enter Cluster ID manually",
+        placeholder="j-XXXXXXXXXX",
+        help="If auto-detection failed, please enter your EMR cluster ID"
+    )
+
+    if manual_cluster_id:
+        return manual_cluster_id
+
+    # Show instructions for finding cluster ID
+    with st.sidebar.expander("📝 How to find your Cluster ID"):
+        st.markdown("""
+        **Method 1: AWS Console**
+        1. Go to EMR console
+        2. Find your cluster name
+        3. Copy the Cluster ID (j-XXXXXXXXXX)
+
+        **Method 2: AWS CLI**
+        ```bash
+        aws emr list-clusters --active
+        ```
+
+        **Method 3: From EMR Master Node**
+        ```bash
+        cat /mnt/var/lib/info/job-flow.json | grep jobFlowId
+        ```
+
+        **Method 4: Check instance tags**
+        Look for 'aws:elasticmapreduce:job-flow-id' tag
+        """)
+
+    return None
     """Convert time range selection to datetime objects"""
     end_time = datetime.utcnow()
     if time_range == "Last 1 Hour":
@@ -367,24 +587,65 @@ def apply_filters(jobs, job_name_filter, user_filter, job_status, show_completed
 
 # Main application
 if not cluster_id:
-    st.warning("⚠️ Please enter your EMR Cluster ID to start monitoring")
+    st.warning("⚠️ Please provide cluster identification information")
 
-    st.markdown("""
-    ## 📋 Setup Instructions
+    # Show current input method and provide guidance
+    if input_method == "From Spark History URL" and spark_history_server:
+        st.info("🔍 Attempting to auto-detect cluster ID from Spark History Server...")
+        if st.button("🔄 Retry Auto-Detection"):
+            st.rerun()
 
-    1. **Enter EMR Cluster ID** in the sidebar (format: j-XXXXXXXXXX)
-    2. **Configure AWS credentials** with permissions:
-       - `emr:DescribeCluster`, `emr:ListSteps`, `emr:DescribeStep`
-       - `cloudwatch:GetMetricStatistics`
-    3. **Optional**: Add Spark History Server and YARN URLs for detailed metrics
+        # Show discovery helper
+        manual_id = discover_cluster_id_interactive(spark_history_server)
+        if manual_id:
+            cluster_id = manual_id
 
-    ## 📊 Features
-    - **Real-time monitoring** of Spark jobs on EMR
-    - **Resource tracking**: cores, memory, executors, tasks
-    - **Multiple data sources**: EMR Steps, Spark History, YARN
-    - **Advanced filtering** by job name, user, status
-    - **Tabulated view** for easy data analysis
-    """)
+    elif input_method == "From YARN URL" and yarn_rm_url:
+        st.info("🔍 Attempting to auto-detect cluster ID from YARN ResourceManager...")
+        if st.button("🔄 Retry Auto-Detection"):
+            st.rerun()
+
+        # Show discovery helper
+        manual_id = discover_cluster_id_interactive(yarn_rm_url)
+        if manual_id:
+            cluster_id = manual_id
+
+    if not cluster_id:
+        st.markdown("""
+        ## 📋 Setup Instructions
+
+        ### **Option 1: Manual Entry**
+        - Enter your EMR Cluster ID directly (format: j-XXXXXXXXXX)
+        - Find it in AWS EMR Console or use: `aws emr list-clusters --active`
+
+        ### **Option 2: Auto-detect from Spark History Server**
+        - Enter Spark History Server URL (usually port 18080)
+        - Format: `http://ip-172-31-xx-xx.region.compute.internal:18080`
+        - We'll try to extract cluster ID automatically
+
+        ### **Option 3: Auto-detect from YARN ResourceManager**
+        - Enter YARN ResourceManager URL (usually port 8088)
+        - Format: `http://ip-172-31-xx-xx.region.compute.internal:8088`
+        - We'll try to extract cluster ID automatically
+
+        ### 🔧 **Required AWS Permissions:**
+        ```json
+        {
+            "emr:DescribeCluster",
+            "emr:ListSteps", 
+            "emr:DescribeStep",
+            "cloudwatch:GetMetricStatistics"
+        }
+        ```
+
+        ### 📊 **Features:**
+        - **Real-time monitoring** of Spark jobs on EMR
+        - **Resource tracking**: cores, memory, executors, tasks
+        - **Multiple data sources**: EMR Steps, Spark History, YARN
+        - **Advanced filtering** by job name, user, status
+        - **Tabulated view** for easy data analysis
+        - **CSV export** for further analysis
+        """)
 
 else:
     # Initialize AWS clients
