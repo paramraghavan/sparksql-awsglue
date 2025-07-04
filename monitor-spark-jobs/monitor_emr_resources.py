@@ -7,21 +7,6 @@ import requests
 import json
 from urllib.parse import urljoin
 
-
-def get_time_range_dates(time_range):
-    """Convert time range selection to datetime objects"""
-    end_time = datetime.utcnow()
-    if time_range == "Last 1 Hour":
-        start_time = end_time - timedelta(hours=1)
-    elif time_range == "Last 6 Hours":
-        start_time = end_time - timedelta(hours=6)
-    elif time_range == "Last 24 Hours":
-        start_time = end_time - timedelta(hours=24)
-    else:  # Last 7 Days
-        start_time = end_time - timedelta(days=7)
-
-    return start_time, end_time
-
 # Configure page
 st.set_page_config(
     page_title="EMR Spark Resource Monitor",
@@ -309,6 +294,9 @@ def discover_cluster_id_interactive(url):
         """)
 
     return None
+
+
+def get_time_range_dates(time_range):
     """Convert time range selection to datetime objects"""
     end_time = datetime.utcnow()
     if time_range == "Last 1 Hour":
@@ -324,22 +312,88 @@ def discover_cluster_id_interactive(url):
 
 
 def get_cluster_info(emr_client, cluster_id):
-    """Get cluster information"""
+    """Get cluster information supporting both instance groups and instance fleets"""
     try:
         response = emr_client.describe_cluster(ClusterId=cluster_id)
         cluster = response['Cluster']
 
-        # Get instance groups for total instance count
-        instance_groups = emr_client.list_instance_groups(ClusterId=cluster_id)
-        total_instances = sum([ig['RequestedInstanceCount'] for ig in instance_groups['InstanceGroups']])
+        total_instances = 0
+        instance_details = []
+
+        # Check if cluster uses instance fleets or instance groups
+        if cluster.get('InstanceCollectionType') == 'INSTANCE_FLEET':
+            # Handle instance fleets
+            try:
+                fleets_response = emr_client.list_instance_fleets(ClusterId=cluster_id)
+                for fleet in fleets_response.get('InstanceFleets', []):
+                    fleet_type = fleet.get('InstanceFleetType', 'Unknown')
+                    target_capacity = fleet.get('TargetOnDemandCapacity', 0) + fleet.get('TargetSpotCapacity', 0)
+                    provisioned_capacity = fleet.get('ProvisionedOnDemandCapacity', 0) + fleet.get(
+                        'ProvisionedSpotCapacity', 0)
+
+                    total_instances += provisioned_capacity
+
+                    # Get instance type specs if available
+                    instance_types = []
+                    for spec in fleet.get('InstanceTypeSpecifications', []):
+                        instance_types.append({
+                            'Type': spec.get('InstanceType', 'Unknown'),
+                            'Weight': spec.get('WeightedCapacity', 1),
+                            'BidPrice': spec.get('BidPrice', 'N/A')
+                        })
+
+                    instance_details.append({
+                        'Fleet Type': fleet_type,
+                        'Target Capacity': target_capacity,
+                        'Provisioned Capacity': provisioned_capacity,
+                        'Instance Types': instance_types
+                    })
+
+            except Exception as e:
+                st.warning(f"Could not fetch instance fleet details: {str(e)}")
+                total_instances = "Unknown (Fleet)"
+
+        else:
+            # Handle instance groups (traditional)
+            try:
+                instance_groups = emr_client.list_instance_groups(ClusterId=cluster_id)
+                for ig in instance_groups['InstanceGroups']:
+                    group_type = ig.get('InstanceGroupType', 'Unknown')
+                    requested = ig.get('RequestedInstanceCount', 0)
+                    running = ig.get('RunningInstanceCount', 0)
+                    instance_type = ig.get('InstanceType', 'Unknown')
+
+                    total_instances += running
+
+                    instance_details.append({
+                        'Group Type': group_type,
+                        'Instance Type': instance_type,
+                        'Requested': requested,
+                        'Running': running,
+                        'Market': ig.get('Market', 'ON_DEMAND')
+                    })
+
+            except Exception as e:
+                st.warning(f"Could not fetch instance group details: {str(e)}")
+                total_instances = "Unknown (Groups)"
+
+        # Get master instance type
+        master_instance_type = cluster.get('Ec2InstanceAttributes', {}).get('Ec2InstanceType', 'Unknown')
+
+        # Get availability zone
+        availability_zone = cluster.get('Ec2InstanceAttributes', {}).get('Ec2AvailabilityZone', 'Unknown')
 
         return {
             'Cluster Name': cluster['Name'],
             'Status': cluster['Status']['State'],
-            'Master Instance Type': cluster['Ec2InstanceAttributes']['Ec2InstanceType'],
+            'Collection Type': cluster.get('InstanceCollectionType', 'INSTANCE_GROUP'),
+            'Master Instance Type': master_instance_type,
             'Total Instances': total_instances,
+            'Instance Details': instance_details,
             'Created': cluster['Status']['Timeline']['CreationDateTime'],
-            'Region': cluster['Ec2InstanceAttributes']['Ec2AvailabilityZone']
+            'Region': availability_zone,
+            'EMR Version': cluster.get('ReleaseLabel', 'Unknown'),
+            'Auto Scaling': cluster.get('AutoScalingRole', 'Disabled') != 'Disabled'
         }
     except Exception as e:
         st.error(f"Error fetching cluster info: {str(e)}")
@@ -600,297 +654,347 @@ def apply_filters(jobs, job_name_filter, user_filter, job_status, show_completed
     return filtered_jobs
 
 
-# Main application
-if not cluster_id:
-    st.warning("⚠️ Please provide cluster identification information")
-
-    # Show current input method and provide guidance
-    if input_method == "From Spark History URL" and spark_history_server:
-        st.info("🔍 Attempting to auto-detect cluster ID from Spark History Server...")
-        if st.button("🔄 Retry Auto-Detection"):
-            st.rerun()
-
-        # Show discovery helper
-        manual_id = discover_cluster_id_interactive(spark_history_server)
-        if manual_id:
-            cluster_id = manual_id
-
-    elif input_method == "From YARN URL" and yarn_rm_url:
-        st.info("🔍 Attempting to auto-detect cluster ID from YARN ResourceManager...")
-        if st.button("🔄 Retry Auto-Detection"):
-            st.rerun()
-
-        # Show discovery helper
-        manual_id = discover_cluster_id_interactive(yarn_rm_url)
-        if manual_id:
-            cluster_id = manual_id
-
+def main():
+    """Main application function"""
+    # Main application
     if not cluster_id:
-        st.markdown("""
-        ## 📋 Setup Instructions
+        st.warning("⚠️ Please provide cluster identification information")
 
-        ### **Option 1: Manual Entry**
-        - Enter your EMR Cluster ID directly (format: j-XXXXXXXXXX)
-        - Find it in AWS EMR Console or use: `aws emr list-clusters --active`
+        # Show current input method and provide guidance
+        if input_method == "From Spark History URL" and spark_history_server:
+            st.info("🔍 Attempting to auto-detect cluster ID from Spark History Server...")
+            if st.button("🔄 Retry Auto-Detection"):
+                st.rerun()
 
-        ### **Option 2: Auto-detect from Spark History Server**
-        - Enter Spark History Server URL (usually port 18080)
-        - Format: `http://ip-172-31-xx-xx.region.compute.internal:18080`
-        - We'll try to extract cluster ID automatically
+            # Show discovery helper
+            manual_id = discover_cluster_id_interactive(spark_history_server)
+            if manual_id:
+                cluster_id = manual_id
 
-        ### **Option 3: Auto-detect from YARN ResourceManager**
-        - Enter YARN ResourceManager URL (usually port 8088)
-        - Format: `http://ip-172-31-xx-xx.region.compute.internal:8088`
-        - We'll try to extract cluster ID automatically
+        elif input_method == "From YARN URL" and yarn_rm_url:
+            st.info("🔍 Attempting to auto-detect cluster ID from YARN ResourceManager...")
+            if st.button("🔄 Retry Auto-Detection"):
+                st.rerun()
 
-        ### 🔧 **Required AWS Permissions:**
-        ```json
-        {
-            "emr:DescribeCluster",
-            "emr:ListSteps", 
-            "emr:DescribeStep",
-            "cloudwatch:GetMetricStatistics"
-        }
-        ```
+            # Show discovery helper
+            manual_id = discover_cluster_id_interactive(yarn_rm_url)
+            if manual_id:
+                cluster_id = manual_id
 
-        ### 📊 **Features:**
-        - **Real-time monitoring** of Spark jobs on EMR
-        - **Resource tracking**: cores, memory, executors, tasks
-        - **Multiple data sources**: EMR Steps, Spark History, YARN
-        - **Advanced filtering** by job name, user, status
-        - **Tabulated view** for easy data analysis
-        - **CSV export** for further analysis
-        """)
+        if not cluster_id:
+            st.markdown("""
+            ## 📋 Setup Instructions
 
-else:
-    # Initialize AWS clients
-    emr_client, cloudwatch_client = get_aws_clients(aws_region)
+            ### **Option 1: Manual Entry**
+            - Enter your EMR Cluster ID directly (format: j-XXXXXXXXXX)
+            - Find it in AWS EMR Console or use: `aws emr list-clusters --active`
 
-    if emr_client and cloudwatch_client:
-        # Get time range
-        start_time, end_time = get_time_range_dates(time_range)
+            ### **Option 2: Auto-detect from Spark History Server**
+            - Enter Spark History Server URL (usually port 18080)
+            - Format: `http://your-cluster-master:18080`
+            - We'll try to extract cluster ID automatically
 
-        # Header with cluster info
-        st.subheader("📊 Cluster Overview")
+            ### **Option 3: Auto-detect from YARN ResourceManager**
+            - Enter YARN ResourceManager URL (usually port 8088)
+            - Format: `http://your-cluster-master:8088`
+            - We'll try to extract cluster ID automatically
 
-        cluster_info = get_cluster_info(emr_client, cluster_id)
-        if cluster_info:
-            # Display cluster info in columns
-            col1, col2, col3, col4 = st.columns(4)
+            ### 🔧 **Required AWS Permissions:**
+            ```json
+            {
+                "emr:DescribeCluster",
+                "emr:ListSteps", 
+                "emr:DescribeStep",
+                "cloudwatch:GetMetricStatistics"
+            }
+            ```
 
-            with col1:
-                st.metric("Cluster Status", cluster_info['Status'])
-            with col2:
-                st.metric("Total Instances", cluster_info['Total Instances'])
-            with col3:
-                st.metric("Master Type", cluster_info['Master Instance Type'])
-            with col4:
-                st.metric("Region", cluster_info['Region'])
+            ### 📊 **Features:**
+            - **Real-time monitoring** of Spark jobs on EMR
+            - **Resource tracking**: cores, memory, executors, tasks
+            - **Multiple data sources**: EMR Steps, Spark History, YARN
+            - **Advanced filtering** by job name, user, status
+            - **Tabulated view** for easy data analysis
+            - **CSV export** for further analysis
+            """)
 
-            # Get current resource metrics
-            if cloudwatch_client:
-                resource_summary = get_cluster_resource_summary(cloudwatch_client, cluster_id, start_time, end_time)
-                if resource_summary:
-                    st.subheader("🔧 Current Resource Usage")
+    else:
+        # Initialize AWS clients
+        emr_client, cloudwatch_client = get_aws_clients(aws_region)
 
-                    # Display resource metrics in a table
-                    resource_df = pd.DataFrame(list(resource_summary.items()),
-                                               columns=['Metric', 'Current Value'])
+        if emr_client and cloudwatch_client:
+            # Get time range
+            start_time, end_time = get_time_range_dates(time_range)
 
-                    col1, col2 = st.columns([1, 2])
-                    with col1:
-                        st.dataframe(resource_df, hide_index=True, use_container_width=True)
+            # Header with cluster info
+            st.subheader("📊 Cluster Overview")
 
-        # Collect all Spark jobs
-        st.subheader("⚡ Spark Jobs")
+            cluster_info = get_cluster_info(emr_client, cluster_id)
+            if cluster_info:
+                # Display basic cluster info in columns
+                col1, col2, col3, col4, col5 = st.columns(5)
 
-        all_jobs = []
-        data_sources = []
+                with col1:
+                    st.metric("Cluster Status", cluster_info['Status'])
+                with col2:
+                    st.metric("Total Instances", cluster_info['Total Instances'])
+                with col3:
+                    st.metric("Collection Type", cluster_info['Collection Type'])
+                with col4:
+                    st.metric("EMR Version", cluster_info['EMR Version'])
+                with col5:
+                    st.metric("Auto Scaling", "✅ Enabled" if cluster_info['Auto Scaling'] else "❌ Disabled")
 
-        # EMR Steps
-        with st.spinner("Fetching EMR Steps..."):
-            emr_jobs = get_emr_steps_spark_jobs(emr_client, cluster_id)
-            all_jobs.extend(emr_jobs)
-            if emr_jobs:
-                data_sources.append(f"EMR Steps ({len(emr_jobs)} jobs)")
+                # Display detailed instance information
+                if cluster_info.get('Instance Details'):
+                    st.subheader("🖥️ Instance Configuration")
 
-        # Spark History Server
-        if spark_history_server:
-            with st.spinner("Fetching Spark History..."):
-                spark_jobs = get_spark_applications_from_history_server(spark_history_server)
-                all_jobs.extend(spark_jobs)
-                if spark_jobs:
-                    data_sources.append(f"Spark History ({len(spark_jobs)} jobs)")
+                    if cluster_info['Collection Type'] == 'INSTANCE_FLEET':
+                        # Display instance fleet information
+                        fleet_data = []
+                        for fleet in cluster_info['Instance Details']:
+                            # Flatten instance types for display
+                            instance_types_str = ", ".join([f"{it['Type']} (weight: {it['Weight']})"
+                                                            for it in fleet.get('Instance Types', [])])
 
-        # YARN Applications
-        if yarn_rm_url:
-            with st.spinner("Fetching YARN Applications..."):
-                yarn_jobs = get_yarn_applications(yarn_rm_url)
-                all_jobs.extend(yarn_jobs)
-                if yarn_jobs:
-                    data_sources.append(f"YARN ({len(yarn_jobs)} jobs)")
+                            fleet_data.append({
+                                'Fleet Type': fleet['Fleet Type'],
+                                'Target Capacity': fleet['Target Capacity'],
+                                'Provisioned Capacity': fleet['Provisioned Capacity'],
+                                'Instance Types': instance_types_str[:50] + "..." if len(
+                                    instance_types_str) > 50 else instance_types_str
+                            })
 
-        # Display data sources
-        if data_sources:
-            st.info(f"📊 **Data Sources**: {' | '.join(data_sources)}")
+                        if fleet_data:
+                            fleet_df = pd.DataFrame(fleet_data)
+                            st.dataframe(fleet_df, use_container_width=True, hide_index=True)
 
-        # Apply filters
-        filtered_jobs = apply_filters(all_jobs, job_name_filter, user_filter, job_status, show_completed, show_failed)
+                    else:
+                        # Display instance group information
+                        group_data = []
+                        for group in cluster_info['Instance Details']:
+                            group_data.append({
+                                'Group Type': group['Group Type'],
+                                'Instance Type': group['Instance Type'],
+                                'Requested': group['Requested'],
+                                'Running': group['Running'],
+                                'Market': group['Market']
+                            })
 
-        # Limit number of jobs displayed
-        if len(filtered_jobs) > max_jobs:
-            filtered_jobs = filtered_jobs[:max_jobs]
-            st.warning(f"Showing first {max_jobs} jobs. Adjust 'Max Jobs to Display' in sidebar to see more.")
+                        if group_data:
+                            group_df = pd.DataFrame(group_data)
+                            st.dataframe(group_df, use_container_width=True, hide_index=True)
 
-        if filtered_jobs:
-            # Summary statistics
-            st.subheader("📈 Summary Statistics")
+                # Get current resource metrics
+                if cloudwatch_client:
+                    resource_summary = get_cluster_resource_summary(cloudwatch_client, cluster_id, start_time, end_time)
+                    if resource_summary:
+                        st.subheader("🔧 Current Resource Usage")
 
-            total_jobs = len(filtered_jobs)
-            running_jobs = len([j for j in filtered_jobs
-                                if 'RUNNING' in j.get('Status', j.get('State', '')).upper()])
+                        # Display resource metrics in a table
+                        resource_df = pd.DataFrame(list(resource_summary.items()),
+                                                   columns=['Metric', 'Current Value'])
 
-            # Calculate totals where available
-            total_cores = 0
-            total_memory = 0
-            total_core_hours = 0
+                        col1, col2 = st.columns([1, 2])
+                        with col1:
+                            st.dataframe(resource_df, hide_index=True, use_container_width=True)
 
-            for job in filtered_jobs:
-                cores = job.get('Total Cores', job.get('Allocated VCores', 0))
-                memory = job.get('Total Memory (MB)', job.get('Allocated Memory (MB)', 0))
-                core_hours = job.get('Core-Hours', '0.00')
+            # Collect all Spark jobs
+            st.subheader("⚡ Spark Jobs")
 
-                if isinstance(cores, (int, float)):
-                    total_cores += cores
-                if isinstance(memory, (int, float)):
-                    total_memory += memory
-                try:
-                    total_core_hours += float(str(core_hours).replace(',', ''))
-                except:
-                    pass
+            all_jobs = []
+            data_sources = []
 
-            # Display summary in columns
-            col1, col2, col3, col4, col5 = st.columns(5)
+            # EMR Steps
+            with st.spinner("Fetching EMR Steps..."):
+                emr_jobs = get_emr_steps_spark_jobs(emr_client, cluster_id)
+                all_jobs.extend(emr_jobs)
+                if emr_jobs:
+                    data_sources.append(f"EMR Steps ({len(emr_jobs)} jobs)")
 
-            with col1:
-                st.metric("Total Jobs", total_jobs)
-            with col2:
-                st.metric("Running Jobs", running_jobs)
-            with col3:
-                st.metric("Total Cores", f"{total_cores:,}")
-            with col4:
-                st.metric("Total Memory (GB)", f"{total_memory / 1024:,.1f}")
-            with col5:
-                st.metric("Total Core-Hours", f"{total_core_hours:,.2f}")
+            # Spark History Server
+            if spark_history_server:
+                with st.spinner("Fetching Spark History..."):
+                    spark_jobs = get_spark_applications_from_history_server(spark_history_server)
+                    all_jobs.extend(spark_jobs)
+                    if spark_jobs:
+                        data_sources.append(f"Spark History ({len(spark_jobs)} jobs)")
 
-            # Jobs table
-            st.subheader("📋 Job Details")
+            # YARN Applications
+            if yarn_rm_url:
+                with st.spinner("Fetching YARN Applications..."):
+                    yarn_jobs = get_yarn_applications(yarn_rm_url)
+                    all_jobs.extend(yarn_jobs)
+                    if yarn_jobs:
+                        data_sources.append(f"YARN ({len(yarn_jobs)} jobs)")
 
-            df_jobs = pd.DataFrame(filtered_jobs)
+            # Display data sources
+            if data_sources:
+                st.info(f"📊 **Data Sources**: {' | '.join(data_sources)}")
 
-            # Configure column display based on available data
-            priority_columns = ['Source', 'Job Name', 'User', 'Status', 'Start Time', 'Duration (min)',
-                                'Total Cores', 'Allocated VCores', 'Total Memory (MB)', 'Allocated Memory (MB)',
-                                'Core-Hours']
+            # Apply filters
+            filtered_jobs = apply_filters(all_jobs, job_name_filter, user_filter, job_status, show_completed,
+                                          show_failed)
 
-            display_columns = [col for col in priority_columns if col in df_jobs.columns]
+            # Limit number of jobs displayed
+            if len(filtered_jobs) > max_jobs:
+                filtered_jobs = filtered_jobs[:max_jobs]
+                st.warning(f"Showing first {max_jobs} jobs. Adjust 'Max Jobs to Display' in sidebar to see more.")
 
-            # Add any remaining columns not in priority list
-            remaining_columns = [col for col in df_jobs.columns if col not in display_columns]
-            display_columns.extend(remaining_columns)
+            if filtered_jobs:
+                # Summary statistics
+                st.subheader("📈 Summary Statistics")
 
-            # Display the table
-            st.dataframe(df_jobs[display_columns], use_container_width=True, hide_index=True)
+                total_jobs = len(filtered_jobs)
+                running_jobs = len([j for j in filtered_jobs
+                                    if 'RUNNING' in j.get('Status', j.get('State', '')).upper()])
 
-            # Resource usage by user
-            if len(filtered_jobs) > 1:
-                st.subheader("👥 Resource Usage by User")
+                # Calculate totals where available
+                total_cores = 0
+                total_memory = 0
+                total_core_hours = 0
 
-                user_stats = {}
                 for job in filtered_jobs:
-                    user = job.get('User', 'Unknown')
-                    if user not in user_stats:
-                        user_stats[user] = {
-                            'Jobs': 0,
-                            'Total Cores': 0,
-                            'Total Memory (MB)': 0,
-                            'Running Jobs': 0,
-                            'Core-Hours': 0.0
-                        }
-
-                    user_stats[user]['Jobs'] += 1
-
-                    # Add cores
                     cores = job.get('Total Cores', job.get('Allocated VCores', 0))
-                    if isinstance(cores, (int, float)):
-                        user_stats[user]['Total Cores'] += cores
-
-                    # Add memory
                     memory = job.get('Total Memory (MB)', job.get('Allocated Memory (MB)', 0))
+                    core_hours = job.get('Core-Hours', '0.00')
+
+                    if isinstance(cores, (int, float)):
+                        total_cores += cores
                     if isinstance(memory, (int, float)):
-                        user_stats[user]['Total Memory (MB)'] += memory
-
-                    # Count running jobs
-                    if 'RUNNING' in job.get('Status', job.get('State', '')).upper():
-                        user_stats[user]['Running Jobs'] += 1
-
-                    # Add core-hours
+                        total_memory += memory
                     try:
-                        core_hours = float(str(job.get('Core-Hours', '0.00')).replace(',', ''))
-                        user_stats[user]['Core-Hours'] += core_hours
+                        total_core_hours += float(str(core_hours).replace(',', ''))
                     except:
                         pass
 
-                user_df = pd.DataFrame.from_dict(user_stats, orient='index')
-                user_df.index.name = 'User'
-                user_df = user_df.reset_index()
+                # Display summary in columns
+                col1, col2, col3, col4, col5 = st.columns(5)
 
-                # Format memory as GB
-                user_df['Total Memory (GB)'] = (user_df['Total Memory (MB)'] / 1024).round(1)
-                user_df = user_df.drop('Total Memory (MB)', axis=1)
+                with col1:
+                    st.metric("Total Jobs", total_jobs)
+                with col2:
+                    st.metric("Running Jobs", running_jobs)
+                with col3:
+                    st.metric("Total Cores", f"{total_cores:,}")
+                with col4:
+                    st.metric("Total Memory (GB)", f"{total_memory / 1024:,.1f}")
+                with col5:
+                    st.metric("Total Core-Hours", f"{total_core_hours:,.2f}")
 
-                # Round core-hours
-                user_df['Core-Hours'] = user_df['Core-Hours'].round(2)
+                # Jobs table
+                st.subheader("📋 Job Details")
 
-                st.dataframe(user_df, use_container_width=True, hide_index=True)
+                df_jobs = pd.DataFrame(filtered_jobs)
 
-            # Export option
-            st.subheader("💾 Export Data")
+                # Configure column display based on available data
+                priority_columns = ['Source', 'Job Name', 'User', 'Status', 'Start Time', 'Duration (min)',
+                                    'Total Cores', 'Allocated VCores', 'Total Memory (MB)', 'Allocated Memory (MB)',
+                                    'Core-Hours']
 
-            if st.button("📄 Download Job Data as CSV"):
-                csv = df_jobs.to_csv(index=False)
-                st.download_button(
-                    label="💾 Download CSV",
-                    data=csv,
-                    file_name=f"emr_spark_jobs_{cluster_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
+                display_columns = [col for col in priority_columns if col in df_jobs.columns]
 
-        else:
-            st.info("ℹ️ No Spark jobs found matching the current filters")
+                # Add any remaining columns not in priority list
+                remaining_columns = [col for col in df_jobs.columns if col not in display_columns]
+                display_columns.extend(remaining_columns)
 
-            # Show what filters are active
-            active_filters = []
-            if job_name_filter:
-                active_filters.append(f"Job Name: '{job_name_filter}'")
-            if user_filter:
-                active_filters.append(f"User: '{user_filter}'")
-            if job_status != "All":
-                active_filters.append(f"Status: {job_status}")
-            if not show_completed:
-                active_filters.append("Hiding completed jobs")
-            if not show_failed:
-                active_filters.append("Hiding failed jobs")
+                # Display the table
+                st.dataframe(df_jobs[display_columns], use_container_width=True, hide_index=True)
 
-            if active_filters:
-                st.write("**Active filters:**")
-                for filter_item in active_filters:
-                    st.write(f"- {filter_item}")
+                # Resource usage by user
+                if len(filtered_jobs) > 1:
+                    st.subheader("👥 Resource Usage by User")
 
-# Auto refresh
-if auto_refresh and cluster_id:
-    time.sleep(refresh_interval)
-    st.rerun()
+                    user_stats = {}
+                    for job in filtered_jobs:
+                        user = job.get('User', 'Unknown')
+                        if user not in user_stats:
+                            user_stats[user] = {
+                                'Jobs': 0,
+                                'Total Cores': 0,
+                                'Total Memory (MB)': 0,
+                                'Running Jobs': 0,
+                                'Core-Hours': 0.0
+                            }
+
+                        user_stats[user]['Jobs'] += 1
+
+                        # Add cores
+                        cores = job.get('Total Cores', job.get('Allocated VCores', 0))
+                        if isinstance(cores, (int, float)):
+                            user_stats[user]['Total Cores'] += cores
+
+                        # Add memory
+                        memory = job.get('Total Memory (MB)', job.get('Allocated Memory (MB)', 0))
+                        if isinstance(memory, (int, float)):
+                            user_stats[user]['Total Memory (MB)'] += memory
+
+                        # Count running jobs
+                        if 'RUNNING' in job.get('Status', job.get('State', '')).upper():
+                            user_stats[user]['Running Jobs'] += 1
+
+                        # Add core-hours
+                        try:
+                            core_hours = float(str(job.get('Core-Hours', '0.00')).replace(',', ''))
+                            user_stats[user]['Core-Hours'] += core_hours
+                        except:
+                            pass
+
+                    user_df = pd.DataFrame.from_dict(user_stats, orient='index')
+                    user_df.index.name = 'User'
+                    user_df = user_df.reset_index()
+
+                    # Format memory as GB
+                    user_df['Total Memory (GB)'] = (user_df['Total Memory (MB)'] / 1024).round(1)
+                    user_df = user_df.drop('Total Memory (MB)', axis=1)
+
+                    # Round core-hours
+                    user_df['Core-Hours'] = user_df['Core-Hours'].round(2)
+
+                    st.dataframe(user_df, use_container_width=True, hide_index=True)
+
+                # Export option
+                st.subheader("💾 Export Data")
+
+                if st.button("📄 Download Job Data as CSV"):
+                    csv = df_jobs.to_csv(index=False)
+                    st.download_button(
+                        label="💾 Download CSV",
+                        data=csv,
+                        file_name=f"emr_spark_jobs_{cluster_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+
+            else:
+                st.info("ℹ️ No Spark jobs found matching the current filters")
+
+                # Show what filters are active
+                active_filters = []
+                if job_name_filter:
+                    active_filters.append(f"Job Name: '{job_name_filter}'")
+                if user_filter:
+                    active_filters.append(f"User: '{user_filter}'")
+                if job_status != "All":
+                    active_filters.append(f"Status: {job_status}")
+                if not show_completed:
+                    active_filters.append("Hiding completed jobs")
+                if not show_failed:
+                    active_filters.append("Hiding failed jobs")
+
+                if active_filters:
+                    st.write("**Active filters:**")
+                    for filter_item in active_filters:
+                        st.write(f"- {filter_item}")
+
+    # Auto refresh
+    if auto_refresh and cluster_id:
+        time.sleep(refresh_interval)
+        st.rerun()
+
+
+# Run the main application
+if __name__ == "__main__":
+    main()
 
 # Footer
 st.markdown("---")
