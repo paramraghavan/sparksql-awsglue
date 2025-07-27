@@ -13,6 +13,9 @@ scp hadoop@<emr-master-ip>:/etc/hadoop/conf/yarn-site.xml /etc/hadoop/conf/
 scp hadoop@<emr-master-ip>:/etc/hadoop/conf/hdfs-site.xml /etc/hadoop/conf/
 ```
 
+> when performing scp use your-emr-key-pair
+> scp -i /path/to/your-emr-keypair.pem hadoop@<emr-master-ip>:/etc/hadoop/conf/core-site.xml /etc/hadoop/conf/
+
 ## Step 2: Set Up spark-env.sh
 
 Copy and configure the Spark environment file:
