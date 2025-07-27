@@ -231,7 +231,7 @@ When you specify `--master yarn`, Spark looks for the YARN ResourceManager addre
 ```
 
 ### 3. The Connection Flow
-
+The edge node does NOT automatically SSH to the master node when you run spark-submit
 Here's what happens when you run `spark-submit --master yarn`:
 
 ```
