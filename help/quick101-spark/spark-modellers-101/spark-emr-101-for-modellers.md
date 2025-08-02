@@ -64,3 +64,29 @@ grouped_counts.show()
 # |        IT|    2|
 # +----------+-----+
 ```
+
+## Jobs, Stages , Read/Write Excahnge buffer, Tasks
+
+**start Job 0** 
+```python
+readIntoDF = spark.read
+.option("header", "true")
+.option("inferSchema", "true")
+. csv(args(0)) # <<---- action
+```
+**end Job 0**
+
+** start Job 1 **
+```python
+partitionedDF = readIntoDF .repartition( numPartitions = 2)
+countDF = partitionedDF.where ( conditionExpr = Age ‹ 40" )
+select( col = "Age", cols = "Gender", "Country", "state")
+.groupBy( col1 = "Country")
+.count()
+logger.info(countDF.collect()) # <<---- action
+```
+** end Job 1 **
+
+Job 0 is a  read action
+
+### Job 1 in detail
