@@ -4,6 +4,45 @@
 ![Spark submit continued](img_3.png)
 ![Transformation and Actions](img_4.png)
 
+## Jobs, Stages , Read/Write Excahnge buffer, Tasks
+
+**start Job 0** 
+```python
+#code Block 0
+readPopulationDF = spark.read
+.option("header", "true")
+.option("inferSchema", "true")
+. csv(args(0)) # <<---- action
+```
+> csv data 
+> https://www.statsamerica.org/downloads/default.aspx --> Population by Age and Sex
+> https://population.un.org/wpp/downloads?folder=Standard%20Projections&group=CSV%20format
+
+**end Job 0**
+
+**start Job 1**
+```python
+#code Block 1
+partitionedDF = readPopulationDF .repartition( numPartitions = 2) # wide dependency transformation
+countDF = partitionedDF.where ( conditionExpr = Age ‹ 40" ) # narrow transformation
+select( col = "Age", cols = "Gender", "Country", "state")  # narrow transformation
+.groupBy( col1 = "Country") # wide dependency transformation
+.count() # this is count on groupby, Still lazy! result is a DataFrame with columns: [department, count],
+         # so it is a transform here and not an action
+logger.info(countDF.collect()) # <<---- action
+```
+**end Job 1**
+
+> Spark will run each code block **as one Spark Job**. 
+> Note Job 0 is a read, so it's an action
+
+### Job 1 in detail
+
+
+
+
+
+
 ## Explain why count on a groupby() is not action but a transformation
 
 ```python
@@ -64,29 +103,3 @@ grouped_counts.show()
 # |        IT|    2|
 # +----------+-----+
 ```
-
-## Jobs, Stages , Read/Write Excahnge buffer, Tasks
-
-**start Job 0** 
-```python
-readIntoDF = spark.read
-.option("header", "true")
-.option("inferSchema", "true")
-. csv(args(0)) # <<---- action
-```
-**end Job 0**
-
-** start Job 1 **
-```python
-partitionedDF = readIntoDF .repartition( numPartitions = 2)
-countDF = partitionedDF.where ( conditionExpr = Age ‹ 40" )
-select( col = "Age", cols = "Gender", "Country", "state")
-.groupBy( col1 = "Country")
-.count()
-logger.info(countDF.collect()) # <<---- action
-```
-** end Job 1 **
-
-Job 0 is a  read action
-
-### Job 1 in detail
