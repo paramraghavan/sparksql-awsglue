@@ -10,6 +10,7 @@ telnet <emr-master-ip> 8032  # YARN ResourceManager
 telnet <emr-master-ip> 9000  # HDFS NameNode (if using port 9000)
 telnet <emr-master-ip> 8020  # HDFS NameNode (default port)
 ```
+>@see [troubleshoot-II.md](troubleshoot-II.md)
 
 **Fix**: Ensure your edge node's security group allows outbound traffic to the EMR cluster's security groups on the
 required ports.
