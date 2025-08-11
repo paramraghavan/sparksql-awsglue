@@ -23,7 +23,7 @@
       - select, filter, drop, etc
     - Wide dependency 
       - grouping data
-      - group by, join, agg etc
+      - group by, join, agg, repartition etc
 - Actions
   - read, write, collect, take , count
 
@@ -39,6 +39,22 @@
 **start Job 0**
 
 ```python
+# spark code
+readAsDF = spark.read
+.option("header", "true")
+.option("inferSchema", "true")
+.csv(args(0))
+
+partitionedDF = readAsDF.repartition(numPartitions=2)
+countDF = partitionedDF.where(conditionExpr=Age ‹ 40 )
+select(col="Age", cols="Gender", "Country", "state")
+.groupBy(col1="Country")
+.count()
+logger.info(countDF.collect()) 
+```
+
+
+```python
 # code Block 0
 readAsDF = spark.read
 .option("header", "true")
@@ -52,13 +68,13 @@ readAsDF = spark.read
 
 ```python
 # code Block 1
-partitionedDF = readPopulationDF.repartition(numPartitions=2)  # wide dependency transformation, stage1
+partitionedDF = readAsDF.repartition(numPartitions=2)  # wide dependency transformation, stage1
 #  we apply 4 transformations to partitionedDF 
 countDF = partitionedDF.where(conditionExpr=Age ‹ 40 )  # narrow transformation
 select(col="Age", cols="Gender", "Country", "state")  # narrow transformation
 .groupBy(col1="Country")  # wide dependency transformation, stage2
 .count()  # this is count on groupby, Still lazy! result is a DataFrame with columns: [department, count], stage3
-# so it is a transform here and not an action
+# so it is a narrow transform here and not an action
 logger.info(countDF.collect())  # <<---- action
 ```
 
@@ -100,6 +116,8 @@ the other because the output of one stage is input for the next stage.
 
 **Logical Plan with stages**
 ![logical_plan_with_stages.png](logical_plan_with_stages.png)
+
+> Note: If you N wide-dependencies, your plan should have N+1 Stages. In our case 2+1 stages
 
 **Stage1**
 In the first stage I am reading into readingDF and repartitioning it to create partitionedDF. LEt me assume we start with 1 partition
