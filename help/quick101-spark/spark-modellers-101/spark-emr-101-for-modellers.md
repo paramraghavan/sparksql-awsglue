@@ -35,24 +35,11 @@
 > But this job must be performed by the executors.
 > Because the driver doesn't perform any data processing job.
 > The driver must break this job into smaller tasks and assign them to the executors.
->
+
+**Original Code here**
+[sample_spark_code.py](sample_spark_code.py)
+
 **start Job 0**
-
-```python
-# spark code
-readAsDF = spark.read
-.option("header", "true")
-.option("inferSchema", "true")
-.csv(args(0))
-
-partitionedDF = readAsDF.repartition(numPartitions=2)
-countDF = partitionedDF.where(conditionExpr=Age ‹ 40 )
-select(col="Age", cols="Gender", "Country", "state")
-.groupBy(col1="Country")
-.count()
-logger.info(countDF.collect()) 
-```
-
 
 ```python
 # code Block 0
@@ -61,7 +48,6 @@ readAsDF = spark.read
 .option("inferSchema", "true")
 .csv(args(0))  # <<---- action
 ```
-
 **end Job 0**
 
 **start Job 1**
