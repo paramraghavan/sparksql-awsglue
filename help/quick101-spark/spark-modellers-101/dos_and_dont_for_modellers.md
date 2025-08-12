@@ -65,6 +65,11 @@ if df2.count() > 0:
     result = df1.unionByName(df2)
 else:
     result = df1
+    
+# When u use unionbyname
+# call .count() on dataframe. When you do this spark trigers a full computation(action) on Df
+# This forces the spark to materialize the DF and resolve any lazy tansformatios and potentially eliemiante empty or problamatic partitions
+# this way the Df is in a "clean" state for writing.
 
 # Broadcast small tables
 from pyspark.sql.functions import broadcast
