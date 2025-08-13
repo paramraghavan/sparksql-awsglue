@@ -100,6 +100,11 @@ url = f"{self.spark_history_url}/api/v1/applications"
 
 # Second call - get detailed executor info per application
 executors_url = f"{self.spark_history_url}/api/v1/applications/{app_id}/executors"
+
+# Also try the jobs endpoint to see if job-level data is available
+# and /stages
+# jobs_url = f"{self.spark_history_url}/api/v1/applications/{app_id}/jobs"
+
 ```
 
 **Spark History Server gives us:**
