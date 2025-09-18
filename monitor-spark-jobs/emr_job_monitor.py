@@ -3,7 +3,20 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
 import time
+import pytz
 
+def convert_gmt_toest(gmt_timestamp_str):
+
+    if '1969-12-31' in gmt_timestamp_str:
+        return 'NA'
+
+    gmt_timezone = pytz.timezone('GMT')
+    est_timezone = pytz.timezone('US/Eastern')
+    gmt_dt  = gmt_timezone.localize(datetime.strptime(gmt_timestamp_str, '%Y-%m-%dT%H:%M:%S.%f%Z'))
+
+    est_dt = gmt_dt.astimezone(est_timezone)
+
+    return est_dt.strftime('%Y-%m-%d %H:%M:%S')
 
 class JobResourceMonitor:
     def __init__(self, spark_history_url, yarn_rm_url):
@@ -98,29 +111,28 @@ class JobResourceMonitor:
                 max_memory_mb = max_memory_mb // (1024 * 1024)  # Convert bytes to MB
 
                 # Time calculations with safe conversion
-                start_time_ms = app.get('attempts', [{}])[0].get('startTime', 0)
-                end_time_ms = app.get('attempts', [{}])[0].get('endTime', 0)
+                start_time_ms = app.get('attempts', [{}])[0].get('startTime', 'NA')
+                start_time_ms = convert_gmt_toest(start_time_ms)
+                end_time_ms = app.get('attempts', [{}])[0].get('endTime', 'NA')
+                end_time_ms = convert_gmt_toest(end_time_ms)
                 duration_ms = app.get('attempts', [{}])[0].get('duration', 0)
 
                 try:
-                    start_time_ms = int(start_time_ms) if start_time_ms else 0
-                    end_time_ms = int(end_time_ms) if end_time_ms else 0
                     duration_ms = int(duration_ms) if duration_ms else 0
                 except (ValueError, TypeError):
                     start_time_ms = 0
                     end_time_ms = 0
                     duration_ms = 0
 
-                start_time = datetime.fromtimestamp(start_time_ms / 1000) if start_time_ms > 0 else None
-                end_time = datetime.fromtimestamp(end_time_ms / 1000) if end_time_ms > 0 else None
+
                 duration_hours = duration_ms / (1000 * 60 * 60) if duration_ms > 0 else 0
 
                 job_info = {
                     'Job ID': app_id,
                     'Job Name': app.get('name', 'Unknown')[:50],
                     'User': app.get('sparkUser'),
-                    'Submit Time': start_time.strftime('%Y-%m-%d %H:%M:%S') if start_time else 'Unknown',
-                    'End Time': end_time.strftime('%Y-%m-%d %H:%M:%S') if end_time else 'Unknown',
+                    'Submit Time': start_time_ms,
+                    'End Time': end_time_ms,
                     'Duration (mins)': round(duration_ms / (1000 * 60), 1) if duration_ms else 0,
                     'Memory (GB)': round(max_memory_mb / 1024, 2),
                     'vCores': total_cores,
