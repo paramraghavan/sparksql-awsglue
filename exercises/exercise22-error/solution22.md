@@ -32,7 +32,8 @@ df.select([_sum(col(c).isNull().cast("int")).alias(c) for c in df.columns]).show
 # Fill nulls before writing
 df.na.fill({"column_name": "default_value"}).write.parquet("s3://...")
 ```
-
+[dataframe_fill_values.md](dataframe_fill_values.md)
+ß
 ### 3. **Schema Issues (Nested/Complex Types)**
 
 ```python
