@@ -3,6 +3,19 @@ Systematic approach to debug and fix:
 ## Step 1: Quick Diagnosis - Find the Real Problem
 
 ```python
+from pyspark.sql.types import ArrayType, MapType, StructType
+from pyspark.sql.functions import (
+    spark_partition_id, 
+    desc, 
+    sum as _sum,  # Alias to avoid Python's built-in sum
+    col, 
+    min as _min,  # Alias to avoid Python's built-in min
+    max as _max,  # Alias to avoid Python's built-in max
+    avg, 
+    stddev
+)
+import traceback
+
 def diagnose_failing_job(df, job_name="my_job"):
     """
     Run comprehensive diagnostics to find the real issue
@@ -37,13 +50,14 @@ def diagnose_failing_job(df, job_name="my_job"):
     # 2. Partition Skew Check
     print("\n📈 [2/6] Checking Partition Skew...")
     try:
-        skew_df = df.groupBy(spark_partition_id().alias("partition_id")) \
+        skew_df = df.withColumn("partition_id", spark_partition_id()) \
+            .groupBy("partition_id") \
             .count() \
             .orderBy(desc("count"))
         
         skew_stats = skew_df.agg(
-            min("count").alias("min"),
-            max("count").alias("max"),
+            _min("count").alias("min"),      # Use _min
+            _max("count").alias("max"),      # Use _max
             avg("count").alias("avg"),
             stddev("count").alias("stddev")
         ).collect()[0]
@@ -51,7 +65,9 @@ def diagnose_failing_job(df, job_name="my_job"):
         print(f"   Min rows in partition: {skew_stats['min']:,}")
         print(f"   Max rows in partition: {skew_stats['max']:,}")
         print(f"   Avg rows in partition: {skew_stats['avg']:,.0f}")
-        print(f"   Std deviation: {skew_stats['stddev']:,.0f}")
+        
+        if skew_stats['stddev']:
+            print(f"   Std deviation: {skew_stats['stddev']:,.0f}")
         
         skew_ratio = skew_stats['max'] / skew_stats['avg'] if skew_stats['avg'] > 0 else 0
         if skew_ratio > 3:
@@ -64,22 +80,19 @@ def diagnose_failing_job(df, job_name="my_job"):
             
     except Exception as e:
         print(f"   ✗ FAILED: {e}")
+        traceback.print_exc()
+        skew_ratio = 0  # Set default for later checks
     
     # 3. Memory Estimation
     print("\n💾 [3/6] Estimating Memory Usage...")
+    estimated_partition_mb = 0
     try:
-        # Sample to estimate row size
         sample_df = df.limit(100)
         sample_df.cache()
         sample_df.count()
         
-        # Get storage info
-        storage_level = sample_df.storageLevel
-        print(f"   Storage level: {storage_level}")
-        
-        # Estimate per-partition memory
         rows_per_partition = row_count / num_partitions
-        estimated_partition_mb = (rows_per_partition / 100) * 10  # Rough estimate
+        estimated_partition_mb = (rows_per_partition / 100) * 10
         
         print(f"   Estimated partition size: ~{estimated_partition_mb:.0f} MB")
         
@@ -112,12 +125,12 @@ def diagnose_failing_job(df, job_name="my_job"):
     if num_columns > 200:
         print(f"   ⚠️  WARNING: Very wide schema (>200 columns)")
     
-    # 5. Null Check (sample)
+    # 5. Null Check - FIXED
     print("\n🔎 [5/6] Checking for Nulls (sample)...")
     try:
-        null_check_cols = df.columns[:20]  # Check first 20 columns
+        null_check_cols = df.columns[:20]
         null_counts = df.select([
-            sum(col(c).isNull().cast("int")).alias(c) 
+            _sum(col(c).isNull().cast("int")).alias(c)  # Use _sum here
             for c in null_check_cols
         ]).collect()[0]
         
@@ -133,13 +146,14 @@ def diagnose_failing_job(df, job_name="my_job"):
             
     except Exception as e:
         print(f"   ⚠️  Could not check nulls: {e}")
+        traceback.print_exc()
     
     # 6. Write Test
     print("\n✍️  [6/6] Testing Small Write...")
     try:
         test_path = "s3://your-bucket/diagnostic_test_write/"
         df.limit(1000).write.mode("overwrite").parquet(test_path)
-        print(f"   ✓ Small write successful to {test_path}")
+        print(f"   ✓ Small write successful")
         print(f"   → S3 permissions are OK")
         
     except Exception as e:
@@ -167,6 +181,9 @@ def diagnose_failing_job(df, job_name="my_job"):
     print("   df.repartition(200).write.option('maxRecordsPerFile', 50000).parquet(...)")
     print(f"{'='*70}\n")
 
+
+# Usage
+diagnose_failing_job(your_df, "my_complex_job")
 
 # Run diagnostics on your complex dataframe
 diagnose_failing_job(your_complex_df, "production_scoring_job")
