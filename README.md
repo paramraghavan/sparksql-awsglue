@@ -954,5 +954,5 @@ df.rdd.getNumPartitions()
 * The `200` value from `spark.sql.shuffle.partitions` only applies **after shuffles**.
 * Always **check your actual partition count** with `rdd.getNumPartitions()`, and **use `repartition(n)`** when writing large data or preventing OOM.
 
-
-
+## References
+- https://github.com/cartershanklin/pyspark-cheatsheet
