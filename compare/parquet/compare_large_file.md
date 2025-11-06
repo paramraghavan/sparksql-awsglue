@@ -16,7 +16,7 @@ paginated HTML report for differences.
 ***
 
 ### PySpark Script (parquet_compare.py)
-
+- To nomalize columns use [normalize_dataframe_for_comparison.md](../../exercises/exercise11_compare-files/normalize_dataframe_for_comparison.md)
 ```python
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, lit
