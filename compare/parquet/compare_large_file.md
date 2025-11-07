@@ -77,9 +77,14 @@ def generate_html_report(only_in_1, only_in_2, diffs, keys, output_file, max_row
     if not only_in_2_pd.empty:
         html += only_in_2_pd.head(max_rows).to_html(index=False)
 
-    html += f"<h2>Differences in Common Records: {len(diffs_pd)}</h2>"
-    if not diffs_pd.empty:
-        html += diffs_pd.head(max_rows).to_html(index=False)
+    html += f"<h2>Differences in Common Records: {diffs_pd.count()}</h2>"
+    if diffs_pd.count() > 0:
+        # Limit the Spark DataFrame to max_rows before converting to Pandas
+        diffs_pd = diffs_pd.limit(max_rows).toPandas()
+        html += diffs_pd.to_html(index=False)
+    else:
+        # No differences
+        html += "<p>No differences found.</p>"
 
     html += "</body></html>"
 
