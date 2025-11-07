@@ -123,6 +123,51 @@ local `/tmp/spark-events` on the driver node only.
 [9](https://ftp.sjtu.edu.cn/sites/www.apache.org/spark/docs/2.2.2/configuration.html)
 [10](https://docs.nvidia.com/spark-rapids/user-guide/23.12.1/spark-profiling-tool.html)
 
+### Mis configuring spark.eventLog.dir
+
+Yes, setting (or misconfiguring) the `spark.eventLog.dir` property can affect whether you see your Spark job’s detailed
+history and potentially impact visibility in the Spark UI.
+
+### What does `spark.eventLog.dir` do?
+
+- The `spark.eventLog.dir` configuration specifies the location where Spark stores event logs about your application’s
+  execution.
+- These logs capture job, stage, and task progress details that the Spark History Server and Spark UI use to show job
+  timelines and diagnostics.
+- On EMR, this directory is often an S3 path like `s3://your-bucket/spark-logs/`.
+
+### How can it affect Spark UI visibility?
+
+- If `spark.eventLog.dir` is **not set, set incorrectly, or the Spark History Server cannot access it**, then:
+    - The Spark History Server won’t display past job history properly.
+    - You might see fewer details or possibly no jobs in the UI—even if they are running or completed.
+- If your Spark application writes event logs to a location the History Server can’t read (e.g., wrong bucket, folder,
+  or insufficient IAM permissions), UI features such as job progress and diagnostics might be missing or delayed.
+- However, the running Spark UI available on the driver (usually on port 4040) normally shows live progress without
+  depending on event logs. The History Server uses those logs mainly for completed or past jobs.
+
+### What to check and fix:
+
+- Verify `spark.eventLog.dir` is configured correctly, typically pointing to a location accessible by both the Spark
+  driver and History Server (e.g., a specific S3 path with read/write permissions).
+- Confirm IAM permissions allow write/read on the S3 path.
+- Ensure the Spark History Server is running and correctly configured to read from the same log directory.
+- Check EMR or Spark logs for event log write errors.
+- If you want live UI during job runs, confirm the driver UI port is open and accessible.
+
+***
+
+### Summary
+
+- Misconfiguration of `spark.eventLog.dir` can cause History Server to fail showing job histories and details.
+- It does **not directly** hide the live Spark UI for running jobs on the driver (which does not require event logs).
+- But it impacts post-run visibility and error troubleshooting in the Spark History Server UI.
+- Make sure `spark.eventLog.dir` is correctly set to a valid accessible location with adequate permissions for smooth UI
+  operation and history logging.
+
+This is a common cause of missing or incomplete job views after spark jobs run, especially in cloud environments using
+S3 for event logs.
+
 ## Check disk space on clsuter - master, AM or task
 
 Yes, insufficient disk space on the EMR master, application master (AM), or task nodes can cause Spark jobs to slow
