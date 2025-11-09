@@ -172,3 +172,61 @@ def detect_stuck_stages_with_sql(master_ip, app_id, stages):
 
     return stuck_stages
 ```
+
+## resource utilization adivsiory
+- Executor runtime utilization vs. task parallelism
+- Number of active vs. failed tasks
+- Stage and job durations vs. number of tasks
+- Signs of over-provisioning (many idle executors) or under-provisioning (many slow tasks, long queues)
+  
+### How to add simple resource advisory logic:
+
+1. Use task and executor metrics from Spark History Server REST API:
+   - Total tasks, completed tasks, failed tasks per stage
+   - Task run times, executor run times
+   - Possibly number of executors (if available from API or logs)
+
+2. Define heuristics, e.g.:
+   - If most tasks complete very quickly and many executors remain idle → over-provisioned resources
+   - If tasks have large skew or long runtimes relative to total resources → under-provisioned or imbalanced
+   - If many task failures or retries → possibly inefficient resource usage or configuration issues
+
+### Example  returning advisory notes per job:
+
+```python
+def analyze_resource_efficiency(stages):
+    notes = []
+    total_tasks = 0
+    total_fast_tasks = 0
+    max_executor_run = 0
+    all_task_durations = []
+
+    for stage in stages:
+        tasks = stage.get("tasks", [])
+        total_tasks += len(tasks)
+        for task in tasks:
+            metrics = task.get("taskMetrics")
+            if metrics and metrics.get("executorRunTime") is not None:
+                dur = metrics.get("executorRunTime")
+                all_task_durations.append(dur)
+                if dur < 1000:  # tasks under 1 second
+                    total_fast_tasks += 1
+                if dur > max_executor_run:
+                    max_executor_run = dur
+
+    if total_tasks == 0:
+        return notes
+
+    fast_task_ratio = total_fast_tasks / total_tasks
+    avg_duration = sum(all_task_durations) / len(all_task_durations) if all_task_durations else 0
+
+    if fast_task_ratio > 0.7:
+        notes.append("High ratio of very fast tasks suggests possible over-provisioned executors (idle/wasted resources).")
+
+    if avg_duration > 60000:  # avg task > 1 min
+        notes.append("Average task duration is high, consider increasing cluster resources or optimizing job.")
+
+    # Add more heuristics as needed...
+
+    return notes
+```
