@@ -116,7 +116,8 @@ modified inside the `perform_transformation` function.
 
 ### Dictionary Handling
 
-- **Python dictionaries are mutable;** if your logic **modifies** the dictionary contents during transformation, you must
+- **Python dictionaries are mutable;** if your logic **modifies** the dictionary contents during transformation, you
+  must
   pass a *copy* to each thread:
 
 ```python
@@ -128,6 +129,28 @@ futures.append(
 ```
 
 - If the dictionary is used **read-only**, cloning is not required.
+
+### SQL views
+
+SQL views created from PySpark DataFrames (using `createOrReplaceTempView()`) **are also immutable** with respect to the
+underlying DataFrame—they are just pointers to a specific DataFrame's logical plan within the runtime of that
+SparkSession. Any transformation you perform on the DataFrame results in a new logical plan, and if you update the
+view (using the same name), it points to the new DataFrame. However, you cannot mutate a view's data in place—every
+change involves creating a new DataFrame and potentially a new view
+
+- The data accessed via a SQL view will always reflect the state of the DataFrame at the time the view was created
+- Overwriting the view name with a new DataFrame (e.g., calling `createOrReplaceTempView` again) simply repoints the
+  view; data is never mutated in place.
+- Temporary views are session-scoped, and their backing DataFrames remain immutable.
+
+In practice, you do not need to "clone" a SQL view for thread safety, because the immutable nature of the underlying
+DataFrames ensures that concurrent reads are safe. If you plan to replace the view with a new DataFrame in a thread or
+parallel job, ensure that the change does not affect other ongoing operations that depend on the previous view
+definition.
+
+REference:
+- https://spark.apache.org/docs/latest/api/python/user_guide/dataframes.html
+- https://www.garageeducation.org/docs/apache-spark/22-demo-immutability-in-spark/
 
 ### Recommended Practice
 
