@@ -166,6 +166,7 @@ Try in this order:
 ---
 
 ## Quick Script for EC2 Reboot
+This script does reboot all instances associated with the EMR cluster (task, core, and master nodes)
 
 Save as `emr_soft_reboot.sh`:
 
