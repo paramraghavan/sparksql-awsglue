@@ -1,3 +1,6 @@
+# soft reboot
+Reboots the task and core nodes
+
 It is generally possible to reboot core nodes of an EMR cluster in addition to task nodes, but caution is advised. Core
 nodes store HDFS data and run critical processes; rebooting them can cause temporary disruption or increased risk of
 data unavailability if not handled carefully. Master nodes (including the application master) should be rebooted only if
