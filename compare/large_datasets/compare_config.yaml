@@ -1,0 +1,189 @@
+# Dataset Comparison Configuration
+# Edit this file to configure your comparison job
+
+# =============================================================================
+# DATASET PATHS
+# =============================================================================
+datasets:
+  ds1_path: "s3://your-bucket/path/to/dataset1/"
+  ds2_path: "s3://your-bucket/path/to/dataset2/"
+  output_path: "s3://your-bucket/comparison-output/"
+
+# =============================================================================
+# COMPARISON SETTINGS
+# =============================================================================
+comparison:
+  # Key columns for joining (can be single string or list)
+  key_columns:
+    - "id"
+  # Example multi-key:
+  # key_columns:
+  #   - "customer_id"
+  #   - "transaction_date"
+  
+  # Columns to skip from comparison (optional)
+  skip_columns:
+    - "updated_at"
+    - "processed_date"
+    - "etl_run_id"
+  
+  # Compare only specific columns (optional - leave empty to compare all)
+  # If specified, only these columns will be compared
+  compare_columns_only: []
+  # Example:
+  # compare_columns_only:
+  #   - "amount"
+  #   - "status"
+  #   - "quantity"
+
+# =============================================================================
+# FILTERING (Optional - for faster comparison)
+# =============================================================================
+filtering:
+  # Enable date filtering to compare only recent data
+  enabled: false
+  date_column: "date"
+  start_date: "2025-01-01"
+  end_date: "2025-01-31"
+  
+  # Additional filter conditions (optional)
+  # Uses SQL WHERE clause syntax
+  ds1_filter: null
+  # Example: "region = 'US' AND status = 'active'"
+  
+  ds2_filter: null
+  # Example: "region = 'US' AND status = 'active'"
+
+# =============================================================================
+# SAMPLING (Optional - for testing)
+# =============================================================================
+sampling:
+  # Enable sampling for quick validation runs
+  enabled: false
+  # Fraction to sample (0.0 to 1.0)
+  fraction: 0.1
+  # Random seed for reproducibility
+  seed: 42
+
+# =============================================================================
+# NUMERIC TOLERANCE (Optional)
+# =============================================================================
+numeric_tolerance:
+  # Enable tolerance for numeric column comparisons
+  enabled: false
+  # Columns to apply tolerance to
+  columns:
+    - "amount"
+    - "price"
+    - "total"
+  # Tolerance value (e.g., 0.01 for $0.01 or 1% for percentages)
+  tolerance: 0.01
+
+# =============================================================================
+# OUTPUT SETTINGS
+# =============================================================================
+output:
+  # Maximum number of differences to include in HTML report
+  max_sample_in_html: 10000
+  
+  # Write intermediate results (for debugging)
+  write_intermediate: false
+  
+  # Export formats
+  formats:
+    parquet: true    # Always recommended
+    csv: false       # Set true for Excel compatibility
+    json: false      # Set true for API/web use
+  
+  # Coalesce output to reduce file count
+  coalesce:
+    enabled: true
+    num_files: 10
+
+# =============================================================================
+# SPARK CONFIGURATION
+# =============================================================================
+spark:
+  app_name: "DatasetComparison"
+  
+  # Spark configurations
+  configs:
+    spark.sql.adaptive.enabled: "true"
+    spark.sql.adaptive.coalescePartitions.enabled: "true"
+    spark.sql.shuffle.partitions: "200"
+    spark.sql.autoBroadcastJoinThreshold: "-1"
+    spark.sql.join.preferSortMergeJoin: "true"
+    
+    # For very large datasets (100GB+), increase these:
+    # spark.sql.shuffle.partitions: "400"
+    # spark.network.timeout: "800s"
+    # spark.executor.heartbeatInterval: "60s"
+
+# =============================================================================
+# CACHING STRATEGY
+# =============================================================================
+caching:
+  # Cache intermediate results in memory
+  enabled: true
+  
+  # Storage level: MEMORY_ONLY, MEMORY_AND_DISK, DISK_ONLY
+  storage_level: "MEMORY_AND_DISK"
+
+# =============================================================================
+# DATA QUALITY CHECKS
+# =============================================================================
+quality_checks:
+  # Run data quality validation before comparison
+  enabled: true
+  
+  # Fail if key columns contain nulls
+  fail_on_null_keys: true
+  
+  # Report null values in comparison columns
+  report_null_values: true
+  
+  # Check for duplicate keys
+  check_duplicates: true
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+logging:
+  # Log level: DEBUG, INFO, WARN, ERROR
+  level: "INFO"
+  
+  # Save detailed logs to S3
+  save_to_s3: false
+  log_path: "s3://your-bucket/comparison-logs/"
+
+# =============================================================================
+# NOTIFICATION (Optional - requires AWS SNS/SES setup)
+# =============================================================================
+notification:
+  enabled: false
+  
+  # SNS topic for notifications
+  sns_topic_arn: null
+  # Example: "arn:aws:sns:us-east-1:123456789012:comparison-alerts"
+  
+  # Email notification
+  email:
+    enabled: false
+    from_address: "noreply@example.com"
+    to_addresses:
+      - "user@example.com"
+
+# =============================================================================
+# PERFORMANCE TUNING
+# =============================================================================
+performance:
+  # Use approximate counts for very large datasets (faster but less accurate)
+  use_approximate_counts: false
+  
+  # Repartition input data if needed
+  repartition:
+    enabled: false
+    num_partitions: 200
+  
+  # Persist strategy for large joined DataFrames
+  persist_joined_data: false
