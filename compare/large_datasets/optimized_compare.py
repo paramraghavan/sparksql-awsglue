@@ -192,7 +192,9 @@ class OptimizedDatasetComparator:
         # INNER join on common keys only (not full outer!)
         # No need for select() again - we already selected what we need
         joined = ds1_subset.join(ds2_subset, self.key_columns, "inner")
-        
+
+        # persis unlike cache will spill to disk if it's going out of memory
+        joined.persist()
         # Build difference conditions for counting
         diff_conditions = []
         for col in compare_cols:
@@ -215,7 +217,6 @@ class OptimizedDatasetComparator:
             
             # Count rows with differences
             try:
-                differences.cache()  # Cache since we'll use it twice
                 rows_with_diffs = differences.select(self.key_columns).distinct().count()
                 self.stats['rows_with_differences'] = rows_with_diffs
                 print(f"  Rows with differences: {rows_with_diffs:,}")
@@ -246,7 +247,7 @@ class OptimizedDatasetComparator:
                 )
             
             # Create array of all differences for each row
-            differences_with_array = differences.select(
+            differences_with_array = joined.select(
                 *self.key_columns,
                 F.array(*column_comparisons).alias("diff_array")
             )
@@ -264,7 +265,7 @@ class OptimizedDatasetComparator:
             )
             
             # Unpersist the cached differences
-            differences.unpersist()
+            joined.unpersist()
             
             # Write to disk
             output_file = f"{self.output_path}/differences"
@@ -349,11 +350,13 @@ class OptimizedDatasetComparator:
             html_content += "</table>"
         
         html_content += "</body></html>"
-        
-        with open("/tmp/comparison_report.html", "w") as f:
-            f.write(html_content)
-        
-        print(f"  HTML report saved to: /tmp/comparison_report.html")
+
+        # Save the HTML report
+        html_df = self.spark.createDataFrame([(html_content,)], ["html"])
+
+        # Write as a single file
+        html_df.coalesce(1).write.mode("overwrite").text(f"{html_file}")
+        print(f"  HTML report saved to: {html_file}")
     
     def _print_summary(self):
         """Print summary"""
