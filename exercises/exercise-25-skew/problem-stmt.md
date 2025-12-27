@@ -12,8 +12,8 @@ Broadcast threshold:10485760b
 2. DATA SIZES
 Table1 : 641,107, 683
 Table2 : 72, 823, 883 3 DISTINCT KEY ANALYSIS
-Distinct Cusip+EFFECTIVEDATE in table1 : 641, 107, 670
-Distinct Cusip+EFFECTIVEDATE in table2: 72, 823, 883
+Distinct Cusip+EFFECTIVEDATE in table1 : 641,107,670
+Distinct Cusip+EFFECTIVEDATE in table2: 72,823,883
 Ratio table1 rows/ distinct keys): 1.00 
 Ratio table2 rows / distinct keys): 1.00
 4. PARTITION DISTRIBUTION
