@@ -1,279 +1,339 @@
-# 🚨 CRITICAL ISSUE: Memory Bottleneck!
+# 🎯 Complete Optimized spark.conf for Your Use Case
 
-You have a **memory bottleneck**, not a CPU bottleneck. Here's the problem:
+Based on everything we've discussed, here's your **complete production-ready configuration**:
 
-## 📊 Your Cluster State
-
-```
-Memory: 9.85 TB / 10.08 TB = 97.7% used ⚠️ CRITICAL!
-CPU:    591 / 1312 cores  = 45% used     ⚠️ UNDERUTILIZED!
-```
-
-**What this means:**
-- ✅ Memory is **MAXED OUT** (97.7%)
-- ❌ CPU is **IDLE** (only 45% used)
-- 🔥 Tasks are **waiting for memory** instead of running
-- 🔥 Likely **memory spilling to disk** (killing performance)
-- 🔥 Only **~118-148 executors running** out of 600 max (591 cores ÷ 4-5 cores per executor)
-
-## 🎯 Root Cause
-
-Your executors are **too memory-heavy** and you're running **too few of them**:
-
-```
-Current (likely):
-- Executor memory: ~32-48GB each
-- Executors running: ~118-148
-- Total memory: 10.08 TB
-- Memory per executor: 10,080 GB / 148 = 68GB each
-
-Problem:
-- Each executor holds too much data
-- Can't fit enough executors to use all cores
-- Memory fills up → new executors can't start → cores idle
-```
-
-## ✅ SOLUTION: Reduce Executor Memory & Increase Count
-
-### Step 1: Reconfigure Executor Sizing
+## ✅ Full Spark Configuration
 
 ```python
-# ============================================
-# CRITICAL: Reduce executor memory significantly
-# ============================================
-
-# Current (BAD):
-# spark.executor.memory = 32-48GB (too large!)
-# spark.executor.cores = 5
-
-# New (GOOD):
-spark.conf.set("spark.executor.memory", "16g")      # Cut in half!
-spark.conf.set("spark.executor.memoryOverhead", "4g")
-spark.conf.set("spark.executor.cores", "4")         # Reduce cores too
-
-# With this config:
-# Memory per executor: 16GB + 4GB overhead = 20GB
-# Available memory: 10.08 TB = 10,080 GB
-# Max executors: 10,080 / 20 = 504 executors ✓
-# Total cores: 504 executors × 4 cores = 2,016 cores ✓
-
-spark.conf.set("spark.dynamicAllocation.enabled", "true")
-spark.conf.set("spark.dynamicAllocation.maxExecutors", "500")  # Realistic limit
-spark.conf.set("spark.dynamicAllocation.minExecutors", "100")
-spark.conf.set("spark.dynamicAllocation.initialExecutors", "200")
-spark.conf.set("spark.dynamicAllocation.schedulerBacklogTimeout", "1s")
-spark.conf.set("spark.dynamicAllocation.executorIdleTimeout", "60s")
-```
-
-### Step 2: Optimize Memory Configuration
-
-```python
-# ============================================
-# Memory tuning
-# ============================================
-
-# Reduce memory fraction for execution (less caching)
-spark.conf.set("spark.memory.fraction", "0.6")           # Default 0.8
-spark.conf.set("spark.memory.storageFraction", "0.3")    # Less for caching
-
-# Enable off-heap memory for better memory management
-spark.conf.set("spark.memory.offHeap.enabled", "true")
-spark.conf.set("spark.memory.offHeap.size", "4g")
-
-# Optimize shuffle memory
-spark.conf.set("spark.shuffle.memoryFraction", "0.2")
-spark.conf.set("spark.reducer.maxSizeInFlight", "48m")
-spark.conf.set("spark.shuffle.file.buffer", "32k")
-```
-
-### Step 3: Reduce Partition Data Size
-
-```python
-# ============================================
-# Smaller partitions = less memory per task
-# ============================================
-
-# Increase partitions even more (smaller chunks per task)
-spark.conf.set("spark.sql.shuffle.partitions", "100000")  # Up from 60K!
-spark.conf.set("spark.default.parallelism", "100000")
-
-# Target: 641M rows / 100K partitions = 6,410 rows per partition
-# Much smaller = less memory per task!
-
-# Smaller input chunks
-spark.conf.set("spark.sql.files.maxPartitionBytes", "32MB")  # Down from 64MB
-
-# AQE will coalesce later if needed
-spark.conf.set("spark.sql.adaptive.enabled", "true")
-spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
-spark.conf.set("spark.sql.adaptive.advisoryPartitionSizeInBytes", "32MB")
-```
-
-### Step 4: Complete Optimized Code
-
-```python
-# ============================================
-# COMPLETE MEMORY-OPTIMIZED SOLUTION
-# ============================================
-
-# Executor sizing - SMALLER executors, MORE of them
-spark.conf.set("spark.executor.memory", "16g")
-spark.conf.set("spark.executor.memoryOverhead", "4g")
-spark.conf.set("spark.executor.cores", "4")
-spark.conf.set("spark.driver.memory", "16g")  # Reduce driver too
-
-# Dynamic allocation - more executors
-spark.conf.set("spark.dynamicAllocation.enabled", "true")
-spark.conf.set("spark.dynamicAllocation.maxExecutors", "500")
-spark.conf.set("spark.dynamicAllocation.minExecutors", "100")
-spark.conf.set("spark.dynamicAllocation.initialExecutors", "200")
-spark.conf.set("spark.dynamicAllocation.schedulerBacklogTimeout", "1s")
-
-# Memory optimization
-spark.conf.set("spark.memory.fraction", "0.6")
-spark.conf.set("spark.memory.storageFraction", "0.2")
-
-# More partitions = less data per task
-spark.conf.set("spark.sql.shuffle.partitions", "100000")
-spark.conf.set("spark.default.parallelism", "100000")
-spark.conf.set("spark.sql.files.maxPartitionBytes", "32MB")
-
-# AQE
-spark.conf.set("spark.sql.adaptive.enabled", "true")
-spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
-spark.conf.set("spark.sql.adaptive.advisoryPartitionSizeInBytes", "32MB")
-spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
-
-# Shuffle optimization
-spark.conf.set("spark.shuffle.compress", "true")
-spark.conf.set("spark.shuffle.spill.compress", "true")
-spark.conf.set("spark.shuffle.service.enabled", "true")
+from pyspark.sql import SparkSession
+from pyspark import StorageLevel
+from pyspark.sql.functions import col
 
 # ============================================
-# Your join code - NO CACHE!
+# SPARK SESSION WITH OPTIMIZED CONFIGURATION
 # ============================================
+
+spark = SparkSession.builder \
+    .appName("Large_Join_Optimization") \
+    .config("spark.executor.memory", "15g") \
+    .config("spark.executor.memoryOverhead", "3g") \
+    .config("spark.executor.cores", "5") \
+    .config("spark.driver.memory", "16g") \
+    .config("spark.driver.memoryOverhead", "2g") \
+    .config("spark.sql.shuffle.partitions", "100000") \
+    .config("spark.default.parallelism", "100000") \
+    .config("spark.dynamicAllocation.enabled", "true") \
+    .config("spark.dynamicAllocation.minExecutors", "100") \
+    .config("spark.dynamicAllocation.maxExecutors", "600") \
+    .config("spark.dynamicAllocation.initialExecutors", "200") \
+    .config("spark.dynamicAllocation.executorIdleTimeout", "60s") \
+    .config("spark.dynamicAllocation.cachedExecutorIdleTimeout", "120s") \
+    .config("spark.dynamicAllocation.schedulerBacklogTimeout", "1s") \
+    .config("spark.dynamicAllocation.sustainedSchedulerBacklogTimeout", "1s") \
+    .config("spark.sql.adaptive.enabled", "true") \
+    .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+    .config("spark.sql.adaptive.coalescePartitions.initialPartitionNum", "100000") \
+    .config("spark.sql.adaptive.coalescePartitions.minPartitionSize", "1MB") \
+    .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "64MB") \
+    .config("spark.sql.adaptive.skewJoin.enabled", "true") \
+    .config("spark.sql.adaptive.skewJoin.skewedPartitionFactor", "2") \
+    .config("spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes", "128MB") \
+    .config("spark.sql.adaptive.autoBroadcastJoinThreshold", "50MB") \
+    .config("spark.sql.autoBroadcastJoinThreshold", "50MB") \
+    .config("spark.memory.fraction", "0.7") \
+    .config("spark.memory.storageFraction", "0.3") \
+    .config("spark.shuffle.compress", "true") \
+    .config("spark.shuffle.spill.compress", "true") \
+    .config("spark.shuffle.service.enabled", "true") \
+    .config("spark.shuffle.file.buffer", "64k") \
+    .config("spark.reducer.maxSizeInFlight", "96m") \
+    .config("spark.shuffle.io.maxRetries", "5") \
+    .config("spark.shuffle.io.retryWait", "15s") \
+    .config("spark.sql.files.maxPartitionBytes", "64MB") \
+    .config("spark.sql.files.openCostInBytes", "8388608") \
+    .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
+    .config("spark.kryoserializer.buffer.max", "512m") \
+    .config("spark.network.timeout", "800s") \
+    .config("spark.executor.heartbeatInterval", "60s") \
+    .config("spark.rpc.message.maxSize", "512") \
+    .config("spark.sql.broadcastTimeout", "600") \
+    .config("spark.speculation", "true") \
+    .config("spark.speculation.interval", "1000ms") \
+    .config("spark.speculation.multiplier", "2") \
+    .config("spark.speculation.quantile", "0.9") \
+    .getOrCreate()
+
+# ============================================
+# YOUR JOIN CODE
+# ============================================
+
+# Read tables with optimized partitioning
 table1 = spark.read \
-    .option("maxPartitionBytes", "32MB") \
-    .parquet("s3://bucket/table1/")
+    .option("maxPartitionBytes", "64MB") \
+    .parquet("s3://your-bucket/table1/")
 
 table2 = spark.read \
-    .option("maxPartitionBytes", "32MB") \
-    .parquet("s3://bucket/table2/")
+    .option("maxPartitionBytes", "64MB") \
+    .parquet("s3://your-bucket/table2/")
 
-# Repartition with MORE partitions (smaller chunks)
+print(f"Table1 count: {table1.count():,}")
+print(f"Table2 count: {table2.count():,}")
+
+# Repartition to handle skew
 table1_fixed = table1.repartition(100000, "CUSIP", "EFFECTIVEDATE")
 table2_fixed = table2.repartition(100000, "CUSIP", "EFFECTIVEDATE")
 
-# Join
+# Perform LEFT JOIN
 result = table1_fixed.join(
     table2_fixed,
     on=["CUSIP", "EFFECTIVEDATE"],
     how="left"
 )
 
-# Write with smaller files
+# ============================================
+# HANDLE RESULT BASED ON USAGE
+# ============================================
+
+# Option A: Single use - direct write (NO CACHE)
 result.write \
     .mode("overwrite") \
-    .option("maxRecordsPerFile", 250000) \
-    .parquet("s3://bucket/output/")
+    .option("compression", "snappy") \
+    .option("maxRecordsPerFile", 500000) \
+    .parquet("s3://your-bucket/output/")
+
+# Option B: Multiple uses - persist to disk
+# result = result.persist(StorageLevel.DISK_ONLY)
+# result.count()  # Materialize
+# result.filter(...).write.parquet("path1")
+# result.groupBy(...).write.parquet("path2")
+# result.unpersist()
+
+print("✅ Job completed successfully!")
+spark.stop()
 ```
 
-## 🔍 Check for Memory Spilling (Spark UI)
+---
 
-Go to **Spark UI → Stages → Your running stage**:
+## 📋 Configuration Breakdown by Category
 
-Look for these RED FLAGS:
-```
-Spill (Memory): > 0 GB  ⚠️ BAD - spilling to disk
-Spill (Disk):   > 0 GB  🔥 VERY BAD - thrashing
-GC Time:        > 10% of task time  ⚠️ Memory pressure
-```
-
-If you see spilling, your tasks are holding too much data in memory.
-
-## 📊 Expected Improvements
-
-| Metric | Before | After |
-|--------|--------|-------|
-| Executor memory | 32-48GB | 16GB |
-| Executors running | ~148 | ~450-500 |
-| Cores used | 591 (45%) | 1,800+ (>137%) |
-| Memory usage | 97.7% | 80-85% |
-| Memory spilling | High | Minimal |
-| Runtime | 6+ hours | **45-90 minutes** |
-
-## ⚡ If You Can't Restart the Job
-
-### Quick Fix Without Restart:
-
-You can't change executor size mid-job, but you can try:
-
+### 1. **Executor Configuration** (Memory & Cores)
 ```python
-# In a new cell/script, check what's causing memory bloat
-spark.sparkContext.getExecutorMemoryStatus()
-
-# Check for cached data eating memory
-spark.catalog.clearCache()  # Clear any accidental caches
-
-# Check Spark UI → Storage tab
-# If you see cached RDDs/DataFrames, unpersist them
+spark.executor.memory = 15g                    # Per executor memory
+spark.executor.memoryOverhead = 3g             # Overhead for off-heap memory
+spark.executor.cores = 5                       # Cores per executor
+spark.driver.memory = 16g                      # Driver memory
+spark.driver.memoryOverhead = 2g               # Driver overhead
 ```
 
-**But honestly: Kill the job and restart with new config**
+**Reasoning:**
+- 15GB executor = proven to work in your environment
+- 5 cores/executor = good balance
+- 600 max executors × 15GB = 9TB (fits your cluster)
+- 600 executors × 5 cores = 3000 cores (more than your 1312 available, but dynamic allocation handles this)
 
-## 🎯 Why This Configuration Works
-
-### Problem: Large Executors
-```
-Current:
-- 148 executors × 68GB = 10 TB memory ✓
-- 148 executors × 5 cores = 740 cores (only 56% of 1312) ✗
-
-Can't scale up because:
-- Each executor needs 68GB
-- Cluster maxes out at 148 executors
-- Remaining 572 cores can't be used (no memory left)
-```
-
-### Solution: Smaller Executors
-```
-New:
-- 500 executors × 20GB = 10 TB memory ✓
-- 500 executors × 4 cores = 2,000 cores (152% of 1312) ✓
-
-Can scale up because:
-- Each executor needs only 20GB
-- Can fit 500 executors
-- Enough executors to use ALL cores!
+### 2. **Dynamic Allocation** (Scale Up/Down)
+```python
+spark.dynamicAllocation.enabled = true
+spark.dynamicAllocation.minExecutors = 100
+spark.dynamicAllocation.maxExecutors = 600
+spark.dynamicAllocation.initialExecutors = 200
+spark.dynamicAllocation.executorIdleTimeout = 60s
+spark.dynamicAllocation.schedulerBacklogTimeout = 1s
+spark.dynamicAllocation.sustainedSchedulerBacklogTimeout = 1s
 ```
 
-## 🚀 Launch Configuration (If using EMR)
+**Reasoning:**
+- Starts with 200 executors (fast startup)
+- Scales up aggressively (1s backlog timeout)
+- Max 600 to match your cluster capacity
+- Min 100 to maintain baseline parallelism
 
-If you're submitting via `spark-submit` or EMR step:
+### 3. **Shuffle Partitions** (Handle Skew & Parallelism)
+```python
+spark.sql.shuffle.partitions = 100000
+spark.default.parallelism = 100000
+```
+
+**Reasoning:**
+- 641M rows / 100K partitions = ~6,400 rows/partition
+- Small partitions = less memory per task
+- More parallelism = better CPU utilization
+- 100K tasks / 3000 cores = 33 tasks per core (good queue depth)
+
+### 4. **Adaptive Query Execution** (Smart Optimization)
+```python
+spark.sql.adaptive.enabled = true
+spark.sql.adaptive.coalescePartitions.enabled = true
+spark.sql.adaptive.coalescePartitions.initialPartitionNum = 100000
+spark.sql.adaptive.advisoryPartitionSizeInBytes = 64MB
+spark.sql.adaptive.skewJoin.enabled = true
+spark.sql.adaptive.skewJoin.skewedPartitionFactor = 2
+spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes = 128MB
+```
+
+**Reasoning:**
+- AQE auto-optimizes during execution
+- Handles remaining skew automatically
+- Coalesces small partitions after processing
+- 64MB target partition size (balanced)
+
+### 5. **Memory Management** (Prevent Spilling)
+```python
+spark.memory.fraction = 0.7                    # 70% for execution + storage
+spark.memory.storageFraction = 0.3             # 30% of above for caching
+```
+
+**Reasoning:**
+- More memory for execution (less for caching)
+- Reduces spilling to disk
+- Better for shuffle-heavy operations like joins
+
+### 6. **Shuffle Optimization** (Speed Up Data Exchange)
+```python
+spark.shuffle.compress = true
+spark.shuffle.spill.compress = true
+spark.shuffle.service.enabled = true
+spark.shuffle.file.buffer = 64k
+spark.reducer.maxSizeInFlight = 96m
+```
+
+**Reasoning:**
+- Compression reduces I/O
+- External shuffle service = more stable
+- Larger buffers = fewer I/O operations
+
+### 7. **Input Partitioning** (Read Optimization)
+```python
+spark.sql.files.maxPartitionBytes = 64MB
+spark.sql.files.openCostInBytes = 8MB
+```
+
+**Reasoning:**
+- Smaller input chunks = more parallelism from the start
+- Better initial distribution before repartitioning
+
+### 8. **Serialization** (Performance)
+```python
+spark.serializer = org.apache.spark.serializer.KryoSerializer
+spark.kryoserializer.buffer.max = 512m
+```
+
+**Reasoning:**
+- Kryo is faster than Java serialization
+- Larger buffer handles big objects
+
+### 9. **Network & Timeouts** (Stability)
+```python
+spark.network.timeout = 800s
+spark.executor.heartbeatInterval = 60s
+spark.rpc.message.maxSize = 512
+spark.sql.broadcastTimeout = 600
+```
+
+**Reasoning:**
+- Long timeouts for large data transfers
+- Prevents false failures during shuffle
+- Larger message sizes for big broadcasts
+
+### 10. **Speculation** (Handle Stragglers)
+```python
+spark.speculation = true
+spark.speculation.interval = 1000ms
+spark.speculation.multiplier = 2
+spark.speculation.quantile = 0.9
+```
+
+**Reasoning:**
+- Relaunches slow tasks on other executors
+- Helps with any remaining skew
+- Improves tail latency
+
+---
+
+## 🎯 Alternative: If Using spark-submit
 
 ```bash
 spark-submit \
-  --conf spark.executor.memory=16g \
-  --conf spark.executor.memoryOverhead=4g \
-  --conf spark.executor.cores=4 \
-  --conf spark.dynamicAllocation.enabled=true \
-  --conf spark.dynamicAllocation.maxExecutors=500 \
-  --conf spark.dynamicAllocation.minExecutors=100 \
+  --master yarn \
+  --deploy-mode cluster \
+  --name "Large_Join_Optimization" \
+  --conf spark.executor.memory=15g \
+  --conf spark.executor.memoryOverhead=3g \
+  --conf spark.executor.cores=5 \
+  --conf spark.driver.memory=16g \
   --conf spark.sql.shuffle.partitions=100000 \
-  --conf spark.memory.fraction=0.6 \
-  --conf spark.memory.storageFraction=0.2 \
+  --conf spark.default.parallelism=100000 \
+  --conf spark.dynamicAllocation.enabled=true \
+  --conf spark.dynamicAllocation.minExecutors=100 \
+  --conf spark.dynamicAllocation.maxExecutors=600 \
+  --conf spark.dynamicAllocation.initialExecutors=200 \
+  --conf spark.dynamicAllocation.schedulerBacklogTimeout=1s \
+  --conf spark.sql.adaptive.enabled=true \
+  --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+  --conf spark.sql.adaptive.skewJoin.enabled=true \
+  --conf spark.sql.adaptive.skewJoin.skewedPartitionFactor=2 \
+  --conf spark.memory.fraction=0.7 \
+  --conf spark.memory.storageFraction=0.3 \
+  --conf spark.shuffle.service.enabled=true \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  --conf spark.speculation=true \
   your_script.py
 ```
 
-## 💡 Bottom Line
+---
 
-Your problem: **Too much memory per executor** → Can't run enough executors → Cores idle
+## 🔧 EMR-Specific Configuration
 
-**Solution:**
-1. **Cut executor memory in half** (16GB instead of 32-48GB)
-2. **Increase partitions to 100K** (smaller data per task)
-3. **Run 400-500 executors** (instead of 148)
+If you're on AWS EMR, add these to `spark-defaults.conf` or via EMR configuration:
 
-This should drop your runtime from 6+ hours to **under 1 hour** and use 80-90% of your cores! 🚀
+```json
+[
+  {
+    "classification": "spark-defaults",
+    "properties": {
+      "spark.executor.memory": "15g",
+      "spark.executor.memoryOverhead": "3g",
+      "spark.executor.cores": "5",
+      "spark.driver.memory": "16g",
+      "spark.sql.shuffle.partitions": "100000",
+      "spark.default.parallelism": "100000",
+      "spark.dynamicAllocation.enabled": "true",
+      "spark.dynamicAllocation.maxExecutors": "600",
+      "spark.dynamicAllocation.minExecutors": "100",
+      "spark.sql.adaptive.enabled": "true",
+      "spark.sql.adaptive.coalescePartitions.enabled": "true",
+      "spark.sql.adaptive.skewJoin.enabled": "true",
+      "spark.memory.fraction": "0.7",
+      "spark.shuffle.service.enabled": "true"
+    }
+  }
+]
+```
 
-**Kill the current job and restart with these configs NOW.**
+---
+
+## 📊 Expected Results with This Config
+
+| Metric | Before | After |
+|--------|--------|-------|
+| **Partition skew** | 3,557x | <3x |
+| **Max partition size** | 570M rows | ~6K-10K rows |
+| **Executors running** | ~118 (limited by memory) | 400-500 |
+| **CPU utilization** | 45% (591/1312 cores) | 85-95% |
+| **Memory per executor** | 15GB | 15GB (unchanged) |
+| **Total active memory** | 2.1 TB | 6-7.5 TB |
+| **Runtime** | 6+ hours | **45-90 minutes** |
+| **Task parallelism** | 16K tasks | 100K tasks |
+
+---
+
+## ✅ Final Checklist
+
+Before running:
+- [ ] Check `yarn application -list` - kill or wait for other jobs
+- [ ] Verify cluster has available resources
+- [ ] Remove any `.cache()` calls (use persist(DISK_ONLY) only if reusing)
+- [ ] Use this exact configuration
+- [ ] Monitor Spark UI for first 15 minutes
+
+This configuration should get your job from **6+ hours down to under 1 hour**! 🚀
