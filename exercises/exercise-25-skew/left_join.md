@@ -8,7 +8,7 @@ adjustment. Here's what changes:
 ### Solution 1: Repartition (RECOMMENDED - No Changes!)
 
 ```python
-# ============================================
+# ==============================            ==============
 # Works EXACTLY the same for LEFT JOIN
 # ============================================
 spark.conf.set("spark.sql.shuffle.partitions", "16000")
