@@ -1,332 +1,389 @@
-# CRITICAL ISSUE: Memory Bottleneck, Not Salt Factor
+# Critical Issue: Memory Exhaustion from Table Explosion
 
-## Your Problem is NOT the Salt Factor - It's the Exploded Right Table!
+## The Problem
+
+Your job is **memory-bound, not CPU-bound**:
 
 ```
-Right table explosion with salt 1800:
-72,823,883 rows × 1,800 salts = 131,082,989,400 rows (131 BILLION!)
-
-At 500 bytes/row: 131B × 500 = 65 TB of data
-Your cluster only has ~10 TB memory → 99.8% usage → Constant GC/spilling
-
-This is why CPU is at 28% - executors are spending time on:
-- Garbage collection
-- Spilling to disk
-- Shuffling spilled data
-- OOM recovery
+Memory: 99.8% used (10.06 TB) ❌❌❌ BOTTLENECK
+CPU: 28% (367/1132 cores)     ⚠️  Executors waiting for memory
 ```
 
-## Solution 1: ITERATIVE SALTING (Recommended - Will Complete in 1-2 Hours)
+**Root cause**: You're exploding the **entire right table** with salting:
 
-**Don't explode the entire right table at once. Process salt batches sequentially.**
+```python
+# CATASTROPHIC EXPLOSION:
+arm_loan_history: 72,823,883 rows
+× salt factor 1,800
+= 131,082,989,400 rows (131 BILLION!)
+× 500 bytes avg row size  
+= 65.5 TB of data just from right table explosion
+```
+
+**This is why your job won't complete - you're creating 65TB+ of data in memory!**
+
+## Solution: Only Salt Skewed Keys, Not All Data
+
+```python
+from pyspark.sql import functions as F
+
+# ===== CRITICAL FIX: Don't explode entire right table =====
+
+print("Step 1: Identify skewed keys...")
+skewed_keys = (
+    df_tempo.groupBy("cusip", "effectivedate")
+    .count()
+    .filter(F.col("count") > 1_000_000)  # Only truly skewed keys
+    .select("cusip", "effectivedate")
+    .cache()
+)
+
+skew_count = skewed_keys.count()
+print(f"Skewed key combinations: {skew_count:,}")
+
+# ===== SPLIT BOTH TABLES =====
+# LEFT TABLE
+df_tempo_skewed = df_tempo.join(
+    F.broadcast(skewed_keys), 
+    on=["cusip", "effectivedate"], 
+    how="inner"
+)
+df_tempo_normal = df_tempo.join(
+    F.broadcast(skewed_keys), 
+    on=["cusip", "effectivedate"], 
+    how="left_anti"
+)
+
+# RIGHT TABLE - CRITICAL: Only explode skewed portion
+arm_skewed = arm_loan_history.join(
+    F.broadcast(skewed_keys), 
+    on=["cusip", "effectivedate"], 
+    how="inner"
+)
+arm_normal = arm_loan_history.join(
+    F.broadcast(skewed_keys), 
+    on=["cusip", "effectivedate"], 
+    how="left_anti"
+)
+
+# Check sizes before explosion
+skewed_left_count = df_tempo_skewed.count()
+skewed_right_count = arm_skewed.count()
+print(f"\nSkewed portion sizes:")
+print(f"  Left (df_tempo): {skewed_left_count:,} rows")
+print(f"  Right (arm_loan_history): {skewed_right_count:,} rows")
+print(f"  Right will explode to: {skewed_right_count * 1800:,} rows")
+
+# ===== JOIN NORMAL DATA (no salting) =====
+print("\nStep 2: Joining normal data (no salting)...")
+result_normal = df_tempo_normal.join(
+    arm_normal,
+    on=["cusip", "effectivedate"],
+    how="left"  # Preserving your left join
+)
+
+# ===== SALT ONLY SKEWED PORTION =====
+print("\nStep 3: Salting skewed portion...")
+
+# Calculate if explosion is feasible
+explosion_rows = skewed_right_count * 1800
+explosion_size_tb = (explosion_rows * 500) / (1024**4)
+print(f"Explosion will create {explosion_size_tb:.2f} TB")
+
+if explosion_size_tb > 5:  # More than 5TB is problematic
+    print("⚠️  Explosion too large! Using alternative strategy...")
+    # Use Solution 2 below instead
+else:
+    SALT_FACTOR = 1800
+    
+    df_tempo_skewed_salted = df_tempo_skewed.withColumn(
+        "salt_key",
+        (F.rand(seed=42) * SALT_FACTOR).cast("int")
+    )
+    
+    # Only explode skewed portion of right table
+    salt_df = spark.range(SALT_FACTOR).select(
+        F.col("id").alias("salt_key").cast("int")
+    )
+    arm_skewed_exploded = arm_skewed.crossJoin(F.broadcast(salt_df))
+    
+    result_skewed = df_tempo_skewed_salted.join(
+        arm_skewed_exploded,
+        on=["cusip", "effectivedate", "salt_key"],
+        how="left"
+    ).drop("salt_key")
+    
+    # Combine results
+    final_result = result_normal.union(result_skewed)
+```
+
+## Solution 2: Broadcast Join for Skewed Keys (If Feasible)
+
+```python
+# This is MUCH faster if skewed right table portion is small
+
+# Check if we can broadcast the skewed right table
+skewed_right_size_gb = (arm_skewed.count() * 500) / (1024**3)
+print(f"Skewed right table size: {skewed_right_size_gb:.2f} GB")
+
+if skewed_right_size_gb < 8:  # Can fit in executor memory
+    print("✅ Using BROADCAST JOIN for skewed data - much faster!")
+    
+    # No salting needed!
+    result_skewed = df_tempo_skewed.join(
+        F.broadcast(arm_skewed),
+        on=["cusip", "effectivedate"],
+        how="left"
+    )
+    
+    result_normal = df_tempo_normal.join(
+        arm_normal,
+        on=["cusip", "effectivedate"],
+        how="left"
+    )
+    
+    final_result = result_normal.union(result_skewed)
+    
+    # This should complete in 10-30 minutes instead of 6+ hours
+```
+
+## Solution 3: Batch Processing (Most Reliable)
+
+```python
+# Process skewed keys in batches to avoid memory explosion
+
+from pyspark.sql import functions as F
+
+# Get list of skewed keys
+skewed_keys_list = (
+    df_tempo.groupBy("cusip", "effectivedate")
+    .count()
+    .filter(F.col("count") > 1_000_000)
+    .select("cusip", "effectivedate")
+    .collect()
+)
+
+print(f"Processing {len(skewed_keys_list)} skewed keys in batches...")
+
+# Process in batches of 10 keys at a time
+BATCH_SIZE = 10
+results = []
+
+for i in range(0, len(skewed_keys_list), BATCH_SIZE):
+    batch = skewed_keys_list[i:i+BATCH_SIZE]
+    print(f"\nProcessing batch {i//BATCH_SIZE + 1}/{len(skewed_keys_list)//BATCH_SIZE + 1}")
+    
+    # Create DataFrame for this batch of keys
+    batch_keys = spark.createDataFrame(batch)
+    
+    # Filter to batch
+    df_tempo_batch = df_tempo.join(
+        F.broadcast(batch_keys),
+        on=["cusip", "effectivedate"],
+        how="inner"
+    )
+    
+    arm_batch = arm_loan_history.join(
+        F.broadcast(batch_keys),
+        on=["cusip", "effectivedate"],
+        how="inner"
+    )
+    
+    # Apply salting to batch only
+    SALT_FACTOR = 1800
+    df_tempo_batch_salted = df_tempo_batch.withColumn(
+        "salt_key",
+        (F.rand(seed=42) * SALT_FACTOR).cast("int")
+    )
+    
+    salt_df = spark.range(SALT_FACTOR).select(F.col("id").alias("salt_key").cast("int"))
+    arm_batch_exploded = arm_batch.crossJoin(F.broadcast(salt_df))
+    
+    # Join batch
+    result_batch = df_tempo_batch_salted.join(
+        arm_batch_exploded,
+        on=["cusip", "effectivedate", "salt_key"],
+        how="left"
+    ).drop("salt_key")
+    
+    # Write batch to disk immediately to free memory
+    output_path = f"s3://your-bucket/temp/batch_{i//BATCH_SIZE}"
+    result_batch.write.mode("overwrite").parquet(output_path)
+    results.append(output_path)
+    
+    print(f"✅ Batch {i//BATCH_SIZE + 1} written")
+
+# Process normal data
+result_normal = df_tempo_normal.join(
+    arm_normal,
+    on=["cusip", "effectivedate"],
+    how="left"
+)
+normal_path = "s3://your-bucket/temp/normal"
+result_normal.write.mode("overwrite").parquet(normal_path)
+results.append(normal_path)
+
+# Read all results and combine
+final_result = spark.read.parquet(*results)
+```
+
+## Solution 4: Bucket Join (No Explosion Needed)
+
+```python
+# Pre-partition both tables into buckets - no explosion!
+
+print("Creating bucketed tables...")
+
+# Bucket both tables by join keys
+df_tempo.write \
+    .mode("overwrite") \
+    .bucketBy(2000, "cusip", "effectivedate") \
+    .sortBy("cusip", "effectivedate") \
+    .saveAsTable("df_tempo_bucketed")
+
+arm_loan_history.write \
+    .mode("overwrite") \
+    .bucketBy(2000, "cusip", "effectivedate") \
+    .sortBy("cusip", "effectivedate") \
+    .saveAsTable("arm_loan_history_bucketed")
+
+# Enable bucket join
+spark.conf.set("spark.sql.sources.bucketing.enabled", "true")
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1")  # Disable broadcast
+
+# Read bucketed tables
+df_tempo_bucketed = spark.table("df_tempo_bucketed")
+arm_bucketed = spark.table("arm_loan_history_bucketed")
+
+# Join - Spark will use bucket join (much faster)
+final_result = df_tempo_bucketed.join(
+    arm_bucketed,
+    on=["cusip", "effectivedate"],
+    how="left"
+)
+
+# This should complete in 30-60 minutes
+```
+
+## Immediate Action Plan
+
+**Do this NOW to complete in 2-3 hours:**
 
 ```python
 from pyspark.sql import functions as F
 import time
+
+start_time = time.time()
 
 # ===== CONFIGURATION =====
-TOTAL_SALTS = 1800
-BATCH_SIZE = 50  # Process 50 salts at a time
-NUM_BATCHES = (TOTAL_SALTS + BATCH_SIZE - 1) // BATCH_SIZE  # 36 batches
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
+spark.conf.set("spark.sql.shuffle.partitions", "4000")
 
-print(f"Processing {TOTAL_SALTS} salts in {NUM_BATCHES} batches of {BATCH_SIZE}")
+# Increase memory overhead
+spark.conf.set("spark.executor.memoryOverhead", "8g")
 
-# ===== PREPARE LEFT TABLE (one time) =====
-df_tempo_skewed_salted = df_tempo_skewed.withColumn(
-    "salt_key",
-    (F.rand(seed=42) * TOTAL_SALTS).cast("int")
-).cache()  # Cache this - we'll use it multiple times
+# ===== STEP 1: Check if broadcast is feasible =====
+print("Analyzing right table size...")
+arm_count = arm_loan_history.count()
+arm_size_gb = (arm_count * 500) / (1024**3)  # Rough estimate
+print(f"Right table: {arm_count:,} rows, ~{arm_size_gb:.2f} GB")
 
-df_tempo_skewed_salted.count()  # Materialize cache
-print(f"Left table prepared with {TOTAL_SALTS} salt values")
-
-# ===== PROCESS IN BATCHES =====
-result_parts = []
-
-for batch_num in range(NUM_BATCHES):
-    batch_start = batch_num * BATCH_SIZE
-    batch_end = min(batch_start + BATCH_SIZE, TOTAL_SALTS)
-
-    print(f"\n{'=' * 70}")
-    print(f"Processing batch {batch_num + 1}/{NUM_BATCHES}")
-    print(f"Salt range: {batch_start} to {batch_end - 1}")
-    print(f"{'=' * 70}")
-
-    start_time = time.time()
-
-    # Filter left table for this batch
-    df_left_batch = df_tempo_skewed_salted.filter(
-        (F.col("salt_key") >= batch_start) & (F.col("salt_key") < batch_end)
-    )
-
-    # Explode right table ONLY for this batch
-    salt_values_batch = list(range(batch_start, batch_end))
-    arm_right_batch = arm_loan_history_skewed.withColumn(
-        "salt_key",
-        F.explode(F.array([F.lit(i) for i in salt_values_batch]))
-    )
-
-    # Join this batch
-    result_batch = df_left_batch.join(
-        arm_right_batch,
-        on=["cusip", "effectivedate", "salt_key"],
-        how="inner"
-    ).drop("salt_key")
-
-    # Write this batch immediately (don't hold in memory)
-    batch_path = f"s3://your-bucket/temp/skewed_results/batch_{batch_num:04d}/"
-    result_batch.write.mode("overwrite").parquet(batch_path)
-
-    elapsed = time.time() - start_time
-    print(f"✅ Batch {batch_num + 1} completed in {elapsed / 60:.2f} minutes")
-    print(f"   Written to: {batch_path}")
-
-# ===== READ BACK ALL BATCHES =====
-print("\n" + "=" * 70)
-print("Reading all batch results...")
-print("=" * 70)
-
-result_skewed = spark.read.parquet("s3://your-bucket/temp/skewed_results/batch_*")
-
-# Combine with normal results
-final_result = result_normal.union(result_skewed)
-
-print("\n✅ JOB COMPLETE!")
-```
-
-## Solution 2: RANGE-BASED JOIN (No Explosion - Fastest)
-
-**Don't explode at all. Use modulo arithmetic.**
-
-```python
-from pyspark.sql import functions as F
-
-NUM_SALTS = 1800
-
-# ===== LEFT TABLE: Add salt =====
-df_tempo_skewed_salted = df_tempo_skewed.withColumn(
-    "salt_key",
-    (F.rand(seed=42) * NUM_SALTS).cast("int")
-)
-
-# ===== RIGHT TABLE: Add ALL possible salts as a range column =====
-# Instead of exploding, we'll use a clever join condition
-arm_loan_history_skewed_with_range = arm_loan_history_skewed.withColumn(
-    "salt_min", F.lit(0)
-).withColumn(
-    "salt_max", F.lit(NUM_SALTS - 1)
-)
-
-# ===== JOIN with range condition =====
-result_skewed = df_tempo_skewed_salted.join(
-    arm_loan_history_skewed_with_range,
-    (F.col("df_tempo_skewed_salted.cusip") == F.col("arm_loan_history_skewed_with_range.cusip")) &
-    (F.col("df_tempo_skewed_salted.effectivedate") == F.col("arm_loan_history_skewed_with_range.effectivedate")) &
-    (F.col("salt_key") >= F.col("salt_min")) &
-    (F.col("salt_key") <= F.col("salt_max")),
-    how="inner"
-).drop("salt_key", "salt_min", "salt_max")
-
-# This creates a cartesian product effect BUT only for matching keys
-# Much more memory efficient than exploding
-```
-
-## Solution 3: BROADCAST THE RIGHT TABLE (Best if feasible)
-
-```python
-# Check actual size of right table (skewed portion only)
-arm_loan_history_skewed_count = arm_loan_history_skewed.count()
-print(f"Right table (skewed) rows: {arm_loan_history_skewed_count:,}")
-
-# Estimate size
-# If this is < 5-10 GB, BROADCAST IT!
-
-# Calculate size
-from pyspark.sql import functions as F
-
-sample = arm_loan_history_skewed.limit(1000)
-sample_rows = sample.collect()
-avg_row_size = sum(len(str(row)) for row in sample_rows) / len(sample_rows)
-estimated_size_gb = (arm_loan_history_skewed_count * avg_row_size) / (1024 ** 3)
-
-print(f"Estimated right table size: {estimated_size_gb:.2f} GB")
-
-if estimated_size_gb < 8:
-    print("✅ RIGHT TABLE CAN BE BROADCAST!")
-
-    # Increase broadcast threshold
+if arm_size_gb < 8:
+    print("\n✅ USING BROADCAST JOIN - No salting needed!")
+    
     spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "10737418240")  # 10GB
-
-    # NO SALTING NEEDED - Just broadcast join
-    result_skewed = df_tempo_skewed.join(
-        F.broadcast(arm_loan_history_skewed),
+    
+    final_result = df_tempo.join(
+        F.broadcast(arm_loan_history),
         on=["cusip", "effectivedate"],
-        how="inner"
+        how="left"
     )
-
-    print("✅ This will complete in 10-20 minutes!")
+    
 else:
-    print(f"⚠️ Right table too large ({estimated_size_gb:.2f} GB) for broadcast")
-    print("Use iterative salting instead")
-```
-
-## Solution 4: OPTIMIZED CLUSTER CONFIGURATION
-
-```python
-# Your current config is wasting resources
-# 99.8% memory, 28% CPU = memory bottleneck
-
-# Stop your current job and reconfigure:
-
-spark_conf = {
-    # REDUCE executors, INCREASE memory per executor
-    "spark.executor.instances": "200",  # Down from 441
-    "spark.executor.cores": "4",  # Down from 5
-    "spark.executor.memory": "24g",  # Up significantly
-    "spark.executor.memoryOverhead": "8g",  # Critical for joins
-
-    # Memory tuning
-    "spark.memory.fraction": "0.8",
-    "spark.memory.storageFraction": "0.2",  # More for execution
-
-    # Reduce shuffle partitions for less overhead
-    "spark.sql.shuffle.partitions": "4000",  # Down from higher
-
-    # Aggressive spill settings
-    "spark.shuffle.spill.compress": "true",
-    "spark.shuffle.compress": "true",
-
-    # Disable broadcast for now
-    "spark.sql.autoBroadcastJoinThreshold": "-1",
-
-    # AQE optimization
-    "spark.sql.adaptive.skewJoin.enabled": "true",
-    "spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes": "256MB",
-    "spark.sql.adaptive.advisoryPartitionSizeInBytes": "128MB",
-    "spark.sql.adaptive.coalescePartitions.enabled": "true",
-}
-
-for key, value in spark_conf.items():
-    spark.conf.set(key, value)
-```
-
-## Solution 5: HYBRID APPROACH (2-3 Hour Solution)
-
-```python
-from pyspark.sql import functions as F
-import time
-
-# ===== STEP 1: Check if broadcast is possible =====
-arm_skewed_count = arm_loan_history_skewed.count()
-sample_size_est = (arm_skewed_count * 500) / (1024 ** 3)  # Rough estimate
-
-print(f"Right table estimate: {sample_size_est:.2f} GB")
-
-if sample_size_est < 8:
-    # ===== BROADCAST APPROACH =====
-    print("✅ Using BROADCAST JOIN - Expected time: 15-30 minutes")
-
-    spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "10737418240")
-
-    result_skewed = df_tempo_skewed.join(
-        F.broadcast(arm_loan_history_skewed),
-        on=["cusip", "effectivedate"],
-        how="inner"
+    print("\n⚠️ Right table too large for broadcast, using hybrid approach...")
+    
+    # Find skewed keys
+    skewed_keys = (
+        df_tempo.groupBy("cusip", "effectivedate")
+        .count()
+        .filter(F.col("count") > 2_000_000)  # Increased threshold
+        .select("cusip", "effectivedate")
+        .cache()
     )
-
-else:
-    # ===== ITERATIVE SALTING APPROACH =====
-    print("✅ Using ITERATIVE SALTING - Expected time: 1.5-2.5 hours")
-
-    TOTAL_SALTS = 1500  # Reduced from 1800
-    BATCH_SIZE = 100  # Larger batches
-
-    # Prepare left table
-    df_left_salted = df_tempo_skewed.withColumn(
-        "salt_key",
-        (F.rand(42) * TOTAL_SALTS).cast("int")
-    ).repartition(2000, "salt_key").cache()
-
-    df_left_salted.count()  # Materialize
-
-    # Process in batches
-    batch_paths = []
-    num_batches = (TOTAL_SALTS + BATCH_SIZE - 1) // BATCH_SIZE
-
-    for batch_num in range(num_batches):
-        start_salt = batch_num * BATCH_SIZE
-        end_salt = min(start_salt + BATCH_SIZE, TOTAL_SALTS)
-
-        print(f"\nBatch {batch_num + 1}/{num_batches}: salts {start_salt}-{end_salt - 1}")
-
-        # Filter left by salt range
-        df_left_batch = df_left_salted.filter(
-            F.col("salt_key").between(start_salt, end_salt - 1)
+    
+    skew_count = skewed_keys.count()
+    print(f"Skewed keys found: {skew_count}")
+    
+    if skew_count == 0:
+        # No skew, standard join
+        final_result = df_tempo.join(
+            arm_loan_history,
+            on=["cusip", "effectivedate"],
+            how="left"
         )
+    else:
+        # Split datasets
+        df_tempo_skewed = df_tempo.join(F.broadcast(skewed_keys), on=["cusip", "effectivedate"], how="inner")
+        df_tempo_normal = df_tempo.join(F.broadcast(skewed_keys), on=["cusip", "effectivedate"], how="left_anti")
+        
+        arm_skewed = arm_loan_history.join(F.broadcast(skewed_keys), on=["cusip", "effectivedate"], how="inner")
+        arm_normal = arm_loan_history.join(F.broadcast(skewed_keys), on=["cusip", "effectivedate"], how="left_anti")
+        
+        # Check if skewed arm portion can be broadcast
+        arm_skewed_count = arm_skewed.count()
+        arm_skewed_gb = (arm_skewed_count * 500) / (1024**3)
+        print(f"Skewed right portion: {arm_skewed_count:,} rows, ~{arm_skewed_gb:.2f} GB")
+        
+        # Join normal data
+        print("Joining normal data...")
+        result_normal = df_tempo_normal.join(arm_normal, on=["cusip", "effectivedate"], how="left")
+        
+        if arm_skewed_gb < 5:
+            # Broadcast skewed portion
+            print("Broadcasting skewed right table portion...")
+            result_skewed = df_tempo_skewed.join(
+                F.broadcast(arm_skewed),
+                on=["cusip", "effectivedate"],
+                how="left"
+            )
+        else:
+            # Use moderate salting (reduced factor)
+            print("Salting skewed portion with reduced factor...")
+            SALT_FACTOR = 800  # Reduced from 1800
+            
+            df_tempo_skewed_salted = df_tempo_skewed.withColumn(
+                "salt_key",
+                (F.rand(42) * SALT_FACTOR).cast("int")
+            )
+            
+            salt_df = spark.range(SALT_FACTOR).select(F.col("id").alias("salt_key").cast("int"))
+            arm_skewed_exploded = arm_skewed.crossJoin(F.broadcast(salt_df))
+            
+            result_skewed = df_tempo_skewed_salted.join(
+                arm_skewed_exploded,
+                on=["cusip", "effectivedate", "salt_key"],
+                how="left"
+            ).drop("salt_key")
+        
+        # Combine
+        final_result = result_normal.union(result_skewed)
 
-        # Explode right for this batch only
-        salt_list = list(range(start_salt, end_salt))
-        df_right_batch = arm_loan_history_skewed.withColumn(
-            "salt_key",
-            F.explode(F.array([F.lit(i) for i in salt_list]))
-        )
-
-        # Join
-        result_batch = df_left_batch.join(
-            df_right_batch,
-            on=["cusip", "effectivedate", "salt_key"],
-            how="inner"
-        ).drop("salt_key")
-
-        # Write immediately
-        batch_path = f"s3://your-bucket/temp/results_batch_{batch_num:04d}"
-        result_batch.write.mode("overwrite").parquet(batch_path)
-        batch_paths.append(batch_path)
-
-        print(f"  ✅ Batch complete")
-
-    # Read all batches
-    result_skewed = spark.read.parquet(*batch_paths)
-
-# Combine with normal results
-final_result = result_normal.union(result_skewed)
-
-# Write final output
+# Write result
+print("\nWriting final result...")
 final_result.write.mode("overwrite").parquet("s3://your-bucket/final_output/")
+
+elapsed = (time.time() - start_time) / 60
+print(f"\n✅ COMPLETED in {elapsed:.2f} minutes")
 ```
 
-## IMMEDIATE ACTION PLAN
+## Key Changes to Fix Your Job
 
-**Stop your current job NOW and do this:**
+1. **Don't explode entire right table** - only skewed portion
+2. **Try broadcast join first** - if right table < 8GB
+3. **Reduce salt factor** - 800 instead of 1800
+4. **Increase skew threshold** - 2M instead of 1M to reduce skewed keys
+5. **Add memory overhead** - 8GB per executor
 
-1. **First, test broadcast join** (5 minutes to find out):
-
-```python
-arm_sample_size = (arm_loan_history_skewed.count() * 500) / (1024 ** 3)
-if arm_sample_size < 8:
-# Use Solution 3 - Will finish in 20 minutes
-```
-
-2. **If broadcast won't work**, use **Iterative Salting** (Solution 1):
-    - Expected runtime: **1.5-2 hours**
-    - Memory usage: **50-60%** (not 99.8%)
-    - CPU usage: **60-80%** (not 28%)
-
-3. **Reconfigure cluster**:
-    - 200 executors × 24GB = Better than 441 × smaller memory
-    - Fewer executors = less coordination overhead
-
-## Why Your Current Approach Failed
-
-```
-Your approach: Explode entire right table
-72M rows × 1800 = 131 BILLION rows in memory simultaneously
-Result: 99.8% memory, constant spilling, 6+ hours
-
-Iterative approach: Process 50 salts at a time
-72M rows × 50 = 3.6 BILLION rows per batch
-36 batches × 2-3 min each = 90-120 minutes total
-Result: 50-60% memory, no spilling, 1.5-2 hours
-```
-
-**Use Solution 1 (Iterative Salting) or Solution 3 (Broadcast). You'll finish in under 2 hours.**
+**This should complete in 1-3 hours instead of 6+.**
