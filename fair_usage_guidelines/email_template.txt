@@ -1,0 +1,167 @@
+Subject: 🚀 New EMR Jupyter Notebook Guidelines - Please Read!
+
+Hi Data Science Team,
+
+We've created new guidelines to help everyone use our shared EMR cluster more efficiently and avoid resource conflicts. These changes will make your jobs run faster and more reliably!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 WHAT'S NEW
+
+We're introducing:
+1. Dynamic resource allocation (no more resource race conditions!)
+2. Health checks before starting jobs
+3. Standardized Spark configurations
+4. Monitoring and cleanup best practices
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ ACTION REQUIRED
+
+Please review and implement these changes in your notebooks:
+
+1. READ the full guidelines document (attached: emr_jupyter_guidelines.md)
+
+2. UPDATE your notebooks with the new template
+   - See jupyter_notebook_template.py for a complete example
+   - Or use the Quick Reference Card for the essential config
+
+3. KEY CHANGES TO MAKE:
+   
+   ✅ Replace static allocation with dynamic allocation:
+      REMOVE: .config("spark.executor.instances", "50")
+      ADD:    .config("spark.dynamicAllocation.enabled", "true")
+   
+   ✅ Set appropriate maxExecutors (typically 20):
+      .config("spark.dynamicAllocation.maxExecutors", "20")
+   
+   ✅ Add health check before creating Spark session
+   
+   ✅ Always call spark.stop() when done
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📎 ATTACHED FILES
+
+1. emr_jupyter_guidelines.md - Complete guidelines (START HERE!)
+2. quick_reference_card.md - Quick lookup for common configs
+3. jupyter_notebook_template.py - Copy-paste template for your notebooks
+4. emr_spark_helper.py - Optional Python module for easier setup
+
+You can also find these in our shared wiki: [INSERT WIKI LINK]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 QUICK START (5 MINUTES)
+
+For those who want to get started immediately:
+
+1. Copy this configuration to the top of your notebook:
+
+```python
+from pyspark.sql import SparkSession
+from datetime import datetime
+
+spark = SparkSession.builder \
+    .appName(f"YourName_Job_{datetime.now().strftime('%Y%m%d_%H%M')}") \
+    .config("spark.dynamicAllocation.enabled", "true") \
+    .config("spark.dynamicAllocation.shuffleTracking.enabled", "true") \
+    .config("spark.dynamicAllocation.minExecutors", "1") \
+    .config("spark.dynamicAllocation.maxExecutors", "20") \
+    .config("spark.dynamicAllocation.initialExecutors", "2") \
+    .config("spark.executor.memory", "8g") \
+    .config("spark.executor.cores", "4") \
+    .config("spark.executor.memoryOverhead", "2g") \
+    .config("spark.driver.memory", "4g") \
+    .config("spark.sql.adaptive.enabled", "true") \
+    .getOrCreate()
+```
+
+2. Add this at the end of your notebook:
+
+```python
+spark.catalog.clearCache()
+spark.stop()
+print("✅ Resources released!")
+```
+
+That's it! You're good to go.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❓ WHY THESE CHANGES?
+
+PROBLEM: Multiple users setting static executor counts (e.g., requesting 50 executors each) caused:
+- Resource conflicts and job failures
+- Wasted resources (idle executors sitting unused)
+- Slow jobs while waiting for resources
+
+SOLUTION: Dynamic allocation automatically:
+- Scales executors up when needed
+- Releases them when idle (within 60 seconds)
+- Prevents resource hogging
+- Makes jobs start faster
+
+RESULT: Everyone's jobs run more efficiently! 🎉
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 RECOMMENDED EXECUTOR LIMITS
+
+Our cluster: 1 master + 2 core + 100 task nodes
+
+Recommended maxExecutors by job type:
+- Small exploratory analysis: 10
+- Standard ETL jobs: 20  ← Most common
+- Large batch processing: 40
+- Never exceed: 50 (on shared cluster)
+
+These limits ensure fair resource sharing among the team.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔗 USEFUL LINKS
+
+- Spark UI (your jobs): http://localhost:4040
+- YARN UI (cluster status): http://localhost:8088
+- Spark History: http://localhost:18080
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💬 QUESTIONS & SUPPORT
+
+We'll host a 30-minute Q&A session this [DAY] at [TIME] to walk through the changes.
+
+In the meantime:
+- Questions? Reply to this email or ping us on Slack (#data-engineering)
+- Issues? Email cluster-admin@company.com
+- Feedback? We'd love to hear it!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🏁 TIMELINE
+
+- Today: Guidelines released
+- Next Week: Office hours for questions (M/W/F 2-3pm)
+- Week of [DATE]: Old configurations will show warnings
+- [DATE]: Full enforcement (jobs without dynamic allocation may be terminated)
+
+We want to give everyone time to transition smoothly!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🙏 THANK YOU
+
+Thanks for being great cluster citizens! These changes will make everyone's work faster and more reliable.
+
+Looking forward to seeing more efficient PySpark jobs from the team! 🚀
+
+Best regards,
+[Your Name]
+Data Platform Team
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+P.S. - Already following these practices? Great! Just verify your maxExecutors setting and add the health check, and you're all set. 👍
+
+P.P.S. - Print the Quick Reference Card and keep it handy! It has all the essential configs in one place.
