@@ -1,0 +1,89 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# CORRECTED FIX: With shuffle.partitions=10000
+# ═══════════════════════════════════════════════════════════════════════════
+
+YOUR COMPLETE CONFIG:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+executor.memory = 55g
+executor.cores = 7
+maxExecutors = 96
+dynamicAllocation = true
+shuffle.partitions = 10000  ← TOO HIGH! 
+default.parallelism = 4000
+
+Result: 153/1312 cores (11.7%), 10TB/30TB memory
+
+
+THE PROBLEM:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You have TWO issues:
+
+1. SOURCE DATA has ~150-200 files (too few)
+   → Only 153 cores can read them
+   → shuffle.partitions doesn't help here (only affects groupBy/join)
+
+2. shuffle.partitions=10000 is WAY TOO HIGH
+   → Should be 2,000-3,000 (not 10,000)
+   → 10,000 creates massive scheduling overhead
+
+
+THE FIX:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+spark.stop()
+
+spark = SparkSession.builder \
+    .config("spark.executor.memory", "100g") \
+    .config("spark.executor.cores", "15") \
+    .config("spark.executor.instances", "240") \
+    .config("spark.executor.memoryOverhead", "20g") \
+    .config("spark.dynamicAllocation.enabled", "false") \
+    .config("spark.sql.shuffle.partitions", "3000") \        # ← Reduce from 10,000!
+    .config("spark.default.parallelism", "3600") \           # ← Increase from 4,000!
+    .config("spark.sql.adaptive.enabled", "true") \
+    .getOrCreate()
+
+# CRITICAL: Repartition after reading!
+df = spark.read.parquet("s3://bucket/data/")
+print(f"Source: {df.rdd.getNumPartitions()} partitions")
+
+df = df.repartition(3000)  # Fix the ~150-200 file problem!
+print(f"After: {df.rdd.getNumPartitions()} partitions")
+
+
+WHY THESE CHANGES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. shuffle.partitions: 10,000 → 3,000
+   10,000 is too many! Creates overhead.
+   3,000 matches your 3,600 cores (240 executors × 15 cores)
+
+2. default.parallelism: 4,000 → 3,600
+   Should match total cores
+
+3. Repartition to 3,000 after read
+   Your source has ~150-200 files
+   Repartition spreads work across all 3,600 cores
+
+4. Increase executors: 96 → 240
+   Use your full 60-node cluster
+
+
+EXPECTED RESULT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before: 153 cores, 10 TB, 6+ hours
+After:  3,600 cores, 28.8 TB, ~1 hour
+
+23.5× more cores = 6× faster! 🚀
+
+
+QUICK TEST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Check your source file count:
+df = spark.read.parquet("s3://bucket/data/")
+print(f"Source partitions: {df.rdd.getNumPartitions()}")
+
+If this shows ~150-200, that's your problem!

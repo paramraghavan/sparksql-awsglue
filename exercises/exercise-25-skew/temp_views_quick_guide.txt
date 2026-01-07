@@ -1,0 +1,232 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# QUICK GUIDE: Handling Your Temp Views
+# ═══════════════════════════════════════════════════════════════════════════
+
+IMPORTANT FACT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+createOrReplaceTempView() does NOT automatically cache data!
+
+It just creates a SQL alias. Memory is only used if you explicitly cache.
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DECISION TREE: Should I Cache This View?
+# ═══════════════════════════════════════════════════════════════════════════
+
+Is the view queried MORE THAN ONCE?
+├─ NO  → Don't cache (waste of memory)
+└─ YES → Continue...
+
+Is the view size > 5 TB?
+├─ YES → Don't cache (too large)
+└─ NO  → Continue...
+
+Is the view size < 100 GB?
+├─ YES → ALWAYS cache (cheap and beneficial)
+└─ NO  → Continue...
+
+Is the view used 3+ times?
+├─ YES → Cache with MEMORY_AND_DISK
+└─ NO  → Maybe don't cache
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PATTERN 1: Don't Cache (Large, Single-Use Views)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Raw data - 10 TB, used once
+df_raw = spark.read.parquet("s3://bucket/data/")
+df_raw = df_raw.repartition(3000)
+df_raw.createOrReplaceTempView("raw_data")  # No cache!
+
+# Users query it
+result = spark.sql("SELECT * FROM raw_data WHERE ...")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PATTERN 2: Cache Filtered Results (Medium Size, Multi-Use)
+# ═══════════════════════════════════════════════════════════════════════════
+
+from pyspark import StorageLevel
+
+# Filter to recent data - 1 TB, used multiple times
+df_recent = spark.sql("""
+    SELECT * FROM raw_data 
+    WHERE date >= '2024-01-01'
+""")
+
+# Cache with disk fallback (important for 1 TB!)
+df_recent.persist(StorageLevel.MEMORY_AND_DISK)
+df_recent.createOrReplaceTempView("recent_data")
+
+# Users can query this repeatedly (fast - reads from cache!)
+result1 = spark.sql("SELECT * FROM recent_data WHERE category = 'A'")
+result2 = spark.sql("SELECT * FROM recent_data WHERE amount > 1000")
+
+# IMPORTANT: Unpersist when done!
+df_recent.unpersist()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PATTERN 3: Cache Aggregated Views (Small Size, Frequent Use)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Summary stats - 10 GB, used frequently
+df_summary = spark.sql("""
+    SELECT 
+        category,
+        COUNT(*) as count,
+        AVG(amount) as avg_amount
+    FROM raw_data
+    GROUP BY category
+""")
+
+# Cache in memory (it's small!)
+df_summary.cache()
+df_summary.createOrReplaceTempView("summary")
+
+# Fast queries
+result = spark.sql("SELECT * FROM summary WHERE count > 1000")
+
+# Unpersist when done
+df_summary.unpersist()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# YOUR WORKFLOW (Recommended)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Step 1: Load raw data with NO CACHE
+df_raw = spark.read.parquet("s3://bucket/data/")  # 10 TB
+df_raw = df_raw.repartition(3000)
+df_raw.createOrReplaceTempView("raw_data")  # NO cache!
+print("✓ Raw data view created (not cached)")
+
+
+# Step 2: Create filtered views WITH CACHE (if reused)
+df_filtered = spark.sql("""
+    SELECT * FROM raw_data 
+    WHERE date >= '2024-01-01'
+""")  # Maybe 1 TB
+
+# Cache because users will query this multiple times
+df_filtered.persist(StorageLevel.MEMORY_AND_DISK)
+df_filtered.count()  # Force materialization
+df_filtered.createOrReplaceTempView("filtered_data")
+print("✓ Filtered data cached (1 TB)")
+
+
+# Step 3: Create aggregated views WITH CACHE
+df_agg = spark.sql("""
+    SELECT category, date, SUM(amount) as total
+    FROM raw_data
+    GROUP BY category, date
+""")  # Small, maybe 10 GB
+
+df_agg.cache()
+df_agg.count()  # Force materialization
+df_agg.createOrReplaceTempView("daily_totals")
+print("✓ Daily totals cached (10 GB)")
+
+
+# Step 4: Users query the cached views (FAST!)
+result1 = spark.sql("SELECT * FROM filtered_data WHERE category = 'A'")
+result2 = spark.sql("SELECT * FROM daily_totals WHERE total > 10000")
+
+
+# Step 5: CRITICAL - Unpersist when done!
+df_filtered.unpersist()
+df_agg.unpersist()
+print("✓ Cache cleared")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MEMORY BUDGET
+# ═══════════════════════════════════════════════════════════════════════════
+
+"""
+With your optimized config (240 executors × 120 GB = 28.8 TB):
+
+Total Memory:       28.8 TB
+Execution Memory:   ~17 TB (60%) ← For processing
+Storage Memory:     ~11 TB (40%) ← For caching
+
+CACHE BUDGET: ~11 TB
+
+Example allocation:
+- View 1 (filtered recent):  2 TB  ← Cache with MEMORY_AND_DISK
+- View 2 (aggregated):       50 GB ← Cache with MEMORY_ONLY
+- View 3 (summary stats):    10 GB ← Cache with MEMORY_ONLY
+- View 4 (user profiles):    100 GB ← Cache with MEMORY_ONLY
+
+TOTAL CACHED: 2.16 TB (fits comfortably in 11 TB budget!)
+"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MONITORING
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Check which views are cached
+def show_cached_views():
+    cached = spark.sql("SHOW TABLES").filter("isTemporary = true")
+    print("\nCached Views:")
+    for row in cached.collect():
+        view_name = row['tableName']
+        is_cached = spark.catalog.isCached(view_name)
+        status = "CACHED" if is_cached else "not cached"
+        print(f"  {view_name}: {status}")
+
+show_cached_views()
+
+# Check memory usage in Spark UI
+print("\nFor detailed cache statistics:")
+print("Go to: http://localhost:4040")
+print("Click 'Storage' tab")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# QUICK REFERENCE
+# ═══════════════════════════════════════════════════════════════════════════
+
+"""
+VIEW SIZE             CACHE?      STORAGE LEVEL
+──────────────────────────────────────────────────────────────────────────
+< 100 GB              YES         MEMORY_ONLY
+100 GB - 500 GB       YES         MEMORY_ONLY or MEMORY_AND_DISK
+500 GB - 2 TB         MAYBE       MEMORY_AND_DISK (only if reused 3+ times)
+2 TB - 5 TB           RARELY      MEMORY_AND_DISK (only if heavily reused)
+> 5 TB                NO          Don't cache
+
+USAGE FREQUENCY       CACHE?
+──────────────────────────────────────────────────────────────────────────
+Used once             NO
+Used 2 times          YES (if < 2 TB)
+Used 3+ times         YES (if < 5 TB)
+Used constantly       YES (almost always)
+
+
+COMMANDS CHEAT SHEET:
+──────────────────────────────────────────────────────────────────────────
+# Cache a DataFrame
+df.cache()                                          # MEMORY_ONLY
+df.persist(StorageLevel.MEMORY_AND_DISK)            # MEMORY + DISK
+df.persist(StorageLevel.MEMORY_AND_DISK_SER)        # Serialized
+
+# Force materialization
+df.count()
+
+# Create view
+df.createOrReplaceTempView("my_view")
+
+# Cache an existing view
+spark.catalog.cacheTable("my_view")
+
+# Unpersist
+df.unpersist()
+spark.catalog.uncacheTable("my_view")
+
+# Check if cached
+spark.catalog.isCached("my_view")
+"""
