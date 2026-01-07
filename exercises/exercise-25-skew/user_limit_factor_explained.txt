@@ -1,0 +1,343 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# EXPLANATION: user-limit-factor
+# ═══════════════════════════════════════════════════════════════════════════
+
+YOUR CURRENT SETTINGS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+yarn.scheduler.capacity.root.default.maximum-capacity = 100  ✓
+yarn.scheduler.capacity.root.default.user-limit-factor = 1   ❌ THIS IS YOUR PROBLEM!
+
+
+═══════════════════════════════════════════════════════════════════════════
+WHAT IS user-limit-factor?
+═══════════════════════════════════════════════════════════════════════════
+
+user-limit-factor controls HOW MUCH OF THE QUEUE A SINGLE USER CAN USE
+
+It's a MULTIPLIER on each user's "fair share"
+
+
+FORMULA:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+User's Maximum = (Queue Capacity / Number of Active Users) × user-limit-factor
+
+
+═══════════════════════════════════════════════════════════════════════════
+EXAMPLE: Why user-limit-factor=1 is Limiting You
+═══════════════════════════════════════════════════════════════════════════
+
+SCENARIO: You are the ONLY active user on the cluster
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Queue capacity: 100%
+Active users: Let's say YARN thinks there are 3 "active users" 
+              (might be you with 3 different sessions, or historical users)
+
+With user-limit-factor = 1.0:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your limit = (100% / 3 users) × 1.0 = 33.3%
+           = 0.33 × 30 TB = 10 TB  ← THIS IS WHAT YOU'RE SEEING!
+
+Even though the queue maximum-capacity is 100%, YOU are limited to 33%!
+
+With user-limit-factor = 100.0:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your limit = (100% / 3 users) × 100.0 = 3,333% (capped at queue max of 100%)
+           = 1.0 × 30 TB = 30 TB  ← FULL CLUSTER!
+
+You can use the entire queue if it's available!
+
+
+═══════════════════════════════════════════════════════════════════════════
+REAL-WORLD EXAMPLE
+═══════════════════════════════════════════════════════════════════════════
+
+Think of it like a shared pizza restaurant:
+
+QUEUE = Restaurant with 100 pizzas available
+
+MAXIMUM-CAPACITY = 100:
+Restaurant says "You can potentially get up to 100 pizzas"
+
+USER-LIMIT-FACTOR = 1.0:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Restaurant policy: "Fair sharing! Each person gets their fair share only"
+
+If there are 3 customers in the restaurant:
+- Your fair share = 100 / 3 = 33 pizzas
+- You can order 33 pizzas maximum
+- Even if the other 2 customers don't show up!
+- 67 pizzas sit uneaten!
+
+This is what's happening to you now:
+- You can only use 10 TB (33%) even though 20 TB is sitting idle!
+
+
+USER-LIMIT-FACTOR = 100.0:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Restaurant policy: "Take what you need! First come, first served"
+
+If there are 3 customers registered but you arrive first:
+- Your fair share = 100 / 3 = 33 pizzas
+- BUT you can take 100× your fair share = 33 × 100 = 3,300 (capped at 100)
+- You can order all 100 pizzas if you're hungry and they're available!
+- Other customers can still order when they arrive
+
+This is what you WANT:
+- You can use all 30 TB if you need it and it's available!
+- Other users can still submit jobs (they'll share with you then)
+
+
+═══════════════════════════════════════════════════════════════════════════
+YOUR SPECIFIC SITUATION
+═══════════════════════════════════════════════════════════════════════════
+
+Cluster Total: 30 TB, 3,840 cores
+Queue Capacity: 100% (entire cluster)
+
+Current Settings:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+maximum-capacity = 100  (queue can use entire cluster) ✓
+user-limit-factor = 1   (single user limited to "fair share") ❌
+
+Result:
+YARN calculates: "There are ~3 active users"
+Your limit = 100% / 3 = 33%
+You get: 10 TB, 1,280 cores (33% of cluster)
+
+The other 20 TB and 2,560 cores SIT IDLE even though you need them!
+
+
+After Changing to user-limit-factor = 100:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your limit = (100% / 3) × 100 = 3,333% (capped at 100%)
+You get: 30 TB, 3,840 cores (100% of cluster!)
+
+All resources available for your job!
+
+
+═══════════════════════════════════════════════════════════════════════════
+WHY YARN THINKS THERE ARE MULTIPLE USERS
+═══════════════════════════════════════════════════════════════════════════
+
+YARN might count "active users" as:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Multiple Spark sessions from the same username
+   You: Session 1 (Jupyter notebook)
+   You: Session 2 (Another notebook)
+   You: Session 3 (spark-submit)
+   YARN sees: 3 "users"!
+
+2. Historical users who recently ran jobs
+   UserA ran job 2 hours ago (finished)
+   You are running now
+   YARN still counts UserA as "active"
+
+3. Multiple Unix users on the cluster
+   You: running as user "hadoop"
+   Colleague: running as user "data-scientist"
+   YARN sees: 2 users
+
+
+═══════════════════════════════════════════════════════════════════════════
+HOW TO FIX IT
+═══════════════════════════════════════════════════════════════════════════
+
+STEP 1: SSH to Master Node
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ssh -i your-key.pem hadoop@<master-node-dns>
+
+
+STEP 2: Edit capacity-scheduler.xml
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sudo nano /etc/hadoop/conf/capacity-scheduler.xml
+
+
+STEP 3: Find and Change user-limit-factor
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Find this:
+<property>
+  <n>yarn.scheduler.capacity.root.default.user-limit-factor</n>
+  <value>1</value>  ← CHANGE THIS!
+</property>
+
+Change to:
+<property>
+  <n>yarn.scheduler.capacity.root.default.user-limit-factor</n>
+  <value>100</value>  ← Or 100.0
+</property>
+
+Save: Ctrl+O, Enter, Ctrl+X
+
+
+STEP 4: Restart YARN Resource Manager
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sudo systemctl restart hadoop-yarn-resourcemanager
+
+# Wait for restart
+sleep 30
+
+
+STEP 5: Restart Your Spark Job
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+spark.stop()
+
+spark = SparkSession.builder \
+    .config("spark.executor.memory", "100g") \
+    .config("spark.executor.cores", "15") \
+    .config("spark.executor.instances", "240") \
+    .config("spark.executor.memoryOverhead", "20g") \
+    .config("spark.dynamicAllocation.enabled", "false") \
+    .getOrCreate()
+
+# Verify you got all executors
+num_executors = len(spark.sparkContext._jsc.sc().getExecutorMemoryStatus())
+print(f"Executors: {num_executors}")  # Should now show ~240!
+
+
+═══════════════════════════════════════════════════════════════════════════
+COMPARISON
+═══════════════════════════════════════════════════════════════════════════
+
+With user-limit-factor = 1:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your job: 10 TB, 1,280 cores (33% of cluster)
+Idle:     20 TB, 2,560 cores (67% wasted!)
+Reason:   YARN enforces "fair share" even when cluster is empty
+
+With user-limit-factor = 100:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your job: 28.8 TB, 3,600 cores (96% of cluster)
+Idle:     1.2 TB, 240 cores (4% reserved)
+Reason:   You can use full cluster when available
+
+
+═══════════════════════════════════════════════════════════════════════════
+WHAT ABOUT OTHER USERS?
+═══════════════════════════════════════════════════════════════════════════
+
+Q: If I set user-limit-factor = 100, will I block other users?
+A: NO! Here's how it works:
+
+SCENARIO 1: You're the only user
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You request: 240 executors
+You get:     240 executors (100% of cluster)
+Other users: None
+Result:      You use everything, nothing is wasted ✓
+
+
+SCENARIO 2: Another user submits a job while yours is running
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You:    Have 240 executors (100% of cluster)
+User2:  Submits job requesting 120 executors
+
+What happens:
+1. Your job continues running with 240 executors
+2. As your tasks complete and executors are released, User2 gets them
+3. Eventually settles at: You=120, User2=120 (fair sharing)
+4. When User2 finishes, you can scale back to 240
+
+Result: Dynamic fair sharing, everyone gets resources ✓
+
+
+SCENARIO 3: Both users submit at same time
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You:    Request 240 executors
+User2:  Requests 120 executors
+
+What happens:
+YARN allocates proportionally:
+You get:    160 executors (240 / 360 = 67%)
+User2 gets: 80 executors (120 / 360 = 33%)
+
+Result: Fair sharing based on demand ✓
+
+
+KEY POINT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+user-limit-factor = 100 means:
+"If the cluster is available, one user can use it all"
+"If multiple users need resources, share fairly"
+
+It does NOT mean:
+"One user monopolizes and blocks everyone else"
+
+
+═══════════════════════════════════════════════════════════════════════════
+RECOMMENDED SETTINGS
+═══════════════════════════════════════════════════════════════════════════
+
+For a shared cluster where you want efficient utilization:
+
+yarn.scheduler.capacity.root.default.maximum-capacity = 100
+  → Queue can use entire cluster
+
+yarn.scheduler.capacity.root.default.user-limit-factor = 100
+  → Single user can use entire queue if available
+  → Still shares fairly when multiple users active
+
+yarn.scheduler.capacity.root.default.minimum-user-limit-percent = 0
+  → No guaranteed minimum per user (allows elasticity)
+
+yarn.scheduler.capacity.root.default.maximum-applications = 10000
+  → Allow many concurrent applications
+
+
+═══════════════════════════════════════════════════════════════════════════
+VERIFICATION
+═══════════════════════════════════════════════════════════════════════════
+
+After making the change, verify:
+
+1. Check configuration:
+   sudo grep -A 2 "user-limit-factor" /etc/hadoop/conf/capacity-scheduler.xml
+   
+   Should show: <value>100</value>
+
+2. Check YARN UI:
+   http://localhost:8088 → Scheduler → default queue
+   
+   Should show: User Limit Factor = 100
+
+3. Submit your job and check allocation:
+   http://localhost:8088 → Your application
+   
+   Should show: Allocated Memory ≈ 28 TB (not 10 TB!)
+
+
+═══════════════════════════════════════════════════════════════════════════
+SUMMARY
+═══════════════════════════════════════════════════════════════════════════
+
+CURRENT PROBLEM:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+user-limit-factor = 1 limits you to "fair share"
+YARN thinks there are ~3 users
+Your share = 100% / 3 = 33% = 10 TB
+20 TB sits idle even though you need it!
+
+SOLUTION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Change user-limit-factor from 1 to 100
+
+Result:
+You can use full cluster (28.8 TB) when available
+Still shares fairly when other users need resources
+No monopolization, just efficient utilization!
+
+IMPACT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Resources: 10 TB → 28.8 TB (3× more)
+Executors: 85 → 240 (3× more)
+Cores:     86 → 3,600 (42× more)
+Duration:  6 hours → 8 minutes (45× faster!)
+
+This ONE configuration change will fix everything! 🚀
