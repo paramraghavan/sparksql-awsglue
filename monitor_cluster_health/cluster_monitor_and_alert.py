@@ -16,6 +16,15 @@ If thresholds are hit, the script scans all running processes and sorts them by 
 The "Kill" Option:
 If AUTO_KILL is set to True, it sends a SIGTERM signal to the identified PID.
 
+File Locking (fcntl): * We use /tmp/cluster_monitor.lock.
+The fcntl.LOCK_EX | fcntl.LOCK_NB flag ensures that if the lock is already held by another process, the new script instance fails to get the lock and exits gracefully.
+The lock is automatically released by the Operating System if the script crashes or is stopped.
+
+How the Cleanup Works
+atexit.register(cleanup): This tells Python, "No matter how you close (unless it's a hard kill -9), run the cleanup function first."
+fcntl.lockf(..., fcntl.LOCK_UN): This manually releases the kernel-level lock.
+os.remove(LOCK_FILE): This deletes the file from /tmp/, leaving the system clean.
+
 """
 
 import psutil
@@ -25,46 +34,86 @@ import schedule
 import time
 import os
 import signal
+import fcntl
+import sys
+import atexit
 from email.message import EmailMessage
 
 # --- CONFIGURATION ---
-MASTER_IP = "127.0.0.1"  # Or the specific Cluster IP
+MASTER_IP = "127.0.0.1"  # Set the IP address of your master node
 YARN_RM_PORT = "8088"
-CPU_THRESHOLD = 90.0  # Percent
-MEM_THRESHOLD = 90.0  # Percent
-PENDING_THRESHOLD = 10  # Number of pending apps
-AUTO_KILL = False  # Set to True to enable killing offending processes
+CPU_THRESHOLD = 90.0
+MEM_THRESHOLD = 90.0
+PENDING_THRESHOLD = 10
+AUTO_KILL = False  # CAUTION: Set to True to terminate offending processes
+LOCK_FILE = "/tmp/cluster_monitor.lock"
 
 # Email Settings
 EMAIL_SENDER = "monitor@example.com"
 EMAIL_RECEIVER = "admin@example.com"
 SMTP_SERVER = "localhost"
 
+# Global variable to hold file handle so it doesn't get garbage collected
+lock_file_handle = None
+
+
+def cleanup():
+    """Removes the lock file on script exit."""
+    global lock_file_handle
+    if lock_file_handle:
+        try:
+            # Release lock and close
+            fcntl.lockf(lock_file_handle, fcntl.LOCK_UN)
+            lock_file_handle.close()
+            # Remove the physical file
+            if os.path.exists(LOCK_FILE):
+                os.remove(LOCK_FILE)
+                print(f"[{time.ctime()}] Lock file removed. Clean exit.")
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+
+
+def ensure_single_instance():
+    """Ensures only one instance of the script runs using a file lock."""
+    global lock_file_handle
+    # Open file in 'a+' to create if it doesn't exist without truncating
+    lock_file_handle = open(LOCK_FILE, 'a+')
+    try:
+        # LOCK_EX: Exclusive lock, LOCK_NB: Non-blocking (fail if already locked)
+        fcntl.lockf(lock_file_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Register the cleanup function to run when Python exits
+        atexit.register(cleanup)
+    except IOError:
+        print(f"[{time.ctime()}] Another instance is already running. Exiting.")
+        sys.exit(0)
+
 
 def get_yarn_metrics():
-    """Fetch metrics from YARN Resource Manager."""
     url = f"http://{MASTER_IP}:{YARN_RM_PORT}/ws/v1/cluster/metrics"
     try:
         response = requests.get(url, timeout=5)
         return response.json().get('clusterMetrics', {})
     except Exception as e:
-        print(f"Error connecting to YARN: {e}")
+        print(f"Error connecting to YARN RM: {e}")
         return None
 
 
 def find_offending_process():
-    """Identify the process using the most CPU."""
+    """Identifies the process using the most resources."""
     processes = []
     for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
-        processes.append(proc.info)
+        try:
+            processes.append(proc.info)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
 
-    # Sort by CPU usage descending
-    top_proc = sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)[0]
-    return top_proc
+    if not processes:
+        return None
+    # Prioritize CPU usage to find the offender
+    return sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)[0]
 
 
 def send_alert(subject, body):
-    """Send an email alert."""
     msg = EmailMessage()
     msg.set_content(body)
     msg['Subject'] = subject
@@ -74,59 +123,62 @@ def send_alert(subject, body):
     try:
         with smtplib.SMTP(SMTP_SERVER) as s:
             s.send_message(msg)
-        print("Alert email sent successfully.")
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        print(f"Alert failed to send: {e}")
 
 
 def monitor_job():
-    print(f"[{time.ctime()}] Running health check...")
+    print(f"[{time.ctime()}] Checking cluster health...")
 
-    # 1. System Metrics
     cpu_usage = psutil.cpu_percent(interval=1)
     mem_usage = psutil.virtual_memory().percent
 
-    # 2. YARN Metrics
     yarn_data = get_yarn_metrics()
     pending_apps = yarn_data.get('appsPending', 0) if yarn_data else 0
 
     issue_detected = False
-    alert_msg = ""
-
     if cpu_usage > CPU_THRESHOLD or mem_usage > MEM_THRESHOLD or pending_apps > PENDING_THRESHOLD:
         issue_detected = True
         offender = find_offending_process()
 
-        alert_msg = (
-            f"CRITICAL: Cluster Health Issue on {MASTER_IP}\n"
-            f"CPU: {cpu_usage}% | Mem: {mem_usage}%\n"
-            f"YARN Pending Apps: {pending_apps}\n\n"
-            f"Offending Process: {offender['name']} (PID: {offender['pid']})\n"
-            f"Process CPU: {offender['cpu_percent']}%\n"
+        status_report = (
+            f"ALERT: Potential Cluster Failure on {MASTER_IP}\n"
+            f"System CPU: {cpu_usage}% | System Mem: {mem_usage}%\n"
+            f"YARN Pending Apps: {pending_apps}\n"
         )
 
-        if AUTO_KILL:
+        if offender:
+            status_report += f"\nOffending Process:\nName: {offender['name']}\nPID: {offender['pid']}\nCPU Usage: {offender['cpu_percent']}%"
+
+        if AUTO_KILL and offender:
             try:
                 os.kill(offender['pid'], signal.SIGTERM)
-                alert_msg += f"ACTION TAKEN: Process {offender['pid']} has been terminated."
+                status_report += f"\n\nACTION: Process {offender['pid']} was terminated."
             except Exception as e:
-                alert_msg += f"ACTION FAILED: Could not kill process {offender['pid']}: {e}"
+                status_report += f"\n\nACTION FAILED: Could not kill {offender['pid']}: {e}"
 
-    if issue_detected:
-        print(alert_msg)
-        send_alert("Cluster Health Alert", alert_msg)
+        send_alert("CRITICAL: Cluster Health Alert", status_report)
+        print("Issue detected! Alert sent.")
     else:
-        print("Cluster is healthy.")
+        print("System status: OK")
 
 
-# --- SCHEDULER ---
-N = 5  # Run every 5 minutes
-schedule.every(N).minutes.do(monitor_job)
-
+# --- MAIN ---
 if __name__ == "__main__":
-    print(f"Starting monitor on {MASTER_IP} every {N} minutes...")
-    # Run once immediately on start
+    ensure_single_instance()
+
+    N = 5  # Run every 5 minutes
+    schedule.every(N).minutes.do(monitor_job)
+
+    print(f"Monitor active for {MASTER_IP}. Frequency: {N} min.")
+
+    # Run first check immediately
     monitor_job()
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+
+    try:
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        # atexit.register(cleanup) will handle the lock file removal here
+        sys.exit(0)
