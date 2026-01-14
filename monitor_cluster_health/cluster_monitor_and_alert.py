@@ -25,6 +25,13 @@ atexit.register(cleanup): This tells Python, "No matter how you close (unless it
 fcntl.lockf(..., fcntl.LOCK_UN): This manually releases the kernel-level lock.
 os.remove(LOCK_FILE): This deletes the file from /tmp/, leaving the system clean.
 
+
+# Create daily report
+with max master cpu/meemory
+max vcore, vmem , pending queue from yarn server
+send daily  report at 5.00 am
+accurate statistics for 4 weeks (28 days),
+add low disk space
 """
 
 import psutil
@@ -37,148 +44,179 @@ import signal
 import fcntl
 import sys
 import atexit
+import argparse
+import csv
+from datetime import datetime
 from email.message import EmailMessage
 
 # --- CONFIGURATION ---
-MASTER_IP = "127.0.0.1"  # Set the IP address of your master node
 YARN_RM_PORT = "8088"
 CPU_THRESHOLD = 90.0
 MEM_THRESHOLD = 90.0
+DISK_THRESHOLD = 85.0  # Alert if disk usage > 85%
 PENDING_THRESHOLD = 10
-AUTO_KILL = False  # CAUTION: Set to True to terminate offending processes
+AUTO_KILL = False
 LOCK_FILE = "/tmp/cluster_monitor.lock"
+STATS_FILE = "cluster_history.csv"
 
 # Email Settings
-EMAIL_SENDER = "monitor@example.com"
-EMAIL_RECEIVER = "admin@example.com"
+EMAIL_SENDER = "monitor@yourdomain.com"
+EMAIL_RECEIVER = "admin@yourdomain.com"
 SMTP_SERVER = "localhost"
 
-# Global variable to hold file handle so it doesn't get garbage collected
+# --- GLOBAL TRACKING ---
+# Added 'disk' to tracking
+daily_stats = {"cpu": 0, "mem": 0, "disk": 0, "pending": 0, "yarn_mem": 0, "yarn_cpu": 0}
 lock_file_handle = None
 
 
-def cleanup():
-    """Removes the lock file on script exit."""
-    global lock_file_handle
-    if lock_file_handle:
-        try:
-            # Release lock and close
-            fcntl.lockf(lock_file_handle, fcntl.LOCK_UN)
-            lock_file_handle.close()
-            # Remove the physical file
-            if os.path.exists(LOCK_FILE):
-                os.remove(LOCK_FILE)
-                print(f"[{time.ctime()}] Lock file removed. Clean exit.")
-        except Exception as e:
-            print(f"Error during cleanup: {e}")
-
-
 def ensure_single_instance():
-    """Ensures only one instance of the script runs using a file lock."""
     global lock_file_handle
-    # Open file in 'a+' to create if it doesn't exist without truncating
     lock_file_handle = open(LOCK_FILE, 'a+')
     try:
-        # LOCK_EX: Exclusive lock, LOCK_NB: Non-blocking (fail if already locked)
         fcntl.lockf(lock_file_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # Register the cleanup function to run when Python exits
         atexit.register(cleanup)
     except IOError:
-        print(f"[{time.ctime()}] Another instance is already running. Exiting.")
-        sys.exit(0)
+        sys.exit(1)
 
 
-def get_yarn_metrics():
-    url = f"http://{MASTER_IP}:{YARN_RM_PORT}/ws/v1/cluster/metrics"
+def cleanup():
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
+
+
+def init_stats_file():
+    if not os.path.exists(STATS_FILE):
+        with open(STATS_FILE, 'w', newline='') as f:
+            writer = csv.writer(f)
+            # Added MaxDisk to header
+            writer.writerow(["Date", "MaxCPU", "MaxMem", "MaxDisk", "MaxPending", "MaxYarnMem", "MaxYarnCPU"])
+
+
+def save_daily_to_csv():
+    today = datetime.now().strftime("%Y-%m-%d")
+    with open(STATS_FILE, 'a', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            today, daily_stats["cpu"], daily_stats["mem"], daily_stats["disk"],
+            daily_stats["pending"], daily_stats["yarn_mem"], daily_stats["yarn_cpu"]
+        ])
+
+
+def get_yarn_metrics(ip):
     try:
-        response = requests.get(url, timeout=5)
-        return response.json().get('clusterMetrics', {})
-    except Exception as e:
-        print(f"Error connecting to YARN RM: {e}")
+        r = requests.get(f"http://{ip}:{YARN_RM_PORT}/ws/v1/cluster/metrics", timeout=5)
+        return r.json().get('clusterMetrics', {})
+    except:
         return None
 
 
 def find_offending_process():
-    """Identifies the process using the most resources."""
-    processes = []
-    for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+    procs = []
+    for p in psutil.process_iter(['pid', 'name', 'cpu_percent']):
         try:
-            processes.append(proc.info)
+            procs.append(p.info)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-
-    if not processes:
-        return None
-    # Prioritize CPU usage to find the offender
-    return sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)[0]
+    return sorted(procs, key=lambda x: x['cpu_percent'], reverse=True)[0] if procs else None
 
 
-def send_alert(subject, body):
+def monitor_job(ip):
+    global daily_stats
+    cpu = psutil.cpu_percent(interval=1)
+    mem = psutil.virtual_memory().percent
+    disk = psutil.disk_usage('/').percent  # Monitoring Root Partition
+    yarn = get_yarn_metrics(ip) or {}
+
+    # Update Daily Peaks
+    daily_stats["cpu"] = max(daily_stats["cpu"], cpu)
+    daily_stats["mem"] = max(daily_stats["mem"], mem)
+    daily_stats["disk"] = max(daily_stats["disk"], disk)
+    daily_stats["pending"] = max(daily_stats["pending"], yarn.get('appsPending', 0))
+    daily_stats["yarn_mem"] = max(daily_stats["yarn_mem"], yarn.get('allocatedMB', 0))
+    daily_stats["yarn_cpu"] = max(daily_stats["yarn_cpu"], yarn.get('allocatedVirtualCores', 0))
+
+    # Real-time Alerts
+    alert_msg = ""
+    if cpu > CPU_THRESHOLD: alert_msg += f"- CPU is high: {cpu}%\n"
+    if mem > MEM_THRESHOLD: alert_msg += f"- Memory is high: {mem}%\n"
+    if disk > DISK_THRESHOLD: alert_msg += f"- DISK SPACE LOW: {disk}% used on /\n"
+    if (
+    yarn.get('appsPending', 0)) > PENDING_THRESHOLD: alert_msg += f"- YARN Pending Apps: {yarn.get('appsPending')}\n"
+
+    if alert_msg:
+        offender = find_offending_process()
+        full_report = f"CRITICAL SYSTEM ALERT ({ip})\n{alert_msg}"
+        if offender:
+            full_report += f"\nTop Process: {offender['name']} (PID: {offender['pid']})\n"
+            if AUTO_KILL and cpu > CPU_THRESHOLD:
+                os.kill(offender['pid'], signal.SIGTERM)
+                full_report += "Action: High-CPU process terminated.\n"
+        send_email(f"ALERT: Cluster Risk {ip}", full_report)
+
+
+def send_reports(ip):
+    save_daily_to_csv()
+
+    # Read history
+    with open(STATS_FILE, 'r') as f:
+        history = list(csv.DictReader(f))
+
+    # 1. Daily Report (5 AM)
+    daily_msg = (
+        f"Daily Peak Report - {ip}\n"
+        f"CPU: {daily_stats['cpu']}% | Mem: {daily_stats['mem']}% | Disk: {daily_stats['disk']}%"
+    )
+    send_email(f"Daily Cluster Report: {ip}", daily_msg)
+
+    # 2. 4-Week Summary (Check every 28 days)
+    if len(history) >= 28:
+        last_4_weeks = history[-28:]
+        peak_disk = max(float(x['MaxDisk']) for x in last_4_weeks)
+        avg_cpu = sum(float(x['MaxCPU']) for x in last_4_weeks) / 28
+
+        four_week_msg = (
+            f"--- 4-WEEK TREND SUMMARY ({ip}) ---\n"
+            f"Period: {last_4_weeks[0]['Date']} to {last_4_weeks[-1]['Date']}\n"
+            f"Average Daily Peak CPU: {avg_cpu:.2f}%\n"
+            f"Absolute Peak Disk Usage: {peak_disk}%\n"
+            f"Peak YARN Pending: {max(int(x['MaxPending']) for x in last_4_weeks)}\n"
+        )
+        send_email(f"4-WEEK SUMMARY: {ip}", four_week_msg)
+
+        # Archive and reset CSV
+        os.rename(STATS_FILE, f"archive_stats_{datetime.now().strftime('%Y%m%d')}.csv")
+        init_stats_file()
+
+    # Reset daily counters
+    for k in daily_stats: daily_stats[k] = 0
+
+
+def send_email(subject, body):
     msg = EmailMessage()
     msg.set_content(body)
     msg['Subject'] = subject
     msg['From'] = EMAIL_SENDER
     msg['To'] = EMAIL_RECEIVER
-
     try:
         with smtplib.SMTP(SMTP_SERVER) as s:
             s.send_message(msg)
     except Exception as e:
-        print(f"Alert failed to send: {e}")
+        print(f"Mail error: {e}")
 
 
-def monitor_job():
-    print(f"[{time.ctime()}] Checking cluster health...")
-
-    cpu_usage = psutil.cpu_percent(interval=1)
-    mem_usage = psutil.virtual_memory().percent
-
-    yarn_data = get_yarn_metrics()
-    pending_apps = yarn_data.get('appsPending', 0) if yarn_data else 0
-
-    issue_detected = False
-    if cpu_usage > CPU_THRESHOLD or mem_usage > MEM_THRESHOLD or pending_apps > PENDING_THRESHOLD:
-        issue_detected = True
-        offender = find_offending_process()
-
-        status_report = (
-            f"ALERT: Potential Cluster Failure on {MASTER_IP}\n"
-            f"System CPU: {cpu_usage}% | System Mem: {mem_usage}%\n"
-            f"YARN Pending Apps: {pending_apps}\n"
-        )
-
-        if offender:
-            status_report += f"\nOffending Process:\nName: {offender['name']}\nPID: {offender['pid']}\nCPU Usage: {offender['cpu_percent']}%"
-
-        if AUTO_KILL and offender:
-            try:
-                os.kill(offender['pid'], signal.SIGTERM)
-                status_report += f"\n\nACTION: Process {offender['pid']} was terminated."
-            except Exception as e:
-                status_report += f"\n\nACTION FAILED: Could not kill {offender['pid']}: {e}"
-
-        send_alert("CRITICAL: Cluster Health Alert", status_report)
-        print("Issue detected! Alert sent.")
-    else:
-        print("System status: OK")
-
-
-# --- MAIN ---
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("ip")
+    args = parser.parse_args()
+
     ensure_single_instance()
+    init_stats_file()
 
-    N = 5  # Run every 5 minutes
-    schedule.every(N).minutes.do(monitor_job)
+    schedule.every(5).minutes.do(monitor_job, ip=args.ip)
+    schedule.every().day.at("05:00").do(send_reports, ip=args.ip)
 
-    print(f"Monitor active for {MASTER_IP}. Frequency: {N} min.")
-
-    # Run first check immediately
-    monitor_job()
-
-    try:
-        while True:
-            schedule.run_pending()
-            time.sleep(1)
-    except KeyboardInterrupt:
-        # atexit.register(cleanup) will handle the lock file removal here
-        sys.exit(0)
+    print(f"Monitor started for {args.ip}. Reports: Daily (5AM) & 4-Week Trend.")
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
