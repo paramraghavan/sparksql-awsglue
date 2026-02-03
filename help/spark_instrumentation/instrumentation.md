@@ -1,6 +1,12 @@
 ## Solution: Monkey-patch DataFrame methods
 Create a single module that wraps all DataFrame operations with logging/debugging:
 
+# To customize the log file path:
+```python
+from spark_instrumentation import enable_instrumentation
+enable_instrumentation(log_file="/var/log/spark/my_job.log")
+```
+
 ```python
 # spark_instrumentation.py
 

@@ -1,0 +1,17 @@
+12:50:15 | INFO  | 🔧 SPARK INSTRUMENTATION ENABLED
+12:50:15 | INFO  |    Log file: spark_debug.log
+12:50:15 | INFO  |    Log level: INFO
+12:50:15 | INFO  |    Ready! All DataFrame operations will be logged.
+12:50:15 | INFO  | ------------------------------------------------------------
+12:50:29 | INFO  | 📍 CHECKPOINT: After stacking
+12:50:29 | INFO  |    Columns: ['place', 'yymmdd', 'attribute', 'value']
+12:50:29 | INFO  |    Operations so far: 0
+12:50:31 | INFO  | ============================================================
+12:50:31 | INFO  | DATAFRAME DEBUG SUMMARY
+12:50:31 | INFO  | ============================================================
+12:50:31 | INFO  | Columns (32): ['place', 'yymmdd', 'age_years_average', 'age_years_max', 'age_years_min', 'bathrooms_average', 'bathrooms_max', 'bathrooms_min', 'bedrooms_average', 'bedrooms_max', 'bedrooms_min', 'garage_spaces_average', 'garage_spaces_max', 'garage_spaces_min', 'lot_size_average', 'lot_size_max', 'lot_size_min', 'maintenance_cost_average', 'maintenance_cost_max', 'maintenance_cost_min', 'price_average', 'price_max', 'price_min', 'property_tax_average', 'property_tax_max', 'property_tax_min', 'square_feet_average', 'square_feet_max', 'square_feet_min', 'year_built_average', 'year_built_max', 'year_built_min']
+12:50:31 | INFO  | ============================================================
+12:50:34 | INFO  | ▶ WRITE.PARQUET()
+12:50:34 | INFO  |   Args: ('/tmp/housing_wide_output',), {}
+12:50:36 | INFO  |   ✓ Write completed in 2.198s
+12:50:36 | INFO  | No operations recorded
