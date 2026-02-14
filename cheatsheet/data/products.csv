@@ -1,0 +1,9 @@
+product_id,product,category,cost,msrp,supplier
+1,Laptop,Electronics,400,799.99,TechCorp
+2,Phone,Electronics,300,499.99,TechCorp
+3,Tablet,Electronics,250,299.99,TechCorp
+4,Monitor,Electronics,150,199.99,DisplayCo
+5,Keyboard,Accessories,20,49.99,AccessoryHub
+6,Mouse,Accessories,15,29.99,AccessoryHub
+7,Headphones,Accessories,50,99.99,AudioMax
+8,Webcam,Accessories,40,99.99,VideoPro
