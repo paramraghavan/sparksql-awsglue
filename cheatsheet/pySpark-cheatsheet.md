@@ -897,3 +897,470 @@ spark-submit \
 ---
 
 > 💡 **Pro Tip:** Always check the Spark UI (port 4040) to understand your job's behavior. The SQL tab shows execution plans that reveal exactly how Spark processes your queries.
+
+---
+
+## Part 10: Core Concepts & Interview Questions
+
+### Spark Architecture Fundamentals
+
+**Q: What is Apache Spark and how does it differ from MapReduce?**
+
+Spark is a distributed computing engine for large-scale data processing. Key differences from MapReduce:
+
+| Feature | MapReduce | Spark |
+|---------|-----------|-------|
+| Processing | Disk-based between stages | In-memory (up to 100x faster) |
+| Programming Model | Map → Reduce only | Map, Reduce, Join, Window, ML, Graph, Streaming |
+| Languages | Java | Python, Scala, Java, R, SQL |
+| Iterative Jobs | Writes to disk each iteration | Keeps data in memory across iterations |
+| Real-time | Batch only | Batch + Streaming (micro-batch & continuous) |
+
+**Q: Explain Spark's cluster architecture.**
+
+```
+Driver Program (SparkContext / SparkSession)
+    │
+    ├── Cluster Manager (YARN / Mesos / K8s / Standalone)
+    │
+    ├── Executor 1 (Worker Node)
+    │   ├── Task 1  ── Partition 1
+    │   ├── Task 2  ── Partition 2
+    │   └── Cache (Block Manager)
+    │
+    └── Executor 2 (Worker Node)
+        ├── Task 3  ── Partition 3
+        ├── Task 4  ── Partition 4
+        └── Cache (Block Manager)
+```
+
+- **Driver**: Creates SparkContext, builds the DAG, schedules tasks, collects results
+- **Cluster Manager**: Allocates resources across the cluster
+- **Executors**: JVM processes on worker nodes that run tasks and cache data
+- **Tasks**: Smallest unit of work, each processing one partition
+
+---
+
+### RDD vs DataFrame vs Dataset
+
+**Q: What are the differences between RDD, DataFrame, and Dataset?**
+
+| Feature | RDD | DataFrame | Dataset |
+|---------|-----|-----------|---------|
+| Type Safety | Compile-time | Runtime | Compile-time (Scala/Java only) |
+| Optimization | No Catalyst/Tungsten | Full Catalyst + Tungsten | Full Catalyst + Tungsten |
+| Schema | No schema | Schema (StructType) | Schema (case class / Encoder) |
+| API | Functional (map, filter) | Declarative (select, where) | Both |
+| Serialization | Java serialization | Tungsten binary (off-heap) | Tungsten binary |
+| Use Case | Low-level control, unstructured data | Structured/semi-structured data | Type-safe structured (Scala) |
+| Python Support | Yes | Yes | No (Scala/Java only) |
+
+```python
+# RDD example (low-level, avoid in modern PySpark)
+rdd = spark.sparkContext.parallelize([1, 2, 3, 4, 5])
+rdd.map(lambda x: x * 2).filter(lambda x: x > 4).collect()  # [6, 8, 10]
+
+# DataFrame example (preferred in PySpark)
+df = spark.createDataFrame([(1,), (2,), (3,), (4,), (5,)], ["num"])
+df.withColumn("doubled", F.col("num") * 2).filter(F.col("doubled") > 4).show()
+
+# Convert between RDD and DataFrame
+rdd_from_df = df.rdd                            # DataFrame → RDD
+df_from_rdd = rdd.toDF(["value"])               # RDD → DataFrame
+```
+
+---
+
+### Lazy Evaluation & DAG
+
+**Q: What is lazy evaluation in Spark? Why is it important?**
+
+Spark uses **lazy evaluation** — transformations are not executed immediately. Instead, Spark builds a **DAG (Directed Acyclic Graph)** of transformations. Execution only happens when an **action** is called.
+
+**Transformations** (lazy — return a new DataFrame):
+- `select()`, `filter()`, `groupBy()`, `join()`, `withColumn()`, `orderBy()`
+- `map()`, `flatMap()`, `union()`, `distinct()`, `repartition()`
+
+**Actions** (trigger execution — return results):
+- `show()`, `count()`, `collect()`, `take()`, `first()`
+- `write.*`, `foreach()`, `reduce()`, `toPandas()`
+
+```python
+# Nothing executes yet — Spark just records the plan
+df_filtered = df.filter(F.col("age") > 30)          # Transformation
+df_selected = df_filtered.select("name", "salary")   # Transformation
+df_sorted = df_selected.orderBy(F.desc("salary"))    # Transformation
+
+# NOW Spark executes the entire chain (optimized by Catalyst)
+df_sorted.show(10)  # Action — triggers execution
+
+# View the execution plan
+df_sorted.explain(True)
+```
+
+**Benefits of lazy evaluation:**
+1. **Optimization**: Catalyst can optimize the entire chain (predicate pushdown, column pruning)
+2. **Efficiency**: Avoids unnecessary intermediate computation
+3. **Pipelining**: Multiple transformations are combined into single-stage tasks
+
+---
+
+### Narrow vs Wide Transformations
+
+**Q: What is the difference between narrow and wide transformations?**
+
+| Narrow Transformations | Wide Transformations |
+|----------------------|---------------------|
+| Each input partition contributes to at most one output partition | Input partitions contribute to multiple output partitions |
+| No data shuffle across the network | Requires shuffle (data exchange between executors) |
+| `map`, `filter`, `select`, `withColumn`, `union` | `groupBy`, `join`, `orderBy`, `repartition`, `distinct` |
+| Fast, pipelined within a stage | Expensive, creates a new stage (stage boundary) |
+
+```python
+# Narrow — no shuffle, stays within same partition
+df.filter(F.col("age") > 30).withColumn("senior", F.lit(True))
+
+# Wide — triggers shuffle, creates stage boundary
+df.groupBy("department").agg(F.avg("salary"))
+
+# Check number of stages in Spark UI (each wide transformation = new stage)
+```
+
+---
+
+### Catalyst Optimizer & Tungsten
+
+**Q: What is the Catalyst Optimizer?**
+
+Catalyst is Spark SQL's query optimizer that transforms logical plans into optimized physical plans:
+
+1. **Analysis**: Resolves column names, types, tables using the catalog
+2. **Logical Optimization**: Applies rule-based optimizations
+   - **Predicate pushdown**: Push filters closer to data source
+   - **Column pruning**: Read only needed columns
+   - **Constant folding**: Pre-compute constant expressions
+   - **Boolean simplification**: Simplify boolean expressions
+3. **Physical Planning**: Choose join strategies (broadcast vs sort-merge), scan methods
+4. **Code Generation (Tungsten)**: Generate optimized Java bytecode at runtime
+
+```python
+# Catalyst automatically optimizes this:
+df.select("name", "age", "salary", "department") \
+  .filter(F.col("age") > 30) \
+  .groupBy("department") \
+  .agg(F.avg("salary"))
+
+# Catalyst pushes filter BEFORE the select, reads only 4 columns
+# even if the source has 50 columns (column pruning)
+
+# See the optimized plan:
+df.filter(F.col("age") > 30).select("name").explain(True)
+```
+
+**What is Tungsten?**
+
+Tungsten is Spark's memory management and code generation engine:
+- **Off-heap memory**: Bypasses JVM garbage collection
+- **Cache-aware computation**: Optimizes CPU cache usage
+- **Whole-stage code generation**: Fuses operators into single Java function
+- **Binary encoding**: Compact representation, avoids Java object overhead
+
+---
+
+### Shuffle Deep Dive
+
+**Q: What is a shuffle and why is it expensive?**
+
+A shuffle redistributes data across partitions (and executors) over the network. It is the most expensive operation in Spark.
+
+```
+Stage 1 (Map side)                    Stage 2 (Reduce side)
+┌─────────────────┐                   ┌─────────────────┐
+│ Partition 1     │──── shuffle ────▶│ Partition A     │
+│ (key: a, b, c)  │    write/read     │ (all key=a)     │
+├─────────────────┤                   ├─────────────────┤
+│ Partition 2     │──── shuffle ────▶│ Partition B     │
+│ (key: a, c, d)  │                   │ (all key=b)     │
+├─────────────────┤                   ├─────────────────┤
+│ Partition 3     │──── shuffle ────▶│ Partition C     │
+│ (key: b, d, e)  │                   │ (all key=c,d,e) │
+└─────────────────┘                   └─────────────────┘
+```
+
+**Why expensive:**
+1. Data is serialized and written to disk (shuffle write)
+2. Data is transferred over the network
+3. Data is read and deserialized (shuffle read)
+4. Can cause OOM if a partition receives too much data (skew)
+
+**How to minimize shuffles:**
+```python
+# 1. Use broadcast joins for small tables
+result = large_df.join(broadcast(small_df), "key")
+
+# 2. Filter early to reduce shuffle data
+df_filtered = df.filter(F.col("date") > "2024-01-01")
+df_filtered.groupBy("key").count()
+
+# 3. Use coalesce instead of repartition when reducing partitions
+df.coalesce(10)  # No shuffle vs df.repartition(10) which shuffles
+
+# 4. Pre-partition data on join keys
+df.write.partitionBy("join_key").parquet("output/")
+```
+
+---
+
+### Spark Memory Management
+
+**Q: Explain Spark's memory model.**
+
+```
+Executor Memory (spark.executor.memory, e.g., 8g)
+├── Reserved Memory (300MB fixed)
+├── User Memory (1 - spark.memory.fraction) × (Total - 300MB)
+│   └── User data structures, UDF variables, metadata
+└── Unified Memory (spark.memory.fraction, default 0.6) × (Total - 300MB)
+    ├── Storage Memory (for cache/persist)
+    │   └── Can borrow from Execution if available
+    └── Execution Memory (for shuffles, sorts, joins, aggregations)
+        └── Can evict Storage data if needed
+
+Memory Overhead (spark.executor.memoryOverhead, default max(384MB, 0.10 × executor.memory))
+└── Off-heap memory, thread stacks, NIO, interned strings
+```
+
+---
+
+### Common Interview Coding Questions
+
+**Q: Find the second highest salary per department.**
+
+```python
+window_spec = Window.partitionBy("department").orderBy(F.desc("salary"))
+df.withColumn("rank", F.dense_rank().over(window_spec)) \
+  .filter(F.col("rank") == 2) \
+  .select("department", "name", "salary") \
+  .show()
+```
+
+**Q: Remove duplicate rows keeping the latest record.**
+
+```python
+window = Window.partitionBy("user_id").orderBy(F.desc("updated_at"))
+df_deduped = df.withColumn("rn", F.row_number().over(window)) \
+    .filter(F.col("rn") == 1) \
+    .drop("rn")
+```
+
+**Q: Pivot data — rows to columns.**
+
+```python
+# Total sales per product per quarter
+sales.groupBy("product") \
+    .pivot("quarter", ["Q1", "Q2", "Q3", "Q4"]) \
+    .agg(F.sum("amount")) \
+    .show()
+
+# Unpivot (melt) — columns to rows
+from pyspark.sql.functions import expr
+df.selectExpr("product", "stack(4, 'Q1', Q1, 'Q2', Q2, 'Q3', Q3, 'Q4', Q4) as (quarter, amount)")
+```
+
+**Q: Explode nested arrays/structs.**
+
+```python
+# Array column → one row per element
+df.select("id", F.explode("tags").alias("tag"))
+
+# Nested struct → flatten
+df.select("id", "address.city", "address.zip")
+df.select("id", F.col("address.*"))  # Expand all struct fields
+
+# Array of structs
+df.select("id", F.explode("orders").alias("order")) \
+  .select("id", "order.product", "order.amount")
+
+# Posexplode — includes position index
+df.select("id", F.posexplode("tags").alias("position", "tag"))
+```
+
+**Q: Sessionize user clickstream data.**
+
+```python
+# Define session boundary: gap > 30 minutes = new session
+window_user = Window.partitionBy("user_id").orderBy("timestamp")
+
+df_with_gap = df.withColumn(
+    "prev_ts", F.lag("timestamp").over(window_user)
+).withColumn(
+    "gap_minutes", (F.col("timestamp").cast("long") - F.col("prev_ts").cast("long")) / 60
+).withColumn(
+    "new_session", F.when(
+        (F.col("gap_minutes") > 30) | F.col("gap_minutes").isNull(), 1
+    ).otherwise(0)
+)
+
+# Assign session IDs using cumulative sum
+session_window = Window.partitionBy("user_id").orderBy("timestamp") \
+    .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+
+df_sessions = df_with_gap.withColumn(
+    "session_id", F.concat(F.col("user_id"), F.lit("_"), F.sum("new_session").over(session_window))
+)
+```
+
+**Q: Implement SCD Type 2 (Slowly Changing Dimension).**
+
+```python
+from pyspark.sql.functions import current_timestamp, lit
+
+# existing = current dimension table, incoming = new/changed records
+existing = spark.read.parquet("dim_customer/")
+incoming = spark.read.parquet("staging/customers/")
+
+# Find changed records
+changed = incoming.join(existing.filter(F.col("is_current") == True),
+    on="customer_id", how="inner"
+).filter(
+    (incoming["name"] != existing["name"]) |
+    (incoming["address"] != existing["address"])
+).select(incoming["*"])
+
+# Close old records
+closed = existing.join(changed.select("customer_id"), on="customer_id", how="left_semi") \
+    .withColumn("is_current", lit(False)) \
+    .withColumn("end_date", current_timestamp())
+
+# New versions of changed records
+new_versions = changed \
+    .withColumn("is_current", lit(True)) \
+    .withColumn("start_date", current_timestamp()) \
+    .withColumn("end_date", lit(None).cast("timestamp"))
+
+# New customers (not in existing)
+brand_new = incoming.join(existing.select("customer_id").distinct(),
+    on="customer_id", how="left_anti") \
+    .withColumn("is_current", lit(True)) \
+    .withColumn("start_date", current_timestamp()) \
+    .withColumn("end_date", lit(None).cast("timestamp"))
+
+# Unchanged records
+unchanged = existing.join(
+    changed.select("customer_id").union(brand_new.select("customer_id")),
+    on="customer_id", how="left_anti"
+)
+
+# Final dimension table
+final_dim = unchanged.unionByName(closed).unionByName(new_versions).unionByName(brand_new)
+final_dim.write.mode("overwrite").parquet("dim_customer/")
+```
+
+---
+
+### Key Concepts Quick Reference
+
+**Q: What is the difference between `repartition()` and `coalesce()`?**
+
+| | `repartition(n)` | `coalesce(n)` |
+|---|---|---|
+| Shuffle | Yes (full shuffle) | No (merges partitions locally) |
+| Can increase partitions | Yes | No (only decrease) |
+| Data distribution | Even | Uneven (combines adjacent) |
+| Use when | Increasing partitions, distributing by key | Reducing partitions before write |
+
+**Q: What is predicate pushdown?**
+
+Predicate pushdown pushes filter conditions down to the data source level so only matching rows are read from disk/S3. It works with Parquet, ORC, JDBC, and Delta Lake.
+
+```python
+# With Parquet, this only reads row groups where age > 30
+# (Parquet stores min/max statistics per row group)
+spark.read.parquet("data.parquet").filter(F.col("age") > 30)
+
+# Partition pruning — only reads partition directories matching the filter
+spark.read.parquet("data/year=2024/month=*/").filter(F.col("year") == 2024)
+```
+
+**Q: What is speculative execution?**
+
+Spark can launch backup copies of slow-running tasks on different executors. Whichever copy finishes first wins. Useful when some nodes are slower (hardware issues, noisy neighbors).
+
+```python
+spark.conf.set("spark.speculation", True)           # Enable speculation
+spark.conf.set("spark.speculation.multiplier", 1.5)  # Task 1.5x slower than median
+spark.conf.set("spark.speculation.quantile", 0.75)   # 75% of tasks must complete first
+```
+
+**Q: Explain `cache()` vs `persist()` vs `checkpoint()`.**
+
+| Method | Storage | Lineage | Use Case |
+|--------|---------|---------|----------|
+| `cache()` | Memory only | Preserved | Quick reuse of DataFrame |
+| `persist(level)` | Memory, disk, or both | Preserved | Control storage level |
+| `checkpoint()` | Disk (reliable storage) | Truncated | Break long lineage chains, fault tolerance |
+
+```python
+# Checkpoint breaks the DAG lineage — useful for iterative algorithms
+spark.sparkContext.setCheckpointDir("/tmp/checkpoints")
+df.checkpoint()  # Materializes and truncates lineage
+
+# Local checkpoint — faster but not fault-tolerant
+df.localCheckpoint()
+```
+
+**Q: What are Accumulators and Broadcast Variables?**
+
+```python
+# Accumulators — write-only shared variables for counters/sums
+error_count = spark.sparkContext.accumulator(0)
+
+def process_row(row):
+    global error_count
+    if row["status"] == "ERROR":
+        error_count.add(1)
+    return row
+
+df.rdd.foreach(process_row)
+print(f"Errors found: {error_count.value}")
+
+# Broadcast Variables — read-only shared lookup data
+lookup_dict = {"NY": "New York", "CA": "California", "TX": "Texas"}
+broadcast_lookup = spark.sparkContext.broadcast(lookup_dict)
+
+@F.udf(StringType())
+def resolve_state(code):
+    return broadcast_lookup.value.get(code, "Unknown")
+
+df.withColumn("state_name", resolve_state(F.col("state_code")))
+```
+
+**Q: What is Adaptive Query Execution (AQE)?**
+
+AQE (Spark 3.0+) optimizes queries at runtime based on statistics collected during execution:
+
+1. **Dynamically coalesce shuffle partitions**: Combines small post-shuffle partitions
+2. **Dynamically switch join strategies**: Switches to broadcast join if a table is smaller than expected
+3. **Dynamically handle skewed joins**: Splits skewed partitions into smaller sub-partitions
+
+```python
+spark.conf.set("spark.sql.adaptive.enabled", True)
+spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", True)
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", True)
+spark.conf.set("spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes", "256MB")
+```
+
+---
+
+### Common Mistakes to Avoid
+
+1. **Using `collect()` on large DataFrames** — brings all data to driver, causes OOM
+2. **Not caching reused DataFrames** — recomputes from scratch each time
+3. **Using Python UDFs instead of built-in functions** — UDFs serialize data to Python and back (10-100x slower)
+4. **Not repartitioning after heavy filtering** — leaves many empty partitions
+5. **Using `count()` just to check if empty** — use `df.head(1)` or `df.isEmpty()` instead
+6. **Ignoring data skew** — one large partition blocks entire stage
+7. **Reading with `inferSchema=True` in production** — requires extra pass over data; define schemas explicitly
+8. **Calling actions inside loops** — each action triggers full DAG re-evaluation
+9. **Not specifying partition columns when writing** — leads to slow reads on large datasets
+10. **Using `orderBy()` globally** — shuffles all data to single partition; use Window functions instead
