@@ -454,69 +454,67 @@ class SparkApplicationAnalyzer:
         exec_metrics = self.report.executor_metrics
         config = self.report.configuration
 
-        # --- [1. STRAGGLER / STUCK TASK DETECTION] ---
-        # Automates Step 12 & 13 of the manual guide: checks if a single task hangs the stage
+        # 1. STRAGGLER / STUCK TASK DETECTION
         for stage in self.report.stage_metrics:
-            # Only analyze stages with meaningful work (> 5 seconds median)
             if stage.task_time_median_ms > 5000:
-                # If the slowest task is > 5x the median, it's a straggler
                 if stage.task_time_max_ms > (stage.task_time_median_ms * 5):
                     issues.append(Issue(
                         severity="HIGH",
                         category="SKEW",
-                        description=f"Straggler Task in Stage {stage.stage_id}: One task is significantly slower than others.",
-                        current_value=f"Max: {stage.task_time_max_ms / 1000}s vs Median: {stage.task_time_median_ms / 1000}s",
-                        recommendation="Check for data skew. Enable Adaptive Query Execution (AQE) or manually salt skewed keys.",
+                        description=f"Straggler in Stage {stage.stage_id}: Max task is {stage.skew_ratio:.1f}x slower than median.",
+                        current_value=f"Max: {stage.task_time_max_ms / 1000}s",
+                        recommendation="Check for data skew. Enable AQE Skew Join or salt skewed keys.",
                         config_key="spark.sql.adaptive.skewJoin.enabled",
                         suggested_value="true"
                     ))
 
-        # --- [2. RESOURCE STARVATION / IDLE EXECUTORS] ---
-        # Automates the "Active Tasks = 0" check. Flags if job runs long but cores are idle.
-        if self.report.duration_ms > 600000:  # If job has run > 10 minutes
-            total_potential_time = exec_metrics.total_cores * self.report.duration_ms
-            utilization = (
-                                  exec_metrics.total_task_time_ms / total_potential_time) * 100 if total_potential_time > 0 else 0
+        # 2. OPTIMUM SHUFFLE PARTITION CALCULATION
+        # Goal: Aim for ~128MB to 200MB per partition
+        total_shuffle_bytes = exec_metrics.total_shuffle_read_bytes
+        if total_shuffle_bytes > 0:
+            target_partition_size = 134217728  # 128MB
+            optimum_partitions = max(int(total_shuffle_bytes / target_partition_size), 20)
+            current_partitions = int(config.shuffle_partitions) if config.shuffle_partitions.isdigit() else 200
 
-            if utilization < 10:
+            if abs(optimum_partitions - current_partitions) / current_partitions > 0.2:
                 issues.append(Issue(
                     severity="MEDIUM",
                     category="PARALLELISM",
-                    description="Resource Starvation: Job is active but executors are mostly idle.",
-                    current_value=f"{utilization:.1f}% Core Utilization",
-                    recommendation="Check YARN RM Scheduler or Driver thread dumps for blocks (Step 13 in README).",
+                    description=f"Suboptimal shuffle partitions. Current size per partition is too {'large' if optimum_partitions > current_partitions else 'small'}.",
+                    current_value=f"{current_partitions} partitions",
+                    recommendation=f"Adjust partitions to match shuffle data size (~{total_shuffle_bytes / (1024 ** 3):.2f} GB total).",
+                    config_key="spark.sql.shuffle.partitions",
+                    suggested_value=str(optimum_partitions)
+                ))
+
+        # 3. MEMORY & CORE OPTIMIZATION
+        # If GC time is > 10% or Disk Spill > 0, we need more memory or fewer cores
+        if exec_metrics.gc_time_ratio > 10 or exec_metrics.total_disk_spill_bytes > 0:
+            suggested_mem = self._suggest_memory_increase(config.executor_memory)
+            issues.append(Issue(
+                severity="HIGH",
+                category="MEMORY",
+                description="Memory pressure detected (High GC or Disk Spill).",
+                current_value=f"GC: {exec_metrics.gc_time_ratio:.1f}%, Spill: {exec_metrics.total_disk_spill_bytes / (1024 ** 2):.1f}MB",
+                recommendation="Increase executor memory to reduce spill and GC overhead.",
+                config_key="spark.executor.memory",
+                suggested_value=suggested_mem
+            ))
+
+        # 4. RESOURCE STARVATION (Active Job but Idle Executors)
+        if self.report.duration_ms > 600000:
+            utilization = (exec_metrics.total_task_time_ms / (exec_metrics.total_cores * self.report.duration_ms)) * 100
+            if utilization < 15:
+                issues.append(Issue(
+                    severity="MEDIUM",
+                    category="PARALLELISM",
+                    description="Resource Starvation: Low core utilization.",
+                    current_value=f"{utilization:.1f}% utilization",
+                    recommendation="Check YARN Queue capacity or reduce executor cores if tasks are blocking.",
                     config_key="spark.dynamicAllocation.enabled",
                     suggested_value="true"
                 ))
 
-        # --- [3. EXISTING MEMORY & GC CHECKS] ---
-        if exec_metrics.gc_time_ratio > 10:
-            severity = "HIGH" if exec_metrics.gc_time_ratio > 20 else "MEDIUM"
-            issues.append(Issue(
-                severity=severity,
-                category="GC",
-                description=f"High GC time: {exec_metrics.gc_time_ratio:.1f}% of task time spent in GC",
-                current_value=f"{exec_metrics.gc_time_ratio:.1f}%",
-                recommendation="Increase executor memory to reduce pressure",
-                config_key="spark.executor.memory",
-                suggested_value=self._suggest_memory_increase(config.executor_memory)
-            ))
-
-        if exec_metrics.total_disk_spill_bytes > 0:
-            spill_gb = exec_metrics.total_disk_spill_bytes / (1024 ** 3)
-            issues.append(Issue(
-                severity="HIGH" if spill_gb > 1 else "MEDIUM",
-                category="MEMORY",
-                description=f"Disk spill detected: {spill_gb:.2f} GB spilled to disk",
-                current_value=f"{spill_gb:.2f} GB",
-                recommendation="Increase executor memory to avoid slow disk I/O",
-                config_key="spark.executor.memory",
-                suggested_value=self._suggest_memory_increase(config.executor_memory)
-            ))
-
-        # Sort issues by severity
-        severity_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
-        issues.sort(key=lambda x: severity_order.get(x.severity, 3))
         self.report.issues = issues
 
     def _generate_recommendations(self):

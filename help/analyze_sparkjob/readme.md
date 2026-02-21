@@ -56,3 +56,19 @@ yarn logs -applicationId <app_id> | grep -i "SlowDown"
 
 # Check for Physical Memory Overages (Container killed by YARN)
 yarn logs -applicationId <app_id> | grep -i "beyond physical memory limits"
+
+
+### Manual Diagnostic Steps 
+
+When you log into the Spark UI or YARN to verify these values, use this guide:
+
+1. **Stages Tab -> Task Table**: Sort by "Duration". If the **Max** is significantly larger than the **Median**, you have data skew. This confirms you need to enable `spark.sql.adaptive.skewJoin.enabled`.
+2. **Executors Tab**: Check the **Disk Used** column. Any value greater than 0 confirms your `spark.executor.memory` is too low for the current `spark.executor.cores`.
+3. **Environment Tab**: Verify the actual values of `spark.sql.shuffle.partitions`. If it is at the default 200 and your job is slow, use the script's "Optimum Partition" suggestion based on total shuffle bytes.
+4. **YARN Logs (EMR Master)**: Run `yarn logs -applicationId <id> | grep -i "SlowDown"` to see if S3 throttling is the cause of long runtimes rather than Spark configuration.
+
+### Summary of Optimization Logic
+
+* **Shuffle Partitions**: Calculated as `Total Shuffle Read / 128MB`.
+* **Executor Memory**: Increased by 50% if Disk Spill or high GC is detected.
+* **Executor Cores**: If utilization is low, the script recommends enabling **Dynamic Allocation** to free up unused EMR resources.
