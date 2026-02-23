@@ -79,7 +79,7 @@ class JobMetrics:
     duration_ms: int = 0
 
 
-@dataclass
+@dataclass 
 class SQLQueryMetrics:
     query_id: int = 0
     description: str = ""
@@ -127,16 +127,16 @@ class AnalysisReport:
     duration_human: str = ""
     spark_version: str = ""
     user: str = ""
-
+    
     executor_metrics: ExecutorMetrics = field(default_factory=ExecutorMetrics)
     stage_metrics: list = field(default_factory=list)
     job_metrics: list = field(default_factory=list)
     sql_metrics: list = field(default_factory=list)
     configuration: ConfigurationAnalysis = field(default_factory=ConfigurationAnalysis)
-
+    
     issues: list = field(default_factory=list)
     recommendations: dict = field(default_factory=dict)
-
+    
     analysis_timestamp: str = ""
 
 
@@ -146,13 +146,13 @@ class AnalysisReport:
 
 class SparkHistoryServerClient:
     """Client for Spark History Server REST API"""
-
+    
     def __init__(self, base_url: str, timeout: int = 30):
         self.base_url = base_url.rstrip('/')
         self.api_base = f"{self.base_url}/api/v1"
         self.timeout = timeout
         self.session = requests.Session()
-
+    
     def _get(self, endpoint: str) -> dict:
         """Make GET request to API endpoint"""
         url = f"{self.api_base}{endpoint}"
@@ -163,35 +163,35 @@ class SparkHistoryServerClient:
         except requests.exceptions.RequestException as e:
             print(f"Error fetching {url}: {e}")
             raise
-
+    
     def list_applications(self) -> list:
         """List all applications"""
         return self._get("/applications")
-
+    
     def get_application(self, app_id: str) -> dict:
         """Get application details"""
         return self._get(f"/applications/{app_id}")
-
+    
     def get_jobs(self, app_id: str) -> list:
         """Get all jobs for an application"""
         return self._get(f"/applications/{app_id}/jobs")
-
+    
     def get_stages(self, app_id: str) -> list:
         """Get all stages for an application"""
         return self._get(f"/applications/{app_id}/stages")
-
+    
     def get_stage_detail(self, app_id: str, stage_id: int, attempt_id: int = 0) -> dict:
         """Get detailed stage information including task metrics"""
         return self._get(f"/applications/{app_id}/stages/{stage_id}/{attempt_id}")
-
+    
     def get_executors(self, app_id: str) -> list:
         """Get executor information"""
         return self._get(f"/applications/{app_id}/allexecutors")
-
+    
     def get_environment(self, app_id: str) -> dict:
         """Get environment and configuration"""
         return self._get(f"/applications/{app_id}/environment")
-
+    
     def get_sql_queries(self, app_id: str) -> list:
         """Get SQL query information (Spark 2.3+)"""
         try:
@@ -206,16 +206,16 @@ class SparkHistoryServerClient:
 
 class SparkApplicationAnalyzer:
     """Analyzes Spark application metrics and provides recommendations"""
-
+    
     def __init__(self, client: SparkHistoryServerClient, app_id: str):
         self.client = client
         self.app_id = app_id
         self.report = AnalysisReport()
-
+    
     def analyze(self) -> AnalysisReport:
         """Run complete analysis"""
         print(f"Analyzing application: {self.app_id}")
-
+        
         self._analyze_application_info()
         self._analyze_environment()
         self._analyze_executors()
@@ -224,22 +224,22 @@ class SparkApplicationAnalyzer:
         self._analyze_sql()
         self._identify_issues()
         self._generate_recommendations()
-
+        
         self.report.analysis_timestamp = datetime.now().isoformat()
         return self.report
-
+    
     def _analyze_application_info(self):
         """Analyze basic application information"""
         print("  - Fetching application info...")
         app_info = self.client.get_application(self.app_id)
-
+        
         # Handle both single app and list response
         if isinstance(app_info, list):
             app_info = app_info[0] if app_info else {}
-
+        
         attempts = app_info.get('attempts', [{}])
         latest_attempt = attempts[0] if attempts else {}
-
+        
         self.report.application_id = self.app_id
         self.report.application_name = app_info.get('name', 'Unknown')
         self.report.start_time = latest_attempt.get('startTime', '')
@@ -248,22 +248,22 @@ class SparkApplicationAnalyzer:
         self.report.duration_human = self._format_duration(self.report.duration_ms)
         self.report.spark_version = latest_attempt.get('sparkVersion', 'Unknown')
         self.report.user = latest_attempt.get('sparkUser', 'Unknown')
-
+    
     def _analyze_environment(self):
         """Analyze Spark configuration"""
         print("  - Fetching environment/configuration...")
         env = self.client.get_environment(self.app_id)
-
+        
         spark_props = {}
         for prop in env.get('sparkProperties', []):
             if len(prop) >= 2:
                 spark_props[prop[0]] = prop[1]
-
+        
         config = self.report.configuration
         config.executor_memory = spark_props.get('spark.executor.memory', 'Not Set')
         config.executor_cores = spark_props.get('spark.executor.cores', 'Not Set')
         config.executor_instances = spark_props.get('spark.executor.instances', 'Dynamic')
-        config.executor_memory_overhead = spark_props.get('spark.executor.memoryOverhead',
+        config.executor_memory_overhead = spark_props.get('spark.executor.memoryOverhead', 
                                                           spark_props.get('spark.yarn.executor.memoryOverhead', 'Auto'))
         config.driver_memory = spark_props.get('spark.driver.memory', 'Not Set')
         config.shuffle_partitions = spark_props.get('spark.sql.shuffle.partitions', '200')
@@ -273,34 +273,34 @@ class SparkApplicationAnalyzer:
         config.memory_fraction = spark_props.get('spark.memory.fraction', '0.6')
         config.storage_fraction = spark_props.get('spark.memory.storageFraction', '0.5')
         config.all_configs = spark_props
-
+    
     def _analyze_executors(self):
         """Analyze executor metrics"""
         print("  - Fetching executor metrics...")
         executors = self.client.get_executors(self.app_id)
-
+        
         metrics = self.report.executor_metrics
-
+        
         for exec_info in executors:
             exec_id = exec_info.get('id', '')
             is_driver = exec_id == 'driver'
-
+            
             if not is_driver:
                 metrics.total_executors += 1
                 if exec_info.get('isActive', False):
                     metrics.active_executors += 1
-
+                
                 metrics.total_cores += exec_info.get('totalCores', 0)
-
+                
                 # Memory (maxMemory is in bytes)
                 max_mem = exec_info.get('maxMemory', 0)
                 metrics.total_memory_mb += max_mem // (1024 * 1024)
-
+                
                 # Track peak memory usage
                 mem_used = exec_info.get('memoryUsed', 0)
                 if mem_used > metrics.max_memory_used_bytes:
                     metrics.max_memory_used_bytes = mem_used
-
+            
             # Aggregate metrics (include driver for totals)
             metrics.total_task_time_ms += exec_info.get('totalDuration', 0)
             metrics.total_gc_time_ms += exec_info.get('totalGCTime', 0)
@@ -310,11 +310,11 @@ class SparkApplicationAnalyzer:
             metrics.total_shuffle_write_bytes += exec_info.get('totalShuffleWrite', 0)
             metrics.total_tasks_completed += exec_info.get('totalTasks', 0)
             metrics.total_tasks_failed += exec_info.get('failedTasks', 0)
-
+            
             # Memory/disk spill from memory metrics
             mem_metrics = exec_info.get('memoryMetrics', {})
             # Note: spill metrics are at task level, aggregated from stages
-
+            
             # Store executor details
             metrics.executor_details.append({
                 'id': exec_id,
@@ -328,20 +328,20 @@ class SparkApplicationAnalyzer:
                 'tasks_completed': exec_info.get('totalTasks', 0),
                 'tasks_failed': exec_info.get('failedTasks', 0),
             })
-
+        
         # Calculate GC ratio
         if metrics.total_task_time_ms > 0:
             metrics.gc_time_ratio = (metrics.total_gc_time_ms / metrics.total_task_time_ms) * 100
-
+    
     def _analyze_jobs(self):
         """Analyze job metrics"""
         print("  - Fetching job metrics...")
         jobs = self.client.get_jobs(self.app_id)
-
+        
         for job in jobs:
             submission_time = job.get('submissionTime', '')
             completion_time = job.get('completionTime', '')
-
+            
             # Calculate duration
             duration = 0
             if submission_time and completion_time:
@@ -351,7 +351,7 @@ class SparkApplicationAnalyzer:
                     duration = int((end - start).total_seconds() * 1000)
                 except:
                     pass
-
+            
             job_metrics = JobMetrics(
                 job_id=job.get('jobId', 0),
                 name=job.get('name', ''),
@@ -363,46 +363,46 @@ class SparkApplicationAnalyzer:
                 duration_ms=duration
             )
             self.report.job_metrics.append(job_metrics)
-
+    
     def _analyze_stages(self):
         """Analyze stage metrics with task-level details"""
         print("  - Fetching stage metrics...")
         stages = self.client.get_stages(self.app_id)
-
+        
         total_disk_spill = 0
         total_memory_spill = 0
-
+        
         for stage in stages:
             stage_id = stage.get('stageId', 0)
             attempt_id = stage.get('attemptId', 0)
-
+            
             # Get detailed stage info for task metrics
             try:
                 stage_detail = self.client.get_stage_detail(self.app_id, stage_id, attempt_id)
             except:
                 stage_detail = stage
-
+            
             # Extract task metrics quantiles if available
             task_quantiles = stage_detail.get('taskMetricsDistributions', {})
             executor_run_time = task_quantiles.get('executorRunTime', [0, 0, 0, 0, 0])
-
+            
             # quantiles are typically [min, 25th, median, 75th, max]
             task_time_min = int(executor_run_time[0]) if len(executor_run_time) > 0 else 0
             task_time_p25 = int(executor_run_time[1]) if len(executor_run_time) > 1 else 0
             task_time_median = int(executor_run_time[2]) if len(executor_run_time) > 2 else 0
             task_time_p75 = int(executor_run_time[3]) if len(executor_run_time) > 3 else 0
             task_time_max = int(executor_run_time[4]) if len(executor_run_time) > 4 else 0
-
+            
             # Calculate skew ratio
             skew_ratio = 0.0
             if task_time_median > 0:
                 skew_ratio = task_time_max / task_time_median
-
+            
             disk_spill = stage.get('diskBytesSpilled', 0)
             memory_spill = stage.get('memoryBytesSpilled', 0)
             total_disk_spill += disk_spill
             total_memory_spill += memory_spill
-
+            
             stage_metrics = StageMetrics(
                 stage_id=stage_id,
                 stage_name=stage.get('name', ''),
@@ -425,16 +425,16 @@ class SparkApplicationAnalyzer:
                 task_metrics=task_quantiles
             )
             self.report.stage_metrics.append(stage_metrics)
-
+        
         # Update executor metrics with spill totals
         self.report.executor_metrics.total_disk_spill_bytes = total_disk_spill
         self.report.executor_metrics.total_memory_spill_bytes = total_memory_spill
-
+    
     def _analyze_sql(self):
         """Analyze SQL query metrics"""
         print("  - Fetching SQL metrics...")
         sql_queries = self.client.get_sql_queries(self.app_id)
-
+        
         for query in sql_queries:
             sql_metrics = SQLQueryMetrics(
                 query_id=query.get('id', 0),
@@ -446,82 +446,138 @@ class SparkApplicationAnalyzer:
                 failed_jobs=query.get('failedJobs', 0)
             )
             self.report.sql_metrics.append(sql_metrics)
-
+    
     def _identify_issues(self):
-        """Identifies performance bottlenecks and automated stuck-job patterns"""
+        """Identify performance issues based on metrics"""
         print("  - Identifying issues...")
         issues = []
         exec_metrics = self.report.executor_metrics
         config = self.report.configuration
-
-        # 1. STRAGGLER / STUCK TASK DETECTION
-        for stage in self.report.stage_metrics:
-            if stage.task_time_median_ms > 5000:
-                if stage.task_time_max_ms > (stage.task_time_median_ms * 5):
-                    issues.append(Issue(
-                        severity="HIGH",
-                        category="SKEW",
-                        description=f"Straggler in Stage {stage.stage_id}: Max task is {stage.skew_ratio:.1f}x slower than median.",
-                        current_value=f"Max: {stage.task_time_max_ms / 1000}s",
-                        recommendation="Check for data skew. Enable AQE Skew Join or salt skewed keys.",
-                        config_key="spark.sql.adaptive.skewJoin.enabled",
-                        suggested_value="true"
-                    ))
-
-        # 2. OPTIMUM SHUFFLE PARTITION CALCULATION
-        # Goal: Aim for ~128MB to 200MB per partition
-        total_shuffle_bytes = exec_metrics.total_shuffle_read_bytes
-        if total_shuffle_bytes > 0:
-            target_partition_size = 134217728  # 128MB
-            optimum_partitions = max(int(total_shuffle_bytes / target_partition_size), 20)
-            current_partitions = int(config.shuffle_partitions) if config.shuffle_partitions.isdigit() else 200
-
-            if abs(optimum_partitions - current_partitions) / current_partitions > 0.2:
-                issues.append(Issue(
-                    severity="MEDIUM",
-                    category="PARALLELISM",
-                    description=f"Suboptimal shuffle partitions. Current size per partition is too {'large' if optimum_partitions > current_partitions else 'small'}.",
-                    current_value=f"{current_partitions} partitions",
-                    recommendation=f"Adjust partitions to match shuffle data size (~{total_shuffle_bytes / (1024 ** 3):.2f} GB total).",
-                    config_key="spark.sql.shuffle.partitions",
-                    suggested_value=str(optimum_partitions)
-                ))
-
-        # 3. MEMORY & CORE OPTIMIZATION
-        # If GC time is > 10% or Disk Spill > 0, we need more memory or fewer cores
-        if exec_metrics.gc_time_ratio > 10 or exec_metrics.total_disk_spill_bytes > 0:
-            suggested_mem = self._suggest_memory_increase(config.executor_memory)
+        
+        # GC Time Issues
+        if exec_metrics.gc_time_ratio > 10:
+            severity = "HIGH" if exec_metrics.gc_time_ratio > 20 else "MEDIUM"
             issues.append(Issue(
-                severity="HIGH",
-                category="MEMORY",
-                description="Memory pressure detected (High GC or Disk Spill).",
-                current_value=f"GC: {exec_metrics.gc_time_ratio:.1f}%, Spill: {exec_metrics.total_disk_spill_bytes / (1024 ** 2):.1f}MB",
-                recommendation="Increase executor memory to reduce spill and GC overhead.",
+                severity=severity,
+                category="GC",
+                description=f"High GC time: {exec_metrics.gc_time_ratio:.1f}% of task time spent in garbage collection",
+                current_value=f"{exec_metrics.gc_time_ratio:.1f}%",
+                recommendation="Increase executor memory or reduce executor cores to lower memory pressure",
                 config_key="spark.executor.memory",
-                suggested_value=suggested_mem
+                suggested_value=self._suggest_memory_increase(config.executor_memory)
             ))
-
-        # 4. RESOURCE STARVATION (Active Job but Idle Executors)
-        if self.report.duration_ms > 600000:
-            utilization = (exec_metrics.total_task_time_ms / (exec_metrics.total_cores * self.report.duration_ms)) * 100
-            if utilization < 15:
+        
+        # Disk Spill Issues
+        if exec_metrics.total_disk_spill_bytes > 0:
+            spill_gb = exec_metrics.total_disk_spill_bytes / (1024**3)
+            severity = "HIGH" if spill_gb > 10 else "MEDIUM" if spill_gb > 1 else "LOW"
+            issues.append(Issue(
+                severity=severity,
+                category="MEMORY",
+                description=f"Disk spill detected: {spill_gb:.2f} GB spilled to disk",
+                current_value=f"{spill_gb:.2f} GB",
+                recommendation="Increase executor memory to avoid disk spill, which severely impacts performance",
+                config_key="spark.executor.memory",
+                suggested_value=self._suggest_memory_increase(config.executor_memory)
+            ))
+        
+        # Task Skew Issues
+        skewed_stages = [s for s in self.report.stage_metrics if s.skew_ratio > 3 and s.num_tasks > 1]
+        if skewed_stages:
+            worst_skew = max(s.skew_ratio for s in skewed_stages)
+            severity = "HIGH" if worst_skew > 10 else "MEDIUM"
+            issues.append(Issue(
+                severity=severity,
+                category="SKEW",
+                description=f"Task skew detected in {len(skewed_stages)} stages. Worst skew ratio: {worst_skew:.1f}x",
+                current_value=f"{worst_skew:.1f}x (max/median task time)",
+                recommendation="Enable Adaptive Query Execution (AQE) for automatic skew handling, or manually salt skewed keys",
+                config_key="spark.sql.adaptive.enabled",
+                suggested_value="true"
+            ))
+        
+        # Shuffle Partition Issues
+        shuffle_partitions = int(config.shuffle_partitions) if config.shuffle_partitions.isdigit() else 200
+        total_shuffle_bytes = exec_metrics.total_shuffle_read_bytes + exec_metrics.total_shuffle_write_bytes
+        
+        if total_shuffle_bytes > 0:
+            avg_partition_size_mb = (total_shuffle_bytes / shuffle_partitions) / (1024 * 1024)
+            
+            if avg_partition_size_mb > 500:  # Partitions too large
                 issues.append(Issue(
                     severity="MEDIUM",
                     category="PARALLELISM",
-                    description="Resource Starvation: Low core utilization.",
-                    current_value=f"{utilization:.1f}% utilization",
-                    recommendation="Check YARN Queue capacity or reduce executor cores if tasks are blocking.",
-                    config_key="spark.dynamicAllocation.enabled",
+                    description=f"Shuffle partitions may be too few. Avg partition size: {avg_partition_size_mb:.0f} MB",
+                    current_value=f"{shuffle_partitions} partitions, ~{avg_partition_size_mb:.0f} MB each",
+                    recommendation="Increase shuffle partitions to achieve ~128-200 MB per partition",
+                    config_key="spark.sql.shuffle.partitions",
+                    suggested_value=str(int(total_shuffle_bytes / (150 * 1024 * 1024)))  # Target 150MB
+                ))
+            elif avg_partition_size_mb < 10 and shuffle_partitions > 100:  # Partitions too small
+                issues.append(Issue(
+                    severity="LOW",
+                    category="PARALLELISM",
+                    description=f"Shuffle partitions may be too many. Avg partition size: {avg_partition_size_mb:.1f} MB",
+                    current_value=f"{shuffle_partitions} partitions, ~{avg_partition_size_mb:.1f} MB each",
+                    recommendation="Reduce shuffle partitions or enable AQE to coalesce small partitions",
+                    config_key="spark.sql.shuffle.partitions",
+                    suggested_value=str(max(int(total_shuffle_bytes / (128 * 1024 * 1024)), 20))
+                ))
+        
+        # Small Tasks Issue
+        small_task_stages = [s for s in self.report.stage_metrics 
+                           if s.task_time_median_ms > 0 and s.task_time_median_ms < 100 and s.num_tasks > 100]
+        if small_task_stages:
+            issues.append(Issue(
+                severity="LOW",
+                category="PARALLELISM",
+                description=f"{len(small_task_stages)} stages have very small tasks (<100ms median)",
+                current_value=f"Median task time < 100ms",
+                recommendation="Reduce parallelism or increase data per partition. Enable AQE for automatic coalescing",
+                config_key="spark.sql.adaptive.coalescePartitions.enabled",
+                suggested_value="true"
+            ))
+        
+        # AQE not enabled (Spark 3.0+)
+        if config.adaptive_enabled.lower() != 'true':
+            spark_version = self.report.spark_version
+            if spark_version and spark_version >= '3':
+                issues.append(Issue(
+                    severity="MEDIUM",
+                    category="CONFIGURATION",
+                    description="Adaptive Query Execution (AQE) is not enabled",
+                    current_value="false",
+                    recommendation="Enable AQE for automatic optimization of shuffle partitions, join strategies, and skew handling",
+                    config_key="spark.sql.adaptive.enabled",
                     suggested_value="true"
                 ))
-
+        
+        # Failed tasks
+        if exec_metrics.total_tasks_failed > 0:
+            failure_rate = (exec_metrics.total_tasks_failed / 
+                          (exec_metrics.total_tasks_completed + exec_metrics.total_tasks_failed)) * 100
+            severity = "HIGH" if failure_rate > 5 else "MEDIUM" if failure_rate > 1 else "LOW"
+            issues.append(Issue(
+                severity=severity,
+                category="RELIABILITY",
+                description=f"{exec_metrics.total_tasks_failed} tasks failed ({failure_rate:.1f}% failure rate)",
+                current_value=f"{exec_metrics.total_tasks_failed} failed tasks",
+                recommendation="Check executor logs for OOM errors or data issues. Consider increasing memory overhead",
+                config_key="spark.executor.memoryOverhead",
+                suggested_value=self._suggest_overhead(config.executor_memory)
+            ))
+        
+        # Sort issues by severity
+        severity_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+        issues.sort(key=lambda x: severity_order.get(x.severity, 3))
+        
         self.report.issues = issues
-
+    
     def _generate_recommendations(self):
         """Generate configuration recommendations"""
         print("  - Generating recommendations...")
         recommendations = {}
-
+        
         # Collect all suggested config changes
         for issue in self.report.issues:
             if issue.config_key and issue.suggested_value:
@@ -532,11 +588,11 @@ class SparkApplicationAnalyzer:
                         'suggested': issue.suggested_value,
                         'reason': issue.description
                     }
-
+        
         # Add general recommendations based on analysis
         config = self.report.configuration
         exec_metrics = self.report.executor_metrics
-
+        
         # Memory recommendation
         if 'spark.executor.memory' not in recommendations:
             current_mem = config.executor_memory
@@ -546,9 +602,9 @@ class SparkApplicationAnalyzer:
                     'suggested': self._suggest_memory_increase(current_mem),
                     'reason': 'Increase memory to reduce GC pressure and disk spill'
                 }
-
+        
         self.report.recommendations = recommendations
-
+    
     def _get_current_config(self, key: str) -> str:
         """Get current configuration value"""
         config = self.report.configuration
@@ -561,12 +617,12 @@ class SparkApplicationAnalyzer:
             'spark.sql.adaptive.enabled': config.adaptive_enabled,
         }
         return config_map.get(key, config.all_configs.get(key, 'Not Set'))
-
+    
     def _suggest_memory_increase(self, current: str) -> str:
         """Suggest increased memory value"""
         if not current or current == 'Not Set':
             return '4g'
-
+        
         # Parse current value
         current = current.lower().strip()
         if current.endswith('g'):
@@ -576,12 +632,12 @@ class SparkApplicationAnalyzer:
             value = int(current[:-1])
             return f"{int(value * 1.5)}m"
         return '4g'
-
+    
     def _suggest_overhead(self, executor_memory: str) -> str:
         """Suggest memory overhead (typically 10-15% of executor memory)"""
         if not executor_memory or executor_memory == 'Not Set':
             return '1g'
-
+        
         executor_memory = executor_memory.lower().strip()
         if executor_memory.endswith('g'):
             value = int(executor_memory[:-1])
@@ -592,22 +648,22 @@ class SparkApplicationAnalyzer:
             overhead = max(int(value * 0.15), 384)
             return f"{overhead}m"
         return '1g'
-
+    
     @staticmethod
     def _format_duration(ms: int) -> str:
         """Format milliseconds to human readable duration"""
         if ms < 1000:
             return f"{ms}ms"
-
+        
         seconds = ms // 1000
         if seconds < 60:
             return f"{seconds}s"
-
+        
         minutes = seconds // 60
         seconds = seconds % 60
         if minutes < 60:
             return f"{minutes}m {seconds}s"
-
+        
         hours = minutes // 60
         minutes = minutes % 60
         return f"{hours}h {minutes}m {seconds}s"
@@ -619,18 +675,18 @@ class SparkApplicationAnalyzer:
 
 class ReportGenerator:
     """Generates human-readable reports from analysis"""
-
+    
     @staticmethod
     def generate_text_report(report: AnalysisReport) -> str:
         """Generate text report"""
         lines = []
-
+        
         # Header
         lines.append("=" * 80)
         lines.append("SPARK APPLICATION ANALYSIS REPORT")
         lines.append("=" * 80)
         lines.append("")
-
+        
         # Application Info
         lines.append("APPLICATION INFORMATION")
         lines.append("-" * 40)
@@ -642,7 +698,7 @@ class ReportGenerator:
         lines.append(f"  Start Time:       {report.start_time}")
         lines.append(f"  End Time:         {report.end_time}")
         lines.append("")
-
+        
         # Current Configuration
         config = report.configuration
         lines.append("CURRENT CONFIGURATION")
@@ -656,7 +712,7 @@ class ReportGenerator:
         lines.append(f"  Dynamic Allocation:   {config.dynamic_allocation}")
         lines.append(f"  AQE Enabled:          {config.adaptive_enabled}")
         lines.append("")
-
+        
         # Executor Metrics
         exec_metrics = report.executor_metrics
         lines.append("EXECUTOR METRICS")
@@ -667,45 +723,35 @@ class ReportGenerator:
         lines.append(f"  Tasks Completed:      {exec_metrics.total_tasks_completed:,}")
         lines.append(f"  Tasks Failed:         {exec_metrics.total_tasks_failed:,}")
         lines.append("")
-        lines.append(
-            f"  Total Task Time:      {ReportGenerator._format_bytes_or_time(exec_metrics.total_task_time_ms, 'time')}")
-        lines.append(
-            f"  Total GC Time:        {ReportGenerator._format_bytes_or_time(exec_metrics.total_gc_time_ms, 'time')}")
+        lines.append(f"  Total Task Time:      {ReportGenerator._format_bytes_or_time(exec_metrics.total_task_time_ms, 'time')}")
+        lines.append(f"  Total GC Time:        {ReportGenerator._format_bytes_or_time(exec_metrics.total_gc_time_ms, 'time')}")
         lines.append(f"  GC Time Ratio:        {exec_metrics.gc_time_ratio:.2f}%")
         lines.append("")
-        lines.append(
-            f"  Total Input:          {ReportGenerator._format_bytes_or_time(exec_metrics.total_input_bytes, 'bytes')}")
-        lines.append(
-            f"  Total Output:         {ReportGenerator._format_bytes_or_time(exec_metrics.total_output_bytes, 'bytes')}")
-        lines.append(
-            f"  Total Shuffle Read:   {ReportGenerator._format_bytes_or_time(exec_metrics.total_shuffle_read_bytes, 'bytes')}")
-        lines.append(
-            f"  Total Shuffle Write:  {ReportGenerator._format_bytes_or_time(exec_metrics.total_shuffle_write_bytes, 'bytes')}")
-        lines.append(
-            f"  Total Disk Spill:     {ReportGenerator._format_bytes_or_time(exec_metrics.total_disk_spill_bytes, 'bytes')}")
-        lines.append(
-            f"  Total Memory Spill:   {ReportGenerator._format_bytes_or_time(exec_metrics.total_memory_spill_bytes, 'bytes')}")
+        lines.append(f"  Total Input:          {ReportGenerator._format_bytes_or_time(exec_metrics.total_input_bytes, 'bytes')}")
+        lines.append(f"  Total Output:         {ReportGenerator._format_bytes_or_time(exec_metrics.total_output_bytes, 'bytes')}")
+        lines.append(f"  Total Shuffle Read:   {ReportGenerator._format_bytes_or_time(exec_metrics.total_shuffle_read_bytes, 'bytes')}")
+        lines.append(f"  Total Shuffle Write:  {ReportGenerator._format_bytes_or_time(exec_metrics.total_shuffle_write_bytes, 'bytes')}")
+        lines.append(f"  Total Disk Spill:     {ReportGenerator._format_bytes_or_time(exec_metrics.total_disk_spill_bytes, 'bytes')}")
+        lines.append(f"  Total Memory Spill:   {ReportGenerator._format_bytes_or_time(exec_metrics.total_memory_spill_bytes, 'bytes')}")
         lines.append("")
-
+        
         # Stage Summary
         if report.stage_metrics:
             lines.append("STAGE SUMMARY (Top 10 by Duration)")
             lines.append("-" * 40)
             sorted_stages = sorted(report.stage_metrics, key=lambda s: s.duration_ms, reverse=True)[:10]
-
-            lines.append(
-                f"  {'ID':<6} {'Tasks':<8} {'Duration':<12} {'Skew':<8} {'Shuffle Read':<15} {'Disk Spill':<15}")
-            lines.append(f"  {'-' * 6} {'-' * 8} {'-' * 12} {'-' * 8} {'-' * 15} {'-' * 15}")
-
+            
+            lines.append(f"  {'ID':<6} {'Tasks':<8} {'Duration':<12} {'Skew':<8} {'Shuffle Read':<15} {'Disk Spill':<15}")
+            lines.append(f"  {'-'*6} {'-'*8} {'-'*12} {'-'*8} {'-'*15} {'-'*15}")
+            
             for stage in sorted_stages:
                 duration = ReportGenerator._format_bytes_or_time(stage.duration_ms, 'time')
                 skew = f"{stage.skew_ratio:.1f}x" if stage.skew_ratio > 0 else "N/A"
                 shuffle = ReportGenerator._format_bytes_or_time(stage.shuffle_read_bytes, 'bytes')
                 spill = ReportGenerator._format_bytes_or_time(stage.disk_spill_bytes, 'bytes')
-                lines.append(
-                    f"  {stage.stage_id:<6} {stage.num_tasks:<8} {duration:<12} {skew:<8} {shuffle:<15} {spill:<15}")
+                lines.append(f"  {stage.stage_id:<6} {stage.num_tasks:<8} {duration:<12} {skew:<8} {shuffle:<15} {spill:<15}")
             lines.append("")
-
+        
         # Issues
         if report.issues:
             lines.append("ISSUES IDENTIFIED")
@@ -723,7 +769,7 @@ class ReportGenerator:
             lines.append("-" * 40)
             lines.append("  No significant issues detected.")
             lines.append("")
-
+        
         # Recommendations
         if report.recommendations:
             lines.append("RECOMMENDED CONFIGURATION CHANGES")
@@ -734,7 +780,7 @@ class ReportGenerator:
                 lines.append(f"    Suggested: {rec['suggested']}")
                 lines.append(f"    Reason:    {rec['reason']}")
                 lines.append("")
-
+            
             # Generate spark-submit snippet
             lines.append("SPARK-SUBMIT SNIPPET")
             lines.append("-" * 40)
@@ -743,13 +789,13 @@ class ReportGenerator:
             for config_key, rec in report.recommendations.items():
                 lines.append(f"    --conf {config_key}={rec['suggested']} \\")
             lines.append("")
-
+        
         lines.append("=" * 80)
         lines.append(f"Report generated: {report.analysis_timestamp}")
         lines.append("=" * 80)
-
+        
         return "\n".join(lines)
-
+    
     @staticmethod
     def _format_bytes_or_time(value: int, value_type: str) -> str:
         """Format bytes or milliseconds to human readable"""
@@ -783,7 +829,6 @@ class ReportGenerator:
 
 class DataclassJSONEncoder(json.JSONEncoder):
     """JSON Encoder that handles dataclasses"""
-
     def default(self, obj):
         if hasattr(obj, '__dataclass_fields__'):
             return asdict(obj)
@@ -805,19 +850,19 @@ Examples:
   %(prog)s --url http://spark-history:18080 --list
         """
     )
-
+    
     parser.add_argument('--url', required=True, help='Spark History Server URL (e.g., http://localhost:18080)')
     parser.add_argument('--app-id', help='Application ID to analyze')
     parser.add_argument('--list', action='store_true', help='List all applications')
     parser.add_argument('--output', help='Output file for JSON report (optional)')
     parser.add_argument('--json', action='store_true', help='Output JSON to stdout instead of text')
     parser.add_argument('--timeout', type=int, default=30, help='API request timeout in seconds')
-
+    
     args = parser.parse_args()
-
+    
     # Create client
     client = SparkHistoryServerClient(args.url, timeout=args.timeout)
-
+    
     # List applications mode
     if args.list:
         print("Fetching applications...")
@@ -834,33 +879,33 @@ Examples:
             duration = latest.get('duration', 0)
             duration_str = SparkApplicationAnalyzer._format_duration(duration)
             print(f"{app_id:<45} {name:<30} {status:<12} {duration_str}")
-
+        
         if len(apps) > 50:
             print(f"\n... and {len(apps) - 50} more applications")
         return
-
+    
     # Analyze application mode
     if not args.app_id:
         parser.error("--app-id is required for analysis (use --list to see available applications)")
-
+    
     try:
         # Run analysis
         analyzer = SparkApplicationAnalyzer(client, args.app_id)
         report = analyzer.analyze()
-
+        
         # Generate output
         if args.json:
             print(json.dumps(report, cls=DataclassJSONEncoder, indent=2))
         else:
             text_report = ReportGenerator.generate_text_report(report)
             print(text_report)
-
+        
         # Save to file if requested
         if args.output:
             with open(args.output, 'w') as f:
                 json.dump(report, f, cls=DataclassJSONEncoder, indent=2)
             print(f"\nJSON report saved to: {args.output}")
-
+            
     except requests.exceptions.ConnectionError:
         print(f"Error: Could not connect to Spark History Server at {args.url}")
         print("Please check that the URL is correct and the server is running.")
