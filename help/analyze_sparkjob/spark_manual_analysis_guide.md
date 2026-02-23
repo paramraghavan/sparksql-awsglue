@@ -554,4 +554,3 @@ spark-submit \
 | Failed Tasks | 0 | < 1% | > 1% |
 | Task Duration | 0.5-2 min | 10s-30s or 2-5 min | < 10s or > 5 min |
 | Partition Size | 100-200 MB | 50-500 MB | < 10 MB or > 1 GB |
-| Partition Size | 100-200 MB | 50-500 MB | < 10 MB or > 1 GB |
