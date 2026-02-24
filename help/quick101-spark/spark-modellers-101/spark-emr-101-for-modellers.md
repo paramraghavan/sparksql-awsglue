@@ -14,6 +14,10 @@
 - Node3/Worker3: 1 executor [4 Cores, 16 GB]
 - Node4/Worker4: 1 executor [4 Cores, 16 GB]
 
+> Node1/Worker1 with one executor has 4 cores , which means each  core runs a task in separate thread. The memeory allocated to each task is flexible. 
+> While you have 4 cores, "1 task per core" is a logical limit for processing, but memory is not physically hard-wired to specific cores. Instead, it is managed as a shared pool. How it's allocated: If you are running 4 tasks (one per core), they all dip into this pool.The "Fair Share" Rule: Most executors try to ensure each task gets at least $1/N$ of the available execution memory (where $N$ is the number of active tasks). If Task A needs more and Task B isn't using its share, Task A can often "borrow" the extra space
+ 
+
 > It could have been Node7 instead of Node1 and Node 10 instead of Node 4
 
 
