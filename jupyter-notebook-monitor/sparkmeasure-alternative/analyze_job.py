@@ -1,241 +1,64 @@
+#!/usr/bin/env python3
 """
-sparkmonitor.py  —  Spark performance monitor for Jupyter on EMR
-────────────────────────────────────────────────────────────────
-Zero-dependency: uses Spark's built-in REST API (port 4040).
-No pip install, no JAR, no cluster changes needed.
+analyze_job.py — Analyze completed Spark jobs from History Server
+═══════════════════════════════════════════════════════════════════
 
-HOW TO USE
-──────────
-1. Add this as Cell 1 of your notebook:
+Analyze past Spark job metrics and performance issues using the
+Spark History Server. No need to run %%measure — just pick a job
+and analyze it after it completes.
 
-       %run s3://your-bucket/tools/sparkmonitor.py
+USAGE
+─────
+In Jupyter:
+    from analyze_job import analyze_job
+    analyze_job("app-20240115-0001")  # Analyze by app ID
+    analyze_job()                      # Show recent jobs
 
-2. Put  %%measure  at the top of any cell you want to profile:
-
-       %%measure
-       df = spark.read.parquet("s3://...")
-       df.groupBy("region").count().show()
-
-3. Read the report that appears after the cell runs.
-   Any yellow or red rows include a plain-English fix you can copy.
+Command line:
+    python analyze_job.py --app-id app-20240115-0001
+    python analyze_job.py --recent   # Show last 10 jobs
 """
 
 import json
-import time
 import urllib.request
-from IPython.core.magic import register_cell_magic
+import sys
 from IPython.display import display, HTML
 
 # ═══════════════════════════════════════════════════════════════
-#  INTERNAL — REST API helpers
+#  HISTORY SERVER API
 # ═══════════════════════════════════════════════════════════════
 
-def _get_spark_context_info():
-    """Extract Spark configuration from sparkContext."""
-    try:
-        sc = None
-        # Get sparkContext from user's environment
-        if 'spark' in dir():
-            sc = spark.sparkContext
-        elif 'sc' in dir():
-            sc = sc
-
-        if not sc:
-            return None, None, None
-
-        conf = sc.getConf()
-        app_id = sc.applicationId
-
-        if not app_id:
-            return None, None, None
-
-        # Get YARN RM host from config
-        yarn_rm_host = conf.get("spark.yarn.resourceManager.hostname")
-        if not yarn_rm_host:
-            master = conf.get("spark.master", "")
-            if "yarn" in master.lower():
-                yarn_rm_host = "localhost"
-
-        return app_id, yarn_rm_host, conf
-    except Exception:
-        pass
-
-    return None, None, None
-
-
-def _get_yarn_spark_ui(app_id, yarn_rm_host):
-    """Get Spark UI info from YARN Resource Manager (for running apps)."""
-    if not app_id or not yarn_rm_host:
-        return None, None
-
-    try:
-        yarn_rm_port = 8088  # YARN RM default port
-        yarn_url = f"http://{yarn_rm_host}:{yarn_rm_port}/ws/v1/cluster/apps/{app_id}"
-        with urllib.request.urlopen(yarn_url, timeout=5) as r:
-            app_data = json.loads(r.read())
-            tracking_url = app_data.get("app", {}).get("trackingUrl", "")
-            if tracking_url and tracking_url != "UNDEFINED":
-                # Parse the tracking URL (should be Spark UI URL)
-                from urllib.parse import urlparse
-                parsed = urlparse(tracking_url)
-                host = parsed.hostname or 'localhost'
-                port = parsed.port or 4040
-                return host, port
-    except Exception:
-        pass
-
-    return None, None
-
-
-def _get_history_server_info(app_id):
-    """Get Spark info from History Server (for completed or current apps).
-
-    History Server is stable and always available, even after driver exits.
-    """
-    if not app_id:
-        return None, None
-
-    # Try standard History Server location
-    history_host = "localhost"
-    history_port = 18080
-
-    try:
-        history_url = f"http://{history_host}:{history_port}/api/v1/applications/{app_id}"
-        with urllib.request.urlopen(history_url, timeout=5) as r:
-            app_data = json.loads(r.read())
-            if app_data:
-                # History Server is accessible
-                return history_host, history_port
-    except Exception:
-        pass
-
-    return None, None
-
-
-def _find_spark_port_and_host():
-    """Try to find Spark UI port and host.
-
-    Priority:
-    1. Use Spark History Server (most stable, works for live & completed jobs)
-    2. Query YARN RM for live driver location
-    3. Try sparkContext.getWebUI() directly
-    4. Fall back to localhost:4040-4045
-
-    Note: History Server reads event logs in real-time, so it works for
-    currently running jobs too, not just completed ones.
-    """
-    app_id, yarn_rm_host, conf = _get_spark_context_info()
-
-    # Try Spark History Server FIRST (stable, works for running & completed apps)
-    # History Server reads event logs in real-time, so it has live metrics
-    if app_id:
-        host, port = _get_history_server_info(app_id)
-        if host and port:
-            return host, port
-
-    # Try YARN RM (get tracking URL for live driver location)
-    if app_id and yarn_rm_host:
-        host, port = _get_yarn_spark_ui(app_id, yarn_rm_host)
-        if host and port:
-            return host, port
-
-    # Try to get Spark UI URL from sparkContext directly
-    try:
-        sc = None
-        if 'spark' in dir():
-            sc = spark.sparkContext
-        elif 'sc' in dir():
-            sc = sc
-
-        if sc:
-            try:
-                ui_url = sc._jsc.sc().getWebUI().get()
-                if ui_url:
-                    from urllib.parse import urlparse
-                    parsed = urlparse(ui_url)
-                    host = parsed.hostname or 'localhost'
-                    port = parsed.port or 4040
-                    return host, port
-            except Exception:
-                pass
-
-            # Fallback: try to get from Spark config
-            try:
-                driver_host = conf.get("spark.driver.host", "localhost") if conf else "localhost"
-                driver_port = conf.get("spark.ui.port", "4040") if conf else "4040"
-                return driver_host, int(driver_port)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    # Fall back to localhost scanning
-    for port in range(4040, 4046):
-        try:
-            urllib.request.urlopen(
-                f"http://localhost:{port}/api/v1/applications", timeout=2)
-            return "localhost", port
-        except Exception:
-            pass
-
-    return None, None
-
-
-def _get(path, host, port):
-    """Get JSON from Spark REST API."""
-    if not host or not port:
-        return None
+def _get_from_history(path, host="localhost", port=18080):
+    """Query Spark History Server REST API."""
     try:
         with urllib.request.urlopen(
                 f"http://{host}:{port}{path}", timeout=5) as r:
             return json.loads(r.read())
-    except Exception:
+    except Exception as e:
         return None
 
 
-def _get_app_id(host, port, sc=None):
-    """Get Spark application ID.
-
-    Priority:
-    1. Get directly from sparkContext.applicationId (most reliable)
-    2. Query Spark REST API
-    """
-    # Try to get directly from sparkContext
-    if sc is None:
-        try:
-            if 'spark' in dir():
-                sc = spark.sparkContext
-            elif 'sc' in dir():
-                sc = sc
-        except Exception:
-            pass
-
-    if sc:
-        try:
-            app_id = sc.applicationId
-            if app_id:
-                return app_id
-        except Exception:
-            pass
-
-    # Fall back to REST API query
-    apps = _get("/api/v1/applications", host, port)
-    return apps[0]["id"] if apps else None
+def _get_app_info(app_id, host="localhost", port=18080):
+    """Get application info from History Server."""
+    return _get_from_history(f"/api/v1/applications/{app_id}", host, port)
 
 
-def _stage_ids_done(host, port, app_id):
-    stages = _get(f"/api/v1/applications/{app_id}/stages", host, port) or []
-    return {s["stageId"] for s in stages if s.get("status") == "COMPLETE"}
+def _get_app_stages(app_id, host="localhost", port=18080):
+    """Get all stages for a completed application."""
+    return _get_from_history(
+        f"/api/v1/applications/{app_id}/stages", host, port) or []
 
 
-def _new_stages(host, port, app_id, before):
-    stages = _get(f"/api/v1/applications/{app_id}/stages", host, port) or []
-    return [s for s in stages
-            if s.get("status") == "COMPLETE" and s["stageId"] not in before]
+def _list_recent_apps(limit=10, host="localhost", port=18080):
+    """List recent applications from History Server."""
+    apps_data = _get_from_history("/api/v1/applications", host, port)
+    if not apps_data:
+        return []
+    return apps_data[:limit]
 
 
 # ═══════════════════════════════════════════════════════════════
-#  INTERNAL — Formatters
+#  METRICS & FORMATTING (shared with sparkmonitor.py)
 # ═══════════════════════════════════════════════════════════════
 
 def _fmt_bytes(b):
@@ -262,20 +85,10 @@ def _fmt_elapsed(s):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  ADVICE ENGINE
-#  Each entry is one issue the modeller might see.
-#
-#  trigger  — lambda(totals_dict, elapsed_seconds) → bool
-#  level    — "warn" or "error"
-#  title    — short heading in plain English
-#  what     — what happened (one sentence, may use {subs})
-#  why      — why it slows things down or risks the cluster
-#  fix      — what the modeller should do (plain text)
-#  code     — copy-paste code snippet shown in a dark code box
+#  ADVICE ENGINE (copied from sparkmonitor.py)
 # ═══════════════════════════════════════════════════════════════
 
 _ADVICE = [
-
     dict(
         trigger = lambda t, e: t["diskBytesSpilled"] > 0,
         level   = "error",
@@ -395,36 +208,6 @@ _ADVICE = [
                   "# Other common built-ins: lower, trim, split, regexp_replace,\n"
                   "# to_date, datediff, coalesce, when, col — check the Spark docs.",
     ),
-
-    dict(
-        trigger = lambda t, e: (
-            e > 30
-            and t["shuffleWriteBytes"] == 0
-            and t["inputBytes"] == 0
-        ),
-        level   = "warn",
-        title   = "Slow cell with no data reads — possible uncached lineage replay",
-        what    = "This cell took {elapsed} but Spark did not read any data from storage.",
-        why     = "Spark is lazy — it remembers the steps to build a DataFrame "
-                  "but doesn't actually run them until you call an action like .show() or .count(). "
-                  "If a previous cell defined a DataFrame without caching it, "
-                  "Spark may be re-running all those steps from scratch every time.",
-        fix     = "Go back to the cell where your main DataFrame was first built. "
-                  "Add .cache() there and call .count() to force it to load. "
-                  "Every cell that uses that DataFrame afterwards will be instant.",
-        code    = "# In the cell where your DataFrame is first built:\n"
-                  "df = (\n"
-                  "    spark.read.parquet('s3://your-bucket/data/')\n"
-                  "    .filter(df.year == 2024)\n"
-                  "    .groupBy('region')\n"
-                  "    .agg({'revenue': 'sum'})\n"
-                  ")\n"
-                  "df = df.cache()   # <-- add this line\n"
-                  "df.count()        # <-- triggers the cache to load\n\n"
-                  "# Now every subsequent cell that uses df will be fast\n"
-                  "# because Spark reads from memory, not from S3 again.",
-    ),
-
 ]
 
 
@@ -523,31 +306,23 @@ def _metric_row(label, tooltip, value_str, highlight=False):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  MAIN REPORT RENDERER
+#  MAIN ANALYSIS FUNCTION
 # ═══════════════════════════════════════════════════════════════
 
-def _render_report(stages, elapsed_s, ml_libs=None):
+def _render_job_report(app_id, stages, app_info):
+    """Render analysis report for a completed job."""
 
-    ml_libs = ml_libs or []
-
-    # No Spark work ran
     if not stages:
         display(HTML(f"""
         <div style="font-family:Arial,sans-serif;max-width:640px;margin:8px 0;
-                    border-left:4px solid #2E7D32;border-radius:0 8px 8px 0;
-                    background:#F3FAF0;padding:12px 16px">
-          <div style="font-size:13px;font-weight:700;color:#1B5E20;margin-bottom:8px">
-            🟢 No Spark work ran in this cell
+                    border-left:4px solid #E8A000;border-radius:0 8px 8px 0;
+                    background:#FFF8E6;padding:12px 16px">
+          <div style="font-size:13px;font-weight:700;color:#7A4900;margin-bottom:8px">
+            🟡 No stage data found
           </div>
           <div style="font-size:12px;color:#333;line-height:1.7">
-            Your code defined a DataFrame but did not trigger any computation.<br><br>
-            <strong>Spark is lazy</strong> — it plans the work but does nothing until
-            you call an <strong>action</strong>. Actions are:<br>
-            &nbsp; • <code>.show()</code> — display rows<br>
-            &nbsp; • <code>.count()</code> — count rows<br>
-            &nbsp; • <code>.collect()</code> — pull all rows to the driver (use with care)<br>
-            &nbsp; • <code>.write.parquet(...)</code> — save to S3<br><br>
-            Add one of the above to the end of your cell, then run it again.
+            The application <code>{app_id}</code> either completed without running
+            any Spark stages, or the History Server data is not available yet.
           </div>
         </div>"""))
         return
@@ -566,6 +341,16 @@ def _render_report(stages, elapsed_s, ml_libs=None):
         "outputBytes":        sum(s.get("outputBytes", 0)          for s in stages),
         "peakExecutionMemory":max((s.get("peakExecutionMemory", 0) for s in stages), default=0),
     }
+
+    # Calculate elapsed time from app info if available
+    elapsed_s = 0
+    if app_info:
+        submit_time = app_info.get("timestamp", 0)
+        end_time = app_info.get("timestamp", 0)
+        if "duration" in app_info:
+            elapsed_s = app_info["duration"] / 1000.0
+        elif submit_time and end_time:
+            elapsed_s = (end_time - submit_time) / 1000.0
 
     gc_pct = int(100 * t["jvmGcTime"] / t["executorRunTime"]) \
              if t["executorRunTime"] > 0 else 0
@@ -614,7 +399,7 @@ def _render_report(stages, elapsed_s, ml_libs=None):
     metrics_html = "".join([
         _metric_row(
             "Total time",
-            "Wall-clock time from cell start to finish",
+            "Wall-clock time from job start to finish",
             _fmt_elapsed(elapsed_s)),
         _metric_row(
             "Parallel tasks used",
@@ -624,11 +409,11 @@ def _render_report(stages, elapsed_s, ml_libs=None):
             highlight=few_tasks),
         _metric_row(
             "Data read from S3 / HDFS",
-            "Total bytes Spark read from storage in this cell",
+            "Total bytes Spark read from storage",
             _fmt_bytes(t["inputBytes"])),
         _metric_row(
             "Data written to S3 / HDFS",
-            "Total bytes Spark wrote to storage in this cell",
+            "Total bytes Spark wrote to storage",
             _fmt_bytes(t["outputBytes"])),
         _metric_row(
             "Network shuffle (join / groupBy cost)",
@@ -669,49 +454,26 @@ def _render_report(stages, elapsed_s, ml_libs=None):
         f = rule["fix"].format(**subs)
         cards_html += _advice_card(rule["level"], rule["title"], w, y, f, rule.get("code"))
 
-    # ML library detection advice
-    if ml_libs:
-        ml_names = ", ".join(ml_libs)
-        ml_card = _advice_card(
-            "warn",
-            "ML library detected — consider caching",
-            f"Your cell uses {ml_names} with a Spark DataFrame.",
-            "If you reuse the same DataFrame across multiple cells or operations, "
-            "you should cache it to avoid re-reading from storage. "
-            "ML operations often trigger multiple passes over the same data.",
-            "Before passing the DataFrame to your ML library, cache it.",
-            "# Cache the DataFrame BEFORE ML operations\n"
-            "df = spark.read.parquet('s3://...')\n"
-            "df = df.filter(df.year == 2024)  # Apply filters first\n"
-            "df = df.cache()                   # Cache BEFORE ML\n"
-            "df.count()                        # Force cache load\n\n"
-            "# Now use with ML library\n"
-            "from sklearn.ensemble import RandomForestClassifier\n"
-            "pdf = df.toPandas()               # Uses cached data\n"
-            "model = RandomForestClassifier()\n"
-            "model.fit(pdf, y)"
-        )
-        cards_html = ml_card + cards_html
-
     if not fired:
         cards_html = f"""
         <div style="margin-top:12px;border-left:4px solid {_THEME['ok']['bar']};
                     border-radius:0 8px 8px 0;background:{_THEME['ok']['bg']};
                     padding:12px 16px;font-size:12px;color:#1B5E20;
                     font-family:Arial,sans-serif;line-height:1.6">
-          <strong>No issues detected.</strong> Your cell ran efficiently.<br>
+          <strong>No issues detected.</strong> This job ran efficiently.<br>
           If the run time still feels slow, the data volume itself may be the
           limiting factor rather than how Spark is configured.
         </div>"""
 
     # Full report
+    app_name = app_info.get("name", "Unknown") if app_info else "Unknown"
     display(HTML(f"""
     <div style="font-family:Arial,sans-serif;margin:10px 0;max-width:660px">
 
       <div style="background:#1C1917;color:#FDE68A;padding:8px 14px;
                   border-radius:8px 8px 0 0;font-size:13px;font-weight:700;
                   display:flex;justify-content:space-between;align-items:center">
-        <span>⚡ sparkmonitor</span>
+        <span>📊 Job Analysis: {app_name}</span>
         <span style="font-weight:400;font-size:12px;opacity:.75">
           {len(stages)} stage{'s' if len(stages)!=1 else ''}
           &nbsp;·&nbsp; {t['numTasks']} tasks
@@ -739,152 +501,134 @@ def _render_report(stages, elapsed_s, ml_libs=None):
       {cards_html}
 
       <div style="margin-top:8px;font-size:10px;color:#aaa;text-align:right">
-        sparkmonitor · reads Spark REST API · no external dependencies
+        App ID: <code>{app_id}</code> · analyze_job · reads Spark History Server
       </div>
 
     </div>"""))
 
 
-# ═══════════════════════════════════════════════════════════════
-#  CELL MAGIC
-# ═══════════════════════════════════════════════════════════════
-
-_HOST, _PORT = _find_spark_port_and_host()
-_APP_ID = _get_app_id(_HOST, _PORT) if _HOST and _PORT else None
-
-
-def _detect_ml_patterns(cell_code):
-    """Detect ML library usage that should trigger caching recommendations."""
-    import re
-
-    patterns = {
-        "sklearn": r"(?:from\s+sklearn|import\s+sklearn|RandomForest|SVM|LogisticRegression|KMeans)",
-        "xgboost": r"(?:import\s+xgboost|xgb\.train|XGBClassifier|XGBRegressor)",
-        "lightgbm": r"(?:import\s+lightgbm|lgb\.train|LGBMClassifier|LGBMRegressor)",
-        "tensorflow": r"(?:import\s+tensorflow|model\.fit)",
-        "pytorch": r"(?:import\s+torch|optimizer\.step)",
-        "to_pandas": r"\.toPandas\s*\(\)",
-    }
-
-    detected = []
-    for lib, pattern in patterns.items():
-        if re.search(pattern, cell_code, re.IGNORECASE):
-            detected.append(lib)
-
-    return detected
-
-
-@register_cell_magic
-def measure(line, cell):
-    """Spark performance monitor.
-
-    Add  %%measure  as the first line of any cell to see a
-    plain-English performance report after it runs.
-
-    Example:
-        %%measure
-        df = spark.read.parquet("s3://bucket/data/")
-        df.groupBy("country").count().show()
+def analyze_job(app_id=None, host="localhost", port=18080):
     """
-    if not _HOST or not _PORT or not _APP_ID:
-        display(HTML("""
+    Analyze a completed Spark job from History Server.
+
+    Parameters
+    ----------
+    app_id : str, optional
+        Application ID to analyze (e.g., "app-20240115-0001").
+        If None, shows recent jobs and lets you choose.
+    host : str
+        History Server host (default: localhost)
+    port : int
+        History Server port (default: 18080)
+
+    Examples
+    --------
+    >>> analyze_job("app-20240115-0001")  # Analyze specific app
+    >>> analyze_job()  # Show recent jobs
+    """
+
+    # If no app_id, show recent jobs
+    if not app_id:
+        apps = _list_recent_apps(limit=10, host=host, port=port)
+        if not apps:
+            display(HTML("""
+            <div style="font-family:Arial,sans-serif;max-width:560px;padding:12px 16px;
+                        background:#FFF0F0;border-left:4px solid #C0392B;
+                        border-radius:0 8px 8px 0;font-size:13px;color:#7B1A1A">
+              <strong>Could not connect to Spark History Server.</strong><br>
+              <span style="font-size:12px;line-height:1.7">
+              Make sure History Server is running at <code>http://{host}:{port}</code>
+              </span>
+            </div>"""))
+            return
+
+        # Display list of recent apps
+        app_rows = ""
+        for app in apps:
+            app_id_val = app.get("id", "Unknown")
+            app_name = app.get("name", "Unknown")
+            app_status = app.get("status", "Unknown")
+            app_rows += f"""
+            <tr>
+              <td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #eee">{app_name}</td>
+              <td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #eee;font-family:monospace">{app_id_val}</td>
+              <td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #eee;color:#666">{app_status}</td>
+            </tr>"""
+
+        display(HTML(f"""
+        <div style="font-family:Arial,sans-serif;max-width:700px;margin:10px 0">
+          <div style="background:#1C1917;color:#FDE68A;padding:9px 14px;
+                      border-radius:8px 8px 0 0;font-size:13px;font-weight:700">
+            📊 Recent Applications
+          </div>
+          <table style="border-collapse:collapse;width:100%;border:1px solid #ddd;border-top:none">
+            <thead>
+              <tr style="background:#f5f5f5">
+                <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:600;border-bottom:1px solid #ddd">Name</th>
+                <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:600;border-bottom:1px solid #ddd">App ID</th>
+                <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:600;border-bottom:1px solid #ddd">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {app_rows}
+            </tbody>
+          </table>
+          <div style="margin-top:12px;padding:12px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;font-size:12px">
+            <strong>To analyze a job, run:</strong><br>
+            <code style="background:#fff;padding:4px 8px;border-radius:3px;font-family:monospace">analyze_job("app-20240115-0001")</code>
+          </div>
+        </div>"""))
+        return
+
+    # Analyze specific app
+    app_info = _get_app_info(app_id, host, port)
+    if not app_info:
+        display(HTML(f"""
         <div style="font-family:Arial,sans-serif;max-width:560px;padding:12px 16px;
                     background:#FFF0F0;border-left:4px solid #C0392B;
                     border-radius:0 8px 8px 0;font-size:13px;color:#7B1A1A">
-          <strong>sparkmonitor: could not connect to Spark.</strong><br>
+          <strong>Could not find application "{app_id}".</strong><br>
           <span style="font-size:12px;line-height:1.7">
-          Make sure you have an active SparkSession before running %%measure.<br>
-          If you just started the kernel, re-run Cell 1 after the SparkSession is ready.<br><br>
-          On EMR/YARN clusters, sparkmonitor will try to auto-detect the Spark UI
-          from sparkContext. If detection still fails, check that the SparkSession is initialized.
+          Make sure the app ID is correct and the History Server is running.
           </span>
         </div>"""))
-        exec(cell, globals())
         return
 
-    before  = _stage_ids_done(_HOST, _PORT, _APP_ID)
-    t0      = time.monotonic()
-    exec(cell, globals())
-    elapsed = time.monotonic() - t0
-    time.sleep(0.6)   # allow last stage status to propagate
-    new     = _new_stages(_HOST, _PORT, _APP_ID, before)
-
-    # Check for ML library usage
-    ml_libs = _detect_ml_patterns(cell)
-
-    _render_report(new, elapsed, ml_libs)
+    stages = _get_app_stages(app_id, host, port)
+    _render_job_report(app_id, stages, app_info)
 
 
 # ═══════════════════════════════════════════════════════════════
-#  STARTUP MESSAGE — shown when modeller runs Cell 1
+#  COMMAND LINE INTERFACE
 # ═══════════════════════════════════════════════════════════════
 
-if _HOST and _PORT and _APP_ID:
-    display(HTML(f"""
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:6px 0">
-      <div style="background:#1C1917;color:#FDE68A;padding:9px 14px;
-                  border-radius:8px 8px 0 0;font-size:13px;font-weight:700">
-        ⚡ sparkmonitor is ready
-      </div>
-      <div style="border:1px solid #ccc;border-top:none;border-radius:0 0 8px 8px;
-                  background:#FAFAF8;padding:14px 16px;font-size:12px;
-                  color:#333;line-height:1.8">
+if __name__ == "__main__":
+    import argparse
 
-        <strong>Connected</strong> to Spark at <code>{_HOST}:{_PORT}</code>
-        (App ID: <code>{_APP_ID}</code>)<br>
-        <span style="font-size:11px;color:#666">[History Server for live metrics, YARN RM for driver location, or direct Spark UI]</span><br><br>
+    parser = argparse.ArgumentParser(
+        description="Analyze completed Spark jobs from History Server")
+    parser.add_argument(
+        "--app-id", "-a",
+        help="Application ID to analyze (e.g., app-20240115-0001)")
+    parser.add_argument(
+        "--recent", "-r",
+        action="store_true",
+        help="Show recent applications")
+    parser.add_argument(
+        "--host",
+        default="localhost",
+        help="History Server host (default: localhost)")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=18080,
+        help="History Server port (default: 18080)")
 
-        <strong>What to do next:</strong><br>
-        Add <code style="background:#eee;padding:1px 5px;border-radius:3px">%%measure</code>
-        as the very first line of any cell you want to profile.<br><br>
+    args = parser.parse_args()
 
-        <strong>Example:</strong>
-        <pre style="background:#1C1917;color:#6EE7B7;padding:9px 12px;
-                    border-radius:5px;font-size:11px;margin:6px 0 10px 0;
-                    white-space:pre-wrap;line-height:1.6">%%measure
-df = spark.read.parquet("s3://your-bucket/data/")
-df.filter(df.year == 2024).groupBy("region").count().show()</pre>
-
-        <strong>After the cell runs, you will see:</strong><br>
-        &nbsp; 🟢 &nbsp;<strong>Green banner</strong> — no issues, cell ran efficiently<br>
-        &nbsp; 🟡 &nbsp;<strong>Yellow warning</strong> — something is slow;
-                  a plain-English explanation and copy-paste fix are shown<br>
-        &nbsp; 🔴 &nbsp;<strong>Red alert</strong> — a serious issue that will slow
-                  or crash the job; a fix is shown<br><br>
-
-        You do not need to understand Spark internals.
-        Every warning tells you exactly what happened, why it matters,
-        and what code to change.
-
-      </div>
-    </div>"""))
-
-elif _HOST and _PORT and not _APP_ID:
-    display(HTML("""
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:6px 0;
-                padding:12px 16px;background:#FFF8E6;border-left:4px solid #E8A000;
-                border-radius:0 8px 8px 0;font-size:13px;color:#7A4900">
-      <strong>sparkmonitor loaded, but could not get Spark application ID.</strong><br>
-      <span style="font-size:12px;line-height:1.7">
-      Re-run this cell once your SparkSession is fully initialized,
-      or place it after the cell that creates the SparkSession.
-      </span>
-    </div>"""))
-
-else:
-    display(HTML("""
-    <div style="font-family:Arial,sans-serif;max-width:700px;margin:6px 0;
-                padding:12px 16px;background:#FFF8E6;border-left:4px solid #E8A000;
-                border-radius:0 8px 8px 0;font-size:13px;color:#7A4900">
-      <strong>sparkmonitor loaded, but could not connect to Spark UI or History Server.</strong><br>
-      <span style="font-size:12px;line-height:1.7">
-      Make sure you have an active SparkSession initialized.<br><br>
-      <strong>Quick checks:</strong><br>
-      • Is Spark initialized? <code>print(spark.sparkContext.applicationId)</code><br>
-      • Can you reach YARN RM? <code>curl http://localhost:8088/ws/v1/cluster/apps</code><br>
-      • Can you reach History Server? <code>curl http://localhost:18080/api/v1/applications</code><br><br>
-      <strong>If both are accessible:</strong><br>
-      • Re-run this cell after the SparkSession is fully ready<br>
-      • Spark may still be initializing—wait a moment and try again
-      </span>
-    </div>"""))
+    if args.app_id:
+        analyze_job(args.app_id, args.host, args.port)
+    elif args.recent:
+        analyze_job(None, args.host, args.port)
+    else:
+        parser.print_help()
