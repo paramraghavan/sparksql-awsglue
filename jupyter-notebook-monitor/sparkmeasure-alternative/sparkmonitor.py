@@ -804,6 +804,23 @@ _HOST, _PORT = _find_spark_port_and_host()
 _APP_ID = _get_app_id(_HOST, _PORT) if _HOST and _PORT else None
 
 
+def _get_jupyter_namespace():
+    """Get the Jupyter kernel's user namespace for exec().
+
+    This allows exec() to access user-defined variables like spark, df, etc.
+    """
+    try:
+        from IPython import get_ipython
+        ipython = get_ipython()
+        if ipython:
+            return ipython.user_ns
+    except Exception:
+        pass
+
+    # Fallback to module globals if not in Jupyter
+    return globals()
+
+
 def _detect_ml_patterns(cell_code):
     """Detect ML library usage that should trigger caching recommendations."""
     import re
@@ -837,6 +854,9 @@ def measure(line, cell):
         df = spark.read.parquet("s3://bucket/data/")
         df.groupBy("country").count().show()
     """
+    # Get Jupyter user namespace for exec()
+    user_ns = _get_jupyter_namespace()
+
     if not _HOST or not _PORT or not _APP_ID:
         display(HTML("""
         <div style="font-family:Arial,sans-serif;max-width:560px;padding:12px 16px;
@@ -850,12 +870,12 @@ def measure(line, cell):
           from sparkContext. If detection still fails, check that the SparkSession is initialized.
           </span>
         </div>"""))
-        exec(cell, globals())
+        exec(cell, user_ns)
         return
 
     before  = _stage_ids_done(_HOST, _PORT, _APP_ID)
     t0      = time.monotonic()
-    exec(cell, globals())
+    exec(cell, user_ns)  # Execute in user's Jupyter namespace
     elapsed = time.monotonic() - t0
     time.sleep(0.6)   # allow last stage status to propagate
     new     = _new_stages(_HOST, _PORT, _APP_ID, before)
