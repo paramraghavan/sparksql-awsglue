@@ -285,48 +285,61 @@ def _new_stages(host, port, app_id, before):
             if s.get("status") == "COMPLETE" and s["stageId"] not in before]
 
 
+def _get_all_stages(host, port, app_id):
+    """Get ALL stages (including running/failed) for debugging."""
+    stages = _get(f"/api/v1/applications/{app_id}/stages", host, port) or []
+    return stages
+
+
 def _capture_stages_with_retry(host, port, app_id, before, elapsed):
     """Intelligently retry stage capture with History Server.
 
     History Server has latency (1-5 seconds), so we use smart retry logic:
     - Quick jobs: longer waits, more retries
     - Long jobs: shorter waits, fewer retries
-    - Timeout: never wait more than 10 seconds total
+    - Timeout: never wait more than 15 seconds total
 
     Returns the new stages found, or empty list if none found within timeout.
     """
     # Determine retry strategy based on job duration
+    # INCREASED WAITS for History Server latency on S3 event logs
     if elapsed < 0.5:
         # Very quick job - History Server likely hasn't indexed yet
-        initial_wait = 1.5
-        max_retries = 5
-        retry_interval = 1.0
+        initial_wait = 3.0      # Increased from 1.5
+        max_retries = 8         # Increased from 5
+        retry_interval = 1.5    # Increased from 1.0
     elif elapsed < 2.0:
         # Quick job
-        initial_wait = 1.0
-        max_retries = 4
-        retry_interval = 0.8
+        initial_wait = 2.0      # Increased from 1.0
+        max_retries = 6         # Increased from 4
+        retry_interval = 1.0    # Increased from 0.8
     elif elapsed < 5.0:
         # Normal job
-        initial_wait = 0.6
-        max_retries = 3
-        retry_interval = 0.6
+        initial_wait = 1.0      # Increased from 0.6
+        max_retries = 5         # Increased from 3
+        retry_interval = 0.8    # Increased from 0.6
     else:
         # Long job - lag is negligible
-        initial_wait = 0.6
-        max_retries = 1
-        retry_interval = 0.6
+        initial_wait = 0.8      # Increased from 0.6
+        max_retries = 2         # Increased from 1
+        retry_interval = 0.6    # Same
 
     # First attempt
     time.sleep(initial_wait)
     new = _new_stages(host, port, app_id, before)
+    all_stages = _get_all_stages(host, port, app_id)
+
+    # DEBUG: Check if ANY stages exist
+    if not all_stages and not new:
+        # No stages at all - likely event logging issue
+        return []
 
     if new:
-        return new  # Found stages immediately, return
+        return new  # Found complete stages immediately, return
 
     # Retry loop for History Server catching up
     total_wait = initial_wait
-    max_wait = 10.0  # Never wait more than 10 seconds total
+    max_wait = 15.0  # Increased from 10.0 - Never wait more than 15 seconds total
 
     for attempt in range(1, max_retries + 1):
         # Check if we've exceeded maximum wait time
@@ -340,9 +353,15 @@ def _capture_stages_with_retry(host, port, app_id, before, elapsed):
 
         # Try again
         new = _new_stages(host, port, app_id, before)
+        all_stages = _get_all_stages(host, port, app_id)
 
         if new:
-            return new  # Found stages!
+            return new  # Found complete stages!
+
+        # If we found ANY stages but none are COMPLETE, stages are still running
+        if all_stages and not new:
+            # Stages exist but not complete yet - keep waiting
+            continue
 
     # No stages found after retries
     # This is normal for very quick jobs or if using History Server on S3
