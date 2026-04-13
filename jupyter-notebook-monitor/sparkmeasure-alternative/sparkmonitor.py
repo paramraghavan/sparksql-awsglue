@@ -285,6 +285,70 @@ def _new_stages(host, port, app_id, before):
             if s.get("status") == "COMPLETE" and s["stageId"] not in before]
 
 
+def _capture_stages_with_retry(host, port, app_id, before, elapsed):
+    """Intelligently retry stage capture with History Server.
+
+    History Server has latency (1-5 seconds), so we use smart retry logic:
+    - Quick jobs: longer waits, more retries
+    - Long jobs: shorter waits, fewer retries
+    - Timeout: never wait more than 10 seconds total
+
+    Returns the new stages found, or empty list if none found within timeout.
+    """
+    # Determine retry strategy based on job duration
+    if elapsed < 0.5:
+        # Very quick job - History Server likely hasn't indexed yet
+        initial_wait = 1.5
+        max_retries = 5
+        retry_interval = 1.0
+    elif elapsed < 2.0:
+        # Quick job
+        initial_wait = 1.0
+        max_retries = 4
+        retry_interval = 0.8
+    elif elapsed < 5.0:
+        # Normal job
+        initial_wait = 0.6
+        max_retries = 3
+        retry_interval = 0.6
+    else:
+        # Long job - lag is negligible
+        initial_wait = 0.6
+        max_retries = 1
+        retry_interval = 0.6
+
+    # First attempt
+    time.sleep(initial_wait)
+    new = _new_stages(host, port, app_id, before)
+
+    if new:
+        return new  # Found stages immediately, return
+
+    # Retry loop for History Server catching up
+    total_wait = initial_wait
+    max_wait = 10.0  # Never wait more than 10 seconds total
+
+    for attempt in range(1, max_retries + 1):
+        # Check if we've exceeded maximum wait time
+        if total_wait >= max_wait:
+            break
+
+        # Wait with slight backoff
+        wait = min(retry_interval, max_wait - total_wait)
+        time.sleep(wait)
+        total_wait += wait
+
+        # Try again
+        new = _new_stages(host, port, app_id, before)
+
+        if new:
+            return new  # Found stages!
+
+    # No stages found after retries
+    # This is normal for very quick jobs or if using History Server on S3
+    return []
+
+
 # ═══════════════════════════════════════════════════════════════
 #  INTERNAL — Formatters
 # ═══════════════════════════════════════════════════════════════
@@ -877,8 +941,10 @@ def measure(line, cell):
     t0      = time.monotonic()
     exec(cell, user_ns)  # Execute in user's Jupyter namespace
     elapsed = time.monotonic() - t0
-    time.sleep(0.6)   # allow last stage status to propagate
-    new     = _new_stages(_HOST, _PORT, _APP_ID, before)
+
+    # Smart retry loop for History Server stage capture
+    # History Server has latency (1-5 seconds), so we need intelligent waiting
+    new = _capture_stages_with_retry(_HOST, _PORT, _APP_ID, before, elapsed)
 
     # Check for ML library usage
     ml_libs = _detect_ml_patterns(cell)
