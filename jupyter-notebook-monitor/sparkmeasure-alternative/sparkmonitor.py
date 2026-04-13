@@ -413,9 +413,9 @@ _ADVICE = [
     dict(
         trigger = lambda t, e: t["diskBytesSpilled"] > 0,
         level   = "error",
-        title   = "Your data spilled to disk",
-        what    = "Spark ran out of memory and had to write "
-                  "{disk_spill} to the cluster's hard drive to continue.",
+        title   = "Your data spilled to disk ({max_spill_stage})",
+        what    = "Spark ran out of memory in {max_spill_stage} and had to write "
+                  "{max_spill_bytes} to the cluster's hard drive to continue.",
         why     = "Reading from disk is 10-100x slower than reading from memory. "
                   "This is one of the most common reasons a job takes much longer than expected. "
                   "If enough data spills, the job can crash entirely.",
@@ -446,9 +446,9 @@ _ADVICE = [
     dict(
         trigger = lambda t, e: 500 * 1024**2 < t["shuffleWriteBytes"] <= 1 * 1024**3,
         level   = "warn",
-        title   = "Large shuffle — join or groupBy moved a lot of data",
-        what    = "Spark moved {shuffle_write} of data across the network "
-                  "between cluster nodes to complete a join or groupBy.",
+        title   = "Large shuffle in {max_shuffle_stage} — join or groupBy moved a lot of data",
+        what    = "Spark moved {max_shuffle_bytes} of data across the network in {max_shuffle_stage} "
+                  "to complete a join or groupBy.",
         why     = "Network transfers are expensive. Every worker has to wait "
                   "for data to arrive before it can continue. "
                   "The bigger the shuffle, the longer everything waits.",
@@ -466,8 +466,8 @@ _ADVICE = [
     dict(
         trigger = lambda t, e: t["shuffleWriteBytes"] > 1 * 1024**3,
         level   = "error",
-        title   = "Very large shuffle — this is likely your main bottleneck",
-        what    = "Spark moved {shuffle_write} of data across the network. "
+        title   = "Very large shuffle in {max_shuffle_stage} — this is your main bottleneck",
+        what    = "Spark moved {max_shuffle_bytes} of data across the network in {max_shuffle_stage}. "
                   "At this scale the shuffle is almost certainly why the job is slow.",
         why     = "Every executor has to send data to every other executor. "
                   "Nothing can proceed until all transfers are complete. "
@@ -656,9 +656,113 @@ def _metric_row(label, tooltip, value_str, highlight=False):
     </tr>"""
 
 
+def _per_stage_breakdown(stages):
+    """Generate HTML table showing key metrics per stage.
+
+    Since EMR processes stage-by-stage, showing per-stage metrics helps identify
+    which stage is the actual bottleneck.
+    """
+    if not stages:
+        return ""
+
+    rows = []
+    rows.append("""
+    <table style="border-collapse:collapse;width:100%;font-size:11px;margin:0">
+      <thead>
+        <tr style="background:#F9F9F7;border-bottom:1px solid #ddd">
+          <th style="padding:6px 12px;text-align:left;font-weight:600;color:#555;border-right:1px solid #ddd">Stage</th>
+          <th style="padding:6px 12px;text-align:right;font-weight:600;color:#555;border-right:1px solid #ddd">Tasks</th>
+          <th style="padding:6px 12px;text-align:right;font-weight:600;color:#555;border-right:1px solid #ddd">Executor Time</th>
+          <th style="padding:6px 12px;text-align:right;font-weight:600;color:#555;border-right:1px solid #ddd">Shuffle Write</th>
+          <th style="padding:6px 12px;text-align:right;font-weight:600;color:#555;border-right:1px solid #ddd">Disk Spill</th>
+          <th style="padding:6px 12px;text-align:right;font-weight:600;color:#555">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+    """)
+
+    for stage in sorted(stages, key=lambda s: s.get("stageId", 0)):
+        stage_id = stage.get("stageId", "?")
+        num_tasks = stage.get("numTasks", 0)
+        executor_time = stage.get("executorRunTime", 0)
+        shuffle_write = stage.get("shuffleWriteBytes", 0)
+        disk_spill = stage.get("diskBytesSpilled", 0)
+        status = stage.get("status", "?")
+
+        # Highlight stages with issues
+        shuffle_issue = shuffle_write > 500 * 1024**2
+        spill_issue = disk_spill > 0
+        row_bg = ""
+        if spill_issue:
+            row_bg = "background:#FFE6E6;"  # Light red for spill
+        elif shuffle_issue:
+            row_bg = "background:#FFF8E6;"  # Light yellow for shuffle
+        else:
+            row_bg = "background:#fff;"
+
+        status_icon = "✓" if status == "COMPLETE" else "⚠" if status == "RUNNING" else "✗"
+
+        rows.append(f"""
+        <tr style="{row_bg}border-bottom:1px solid #eee">
+          <td style="padding:5px 12px;border-right:1px solid #ddd;color:#1C1917;font-weight:600">Stage {stage_id}</td>
+          <td style="padding:5px 12px;border-right:1px solid #ddd;color:#666;text-align:right">{num_tasks}</td>
+          <td style="padding:5px 12px;border-right:1px solid #ddd;color:#666;text-align:right;{_MONO}">{_fmt_ms(executor_time)}</td>
+          <td style="padding:5px 12px;border-right:1px solid #ddd;color:#{'#C0392B' if shuffle_issue else '#666'};text-align:right;{_MONO};font-weight:{'600' if shuffle_issue else '400'}">{_fmt_bytes(shuffle_write)}</td>
+          <td style="padding:5px 12px;border-right:1px solid #ddd;color:#{'#C0392B' if spill_issue else '#666'};text-align:right;{_MONO};font-weight:{'600' if spill_issue else '400'}">{_fmt_bytes(disk_spill) if disk_spill > 0 else 'None'}</td>
+          <td style="padding:5px 12px;text-align:right;color:#666">{status_icon} {status}</td>
+        </tr>
+        """)
+
+    rows.append("""
+      </tbody>
+    </table>
+    <div style="padding:8px 12px;font-size:11px;color:#666;border-top:1px solid #ddd;margin-top:4px">
+      <strong>Note:</strong> EMR processes stages sequentially. A stage with high Shuffle Write or Disk Spill is a bottleneck.
+      Use the metrics above to identify which stage needs optimization.
+    </div>
+    """)
+
+    return "".join(rows)
+
+
 # ═══════════════════════════════════════════════════════════════
 #  MAIN REPORT RENDERER
 # ═══════════════════════════════════════════════════════════════
+
+def _find_problem_stages(stages):
+    """Identify which stages have performance issues.
+
+    Returns dict with:
+    - max_shuffle_stage: (stage_id, bytes) for stage with largest shuffle
+    - max_spill_stage: (stage_id, bytes) for stage with most disk spill
+    - underutilized_stages: list of stage_ids with few tasks
+    """
+    problems = {
+        "max_shuffle_stage": (None, 0),
+        "max_spill_stage": (None, 0),
+        "underutilized_stages": [],
+    }
+
+    for stage in stages:
+        stage_id = stage.get("stageId")
+        shuffle_bytes = stage.get("shuffleWriteBytes", 0)
+        spill_bytes = stage.get("diskBytesSpilled", 0)
+        num_tasks = stage.get("numTasks", 0)
+
+        # Track stage with max shuffle
+        if shuffle_bytes > problems["max_shuffle_stage"][1]:
+            problems["max_shuffle_stage"] = (stage_id, shuffle_bytes)
+
+        # Track stage with max spill
+        if spill_bytes > problems["max_spill_stage"][1]:
+            problems["max_spill_stage"] = (stage_id, spill_bytes)
+
+        # Track underutilized stages
+        if num_tasks < 5:
+            problems["underutilized_stages"].append((stage_id, num_tasks))
+
+    return problems
+
 
 def _render_report(stages, elapsed_s, ml_libs=None):
 
@@ -701,10 +805,16 @@ def _render_report(stages, elapsed_s, ml_libs=None):
         "peakExecutionMemory":max((s.get("peakExecutionMemory", 0) for s in stages), default=0),
     }
 
+    # Find problem stages for stage-specific advice
+    problem_stages = _find_problem_stages(stages)
+
     gc_pct = int(100 * t["jvmGcTime"] / t["executorRunTime"]) \
              if t["executorRunTime"] > 0 else 0
 
     # Template substitutions for advice text
+    max_shuffle_stage_id, max_shuffle_bytes = problem_stages["max_shuffle_stage"]
+    max_spill_stage_id, max_spill_bytes = problem_stages["max_spill_stage"]
+
     subs = {
         "disk_spill":    _fmt_bytes(t["diskBytesSpilled"]),
         "mem_spill":     _fmt_bytes(t["memoryBytesSpilled"]),
@@ -714,6 +824,11 @@ def _render_report(stages, elapsed_s, ml_libs=None):
         "gc_pct":        str(gc_pct),
         "gc_time":       _fmt_ms(t["jvmGcTime"]),
         "elapsed":       _fmt_elapsed(elapsed_s),
+        # Stage-specific info
+        "max_shuffle_stage":   f"Stage {max_shuffle_stage_id}" if max_shuffle_stage_id is not None else "a stage",
+        "max_shuffle_bytes":   _fmt_bytes(max_shuffle_bytes),
+        "max_spill_stage":     f"Stage {max_spill_stage_id}" if max_spill_stage_id is not None else "a stage",
+        "max_spill_bytes":     _fmt_bytes(max_spill_bytes),
     }
 
     # Fire advice rules
@@ -868,6 +983,15 @@ def _render_report(stages, elapsed_s, ml_libs=None):
         <table style="border-collapse:collapse;width:100%">
           {metrics_html}
         </table>
+      </details>
+
+      <details style="border:1px solid #ddd;border-top:none">
+        <summary style="padding:7px 14px;font-size:12px;font-weight:600;
+                        color:#555;cursor:pointer;background:#F9F9F7;
+                        user-select:none">
+          ▸ Per-stage breakdown (click to expand)
+        </summary>
+        {_per_stage_breakdown(stages)}
       </details>
 
       {cards_html}
