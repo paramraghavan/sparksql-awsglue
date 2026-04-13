@@ -31,14 +31,43 @@ from IPython.display import display, HTML
 # ═══════════════════════════════════════════════════════════════
 
 def _get_spark_context_info():
-    """Extract Spark configuration from sparkContext."""
+    """Extract Spark configuration from sparkContext.
+
+    Tries multiple ways to get the SparkContext:
+    1. Check globals() for 'spark' variable (Jupyter kernel global)
+    2. Check globals() for 'sc' variable (older Spark shells)
+    3. Try IPython kernel to access user namespace
+    """
     try:
         sc = None
-        # Get sparkContext from user's environment
-        if 'spark' in dir():
-            sc = spark.sparkContext
-        elif 'sc' in dir():
-            sc = sc
+
+        # Try globals() first (works in Jupyter kernel)
+        globs = globals()
+        if 'spark' in globs:
+            try:
+                sc = globs['spark'].sparkContext
+            except Exception:
+                pass
+
+        if not sc and 'sc' in globs:
+            try:
+                sc = globs['sc']
+            except Exception:
+                pass
+
+        # Try IPython kernel access (if in Jupyter)
+        if not sc:
+            try:
+                from IPython import get_ipython
+                ipython = get_ipython()
+                if ipython:
+                    user_ns = ipython.user_ns
+                    if 'spark' in user_ns:
+                        sc = user_ns['spark'].sparkContext
+                    elif 'sc' in user_ns:
+                        sc = user_ns['sc']
+            except Exception:
+                pass
 
         if not sc:
             return None, None, None
@@ -142,10 +171,21 @@ def _find_spark_port_and_host():
     # Try to get Spark UI URL from sparkContext directly
     try:
         sc = None
-        if 'spark' in dir():
-            sc = spark.sparkContext
-        elif 'sc' in dir():
-            sc = sc
+        globs = globals()
+        if 'spark' in globs:
+            sc = globs['spark'].sparkContext
+        elif 'sc' in globs:
+            sc = globs['sc']
+        else:
+            # Try IPython kernel
+            from IPython import get_ipython
+            ipython = get_ipython()
+            if ipython:
+                user_ns = ipython.user_ns
+                if 'spark' in user_ns:
+                    sc = user_ns['spark'].sparkContext
+                elif 'sc' in user_ns:
+                    sc = user_ns['sc']
 
         if sc:
             try:
@@ -203,10 +243,21 @@ def _get_app_id(host, port, sc=None):
     # Try to get directly from sparkContext
     if sc is None:
         try:
-            if 'spark' in dir():
-                sc = spark.sparkContext
-            elif 'sc' in dir():
-                sc = sc
+            globs = globals()
+            if 'spark' in globs:
+                sc = globs['spark'].sparkContext
+            elif 'sc' in globs:
+                sc = globs['sc']
+            else:
+                # Try IPython kernel
+                from IPython import get_ipython
+                ipython = get_ipython()
+                if ipython:
+                    user_ns = ipython.user_ns
+                    if 'spark' in user_ns:
+                        sc = user_ns['spark'].sparkContext
+                    elif 'sc' in user_ns:
+                        sc = user_ns['sc']
         except Exception:
             pass
 
