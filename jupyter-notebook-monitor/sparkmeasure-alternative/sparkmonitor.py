@@ -30,63 +30,60 @@ from IPython.display import display, HTML
 #  SECTION 1: SPARK CONTEXT DETECTION
 #  ═════════════════════════════════════════════════════════════
 #  Finds the user's SparkContext, app ID, and cluster info.
-#  Uses three strategies: globals(), IPython user namespace, or REST API.
+#  Uses three strategies: globals(), IPython user namespace.
 # ═══════════════════════════════════════════════════════════════
 
-def _try_get_sparkcontext():
-    """Try to get SparkContext from multiple sources.
+def _get_spark_context_info():
+    """Extract Spark configuration from sparkContext.
 
-    Returns sparkContext object or None if not found.
-    Tries in order:
-      1. globals()['spark'] (module-level variable)
-      2. globals()['sc'] (older Spark shells)
-      3. IPython kernel's user_ns (Jupyter notebook)
+    Tries multiple ways to get the SparkContext:
+    1. Check globals() for 'spark' variable (Jupyter kernel global)
+    2. Check globals() for 'sc' variable (older Spark shells)
+    3. Try IPython kernel to access user namespace
     """
-    sources = [
-        ('spark', lambda x: x.sparkContext),
-        ('sc', lambda x: x),
-    ]
+    try:
+        sc = None
 
-    for var_name, extract_fn in sources:
-        # Try module globals first
-        if var_name in globals():
+        # Try globals() first (works in Jupyter kernel)
+        globs = globals()
+        if 'spark' in globs:
             try:
-                return extract_fn(globals()[var_name])
+                sc = globs['spark'].sparkContext
             except Exception:
                 pass
 
-        # Try IPython user namespace
-        try:
-            from IPython import get_ipython
-            ipython = get_ipython()
-            if ipython and var_name in ipython.user_ns:
-                return extract_fn(ipython.user_ns[var_name])
-        except Exception:
-            pass
+        if not sc and 'sc' in globs:
+            try:
+                sc = globs['sc']
+            except Exception:
+                pass
 
-    return None
+        # Try IPython kernel access (if in Jupyter)
+        if not sc:
+            try:
+                from IPython import get_ipython
+                ipython = get_ipython()
+                if ipython:
+                    user_ns = ipython.user_ns
+                    if 'spark' in user_ns:
+                        sc = user_ns['spark'].sparkContext
+                    elif 'sc' in user_ns:
+                        sc = user_ns['sc']
+            except Exception:
+                pass
 
-
-def _get_spark_context_info():
-    """Extract Spark app ID and cluster info from sparkContext.
-
-    Returns tuple of (app_id, yarn_rm_host, spark_conf) or (None, None, None)
-    if sparkContext cannot be found.
-    """
-    try:
-        sc = _try_get_sparkcontext()
         if not sc:
             return None, None, None
 
+        conf = sc.getConf()
         app_id = sc.applicationId
+
         if not app_id:
             return None, None, None
 
-        # Get YARN RM host for querying cluster resource manager
-        conf = sc.getConf()
+        # Get YARN RM host from config
         yarn_rm_host = conf.get("spark.yarn.resourceManager.hostname")
         if not yarn_rm_host:
-            # Fallback: if running on YARN, assume RM is localhost
             master = conf.get("spark.master", "")
             if "yarn" in master.lower():
                 yarn_rm_host = "localhost"
