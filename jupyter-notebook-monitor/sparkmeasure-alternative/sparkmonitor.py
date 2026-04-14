@@ -95,6 +95,49 @@ def _get_spark_context_info():
     return None, None, None
 
 
+def _try_get_sparkcontext():
+    """Try to get the user's SparkContext object.
+
+    Searches in order:
+    1. globals()['spark'].sparkContext (Jupyter with SparkSession)
+    2. globals()['sc'] (older Spark shells)
+    3. IPython user namespace (Jupyter kernel user variables)
+
+    Returns SparkContext or None if not found.
+    """
+    try:
+        # Try globals() first (works in Jupyter kernel)
+        globs = globals()
+        if 'spark' in globs:
+            try:
+                return globs['spark'].sparkContext
+            except Exception:
+                pass
+
+        if 'sc' in globs:
+            try:
+                return globs['sc']
+            except Exception:
+                pass
+
+        # Try IPython kernel access (if in Jupyter)
+        try:
+            from IPython import get_ipython
+            ipython = get_ipython()
+            if ipython:
+                user_ns = ipython.user_ns
+                if 'spark' in user_ns:
+                    return user_ns['spark'].sparkContext
+                elif 'sc' in user_ns:
+                    return user_ns['sc']
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return None
+
+
 def _get_yarn_spark_ui(app_id, yarn_rm_host):
     """Get Spark UI info from YARN Resource Manager (for running apps)."""
     if not app_id or not yarn_rm_host:
