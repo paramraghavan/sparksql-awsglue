@@ -262,17 +262,18 @@ def _stage_ids_done(host, port, app_id):
 
 
 def _new_stages(host, port, app_id, before):
-    """Get list of NEW COMPLETE stages that appeared after 'before' snapshot.
+    """Get list of NEW stages (COMPLETE or FAILED) that appeared after 'before' snapshot.
 
     Filters to only stages that:
-    1. Are in COMPLETE status (not RUNNING or FAILED)
+    1. Are in COMPLETE or FAILED status (terminal states, not RUNNING)
     2. Were not in the 'before' snapshot
 
     These are the stages we care about (the ones that just ran).
+    Including FAILED stages lets users see which stages failed, not just which succeeded.
     """
     stages = _get(f"/api/v1/applications/{app_id}/stages", host, port) or []
     return [s for s in stages
-            if s.get("status") == "COMPLETE" and s["stageId"] not in before]
+            if s.get("status") in ["COMPLETE", "FAILED"] and s["stageId"] not in before]
 
 
 def _get_all_stages(host, port, app_id):
@@ -345,7 +346,9 @@ def _capture_stages_with_retry(host, port, app_id, before, elapsed):
 
     # Retry loop for History Server catching up
     total_wait = initial_wait
-    max_wait = 15.0  # Increased from 10.0 - Never wait more than 15 seconds total
+    max_wait = 180.0  # Hard timeout: Never wait more than 3 minutes (180 seconds) total
+                      # This is the absolute maximum time we'll wait for all new stages to complete
+                      # If stages don't complete in 3 minutes, we give up and return what we have
 
     for attempt in range(1, max_retries + 1):
         # Check if we've exceeded maximum wait time
@@ -370,7 +373,9 @@ def _capture_stages_with_retry(host, port, app_id, before, elapsed):
             continue
 
     # No stages found after retries
+    # Timeout reached (hard limit: 3 minutes)
     # This is normal for very quick jobs or if using History Server on S3
+    # If job is still running after 3 minutes, stages may appear later
     return []
 
 
@@ -1137,7 +1142,31 @@ def measure(line, cell):
 
     # STEP 5: Wait for Spark History Server to index the new stages
     # History Server has latency (1-5 seconds), so we use smart adaptive waits
+    # Hard timeout: Never wait more than 3 minutes (180 seconds) for stages to complete
+    display(HTML("""
+    <div style="font-family:Arial,sans-serif;max-width:600px;padding:8px 12px;
+                background:#E8F4F8;border-left:4px solid #0277BD;
+                border-radius:0 4px 4px 0;font-size:12px;color:#01579B;margin:8px 0">
+      ⏳ <strong>Waiting for new stages to complete and be indexed by History Server...</strong>
+      <span style="font-size:11px;color:#0277BD">(Timeout: 3 minutes maximum)</span>
+    </div>"""))
     new = _capture_stages_with_retry(_HOST, _PORT, _APP_ID, before, elapsed)
+
+    # Check if we hit the timeout
+    if not new:
+        display(HTML("""
+        <div style="font-family:Arial,sans-serif;max-width:600px;padding:8px 12px;
+                    background:#FFF3E0;border-left:4px solid #F57C00;
+                    border-radius:0 4px 4px 0;font-size:12px;color:#E65100;margin:8px 0">
+          ⚠️ <strong>Timeout waiting for new stages (3 minutes elapsed)</strong><br>
+          <span style="font-size:11px">
+          Your job may still be running. Possible causes:<br>
+          • Job is still executing (see progress bar)<br>
+          • Event logging not enabled<br>
+          • History Server not accessible<br>
+          See TROUBLESHOOTING.md for debugging steps.
+          </span>
+        </div>"""))
 
     # STEP 6: Detect if ML libraries are being used (for caching advice)
     ml_libs = _detect_ml_patterns(cell)
