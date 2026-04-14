@@ -27,60 +27,66 @@ from IPython.core.magic import register_cell_magic
 from IPython.display import display, HTML
 
 # ═══════════════════════════════════════════════════════════════
-#  INTERNAL — REST API helpers
+#  SECTION 1: SPARK CONTEXT DETECTION
+#  ═════════════════════════════════════════════════════════════
+#  Finds the user's SparkContext, app ID, and cluster info.
+#  Uses three strategies: globals(), IPython user namespace, or REST API.
 # ═══════════════════════════════════════════════════════════════
 
-def _get_spark_context_info():
-    """Extract Spark configuration from sparkContext.
+def _try_get_sparkcontext():
+    """Try to get SparkContext from multiple sources.
 
-    Tries multiple ways to get the SparkContext:
-    1. Check globals() for 'spark' variable (Jupyter kernel global)
-    2. Check globals() for 'sc' variable (older Spark shells)
-    3. Try IPython kernel to access user namespace
+    Returns sparkContext object or None if not found.
+    Tries in order:
+      1. globals()['spark'] (module-level variable)
+      2. globals()['sc'] (older Spark shells)
+      3. IPython kernel's user_ns (Jupyter notebook)
+    """
+    sources = [
+        ('spark', lambda x: x.sparkContext),
+        ('sc', lambda x: x),
+    ]
+
+    for var_name, extract_fn in sources:
+        # Try module globals first
+        if var_name in globals():
+            try:
+                return extract_fn(globals()[var_name])
+            except Exception:
+                pass
+
+        # Try IPython user namespace
+        try:
+            from IPython import get_ipython
+            ipython = get_ipython()
+            if ipython and var_name in ipython.user_ns:
+                return extract_fn(ipython.user_ns[var_name])
+        except Exception:
+            pass
+
+    return None
+
+
+def _get_spark_context_info():
+    """Extract Spark app ID and cluster info from sparkContext.
+
+    Returns tuple of (app_id, yarn_rm_host, spark_conf) or (None, None, None)
+    if sparkContext cannot be found.
     """
     try:
-        sc = None
-
-        # Try globals() first (works in Jupyter kernel)
-        globs = globals()
-        if 'spark' in globs:
-            try:
-                sc = globs['spark'].sparkContext
-            except Exception:
-                pass
-
-        if not sc and 'sc' in globs:
-            try:
-                sc = globs['sc']
-            except Exception:
-                pass
-
-        # Try IPython kernel access (if in Jupyter)
-        if not sc:
-            try:
-                from IPython import get_ipython
-                ipython = get_ipython()
-                if ipython:
-                    user_ns = ipython.user_ns
-                    if 'spark' in user_ns:
-                        sc = user_ns['spark'].sparkContext
-                    elif 'sc' in user_ns:
-                        sc = user_ns['sc']
-            except Exception:
-                pass
-
+        sc = _try_get_sparkcontext()
         if not sc:
             return None, None, None
 
-        conf = sc.getConf()
         app_id = sc.applicationId
-
         if not app_id:
             return None, None, None
 
-        # Get YARN RM host from config
+        # Get YARN RM host for querying cluster resource manager
+        conf = sc.getConf()
         yarn_rm_host = conf.get("spark.yarn.resourceManager.hostname")
         if not yarn_rm_host:
+            # Fallback: if running on YARN, assume RM is localhost
             master = conf.get("spark.master", "")
             if "yarn" in master.lower():
                 yarn_rm_host = "localhost"
@@ -142,51 +148,34 @@ def _get_history_server_info(app_id):
 
 
 def _find_spark_port_and_host():
-    """Try to find Spark UI port and host.
+    """Find Spark UI port and host using multiple strategies.
 
-    Priority:
-    1. Use Spark History Server (most stable, works for live & completed jobs)
-    2. Query YARN RM for live driver location
-    3. Try sparkContext.getWebUI() directly
-    4. Fall back to localhost:4040-4045
+    Tries in priority order:
+    1. Spark History Server (port 18080) — most stable, works for live & completed jobs
+    2. YARN Resource Manager (port 8088) — queries for driver location
+    3. Direct Spark UI (sc.getWebUI()) — if port is accessible
+    4. Localhost scanning (ports 4040-4045) — last resort
 
-    Note: History Server reads event logs in real-time, so it works for
-    currently running jobs too, not just completed ones.
+    On EMR, History Server is usually the only reliable option because
+    port 4040 is often blocked by security groups.
     """
     app_id, yarn_rm_host, conf = _get_spark_context_info()
 
-    # Try Spark History Server FIRST (stable, works for running & completed apps)
-    # History Server reads event logs in real-time, so it has live metrics
+    # Strategy 1: History Server (most reliable)
     if app_id:
         host, port = _get_history_server_info(app_id)
         if host and port:
             return host, port
 
-    # Try YARN RM (get tracking URL for live driver location)
+    # Strategy 2: YARN Resource Manager (good for EMR)
     if app_id and yarn_rm_host:
         host, port = _get_yarn_spark_ui(app_id, yarn_rm_host)
         if host and port:
             return host, port
 
-    # Try to get Spark UI URL from sparkContext directly
+    # Strategy 3: Direct SparkContext.getWebUI()
     try:
-        sc = None
-        globs = globals()
-        if 'spark' in globs:
-            sc = globs['spark'].sparkContext
-        elif 'sc' in globs:
-            sc = globs['sc']
-        else:
-            # Try IPython kernel
-            from IPython import get_ipython
-            ipython = get_ipython()
-            if ipython:
-                user_ns = ipython.user_ns
-                if 'spark' in user_ns:
-                    sc = user_ns['spark'].sparkContext
-                elif 'sc' in user_ns:
-                    sc = user_ns['sc']
-
+        sc = _try_get_sparkcontext()
         if sc:
             try:
                 ui_url = sc._jsc.sc().getWebUI().get()
@@ -199,7 +188,7 @@ def _find_spark_port_and_host():
             except Exception:
                 pass
 
-            # Fallback: try to get from Spark config
+            # Fallback from Spark config
             try:
                 driver_host = conf.get("spark.driver.host", "localhost") if conf else "localhost"
                 driver_port = conf.get("spark.ui.port", "4040") if conf else "4040"
@@ -209,7 +198,7 @@ def _find_spark_port_and_host():
     except Exception:
         pass
 
-    # Fall back to localhost scanning
+    # Strategy 4: Localhost port scanning (unlikely to work on EMR)
     for port in range(4040, 4046):
         try:
             urllib.request.urlopen(
@@ -222,7 +211,16 @@ def _find_spark_port_and_host():
 
 
 def _get(path, host, port):
-    """Get JSON from Spark REST API."""
+    """Generic HTTP GET for Spark REST API.
+
+    Args:
+        path: REST endpoint (e.g., "/api/v1/applications")
+        host: Hostname or IP
+        port: Port number
+
+    Returns:
+        Parsed JSON dict, or None if request fails
+    """
     if not host or not port:
         return None
     try:
@@ -236,30 +234,13 @@ def _get(path, host, port):
 def _get_app_id(host, port, sc=None):
     """Get Spark application ID.
 
-    Priority:
-    1. Get directly from sparkContext.applicationId (most reliable)
-    2. Query Spark REST API
+    Tries in order:
+    1. Direct SparkContext.applicationId (most reliable)
+    2. REST API query (fallback)
     """
     # Try to get directly from sparkContext
     if sc is None:
-        try:
-            globs = globals()
-            if 'spark' in globs:
-                sc = globs['spark'].sparkContext
-            elif 'sc' in globs:
-                sc = globs['sc']
-            else:
-                # Try IPython kernel
-                from IPython import get_ipython
-                ipython = get_ipython()
-                if ipython:
-                    user_ns = ipython.user_ns
-                    if 'spark' in user_ns:
-                        sc = user_ns['spark'].sparkContext
-                    elif 'sc' in user_ns:
-                        sc = user_ns['sc']
-        except Exception:
-            pass
+        sc = _try_get_sparkcontext()
 
     if sc:
         try:
@@ -269,40 +250,68 @@ def _get_app_id(host, port, sc=None):
         except Exception:
             pass
 
-    # Fall back to REST API query
+    # Fallback: query Spark REST API for list of apps
     apps = _get("/api/v1/applications", host, port)
     return apps[0]["id"] if apps else None
 
 
 def _stage_ids_done(host, port, app_id):
+    """Get set of all COMPLETE stage IDs for this app.
+
+    Used to capture a "before" snapshot before user's cell runs.
+    """
     stages = _get(f"/api/v1/applications/{app_id}/stages", host, port) or []
     return {s["stageId"] for s in stages if s.get("status") == "COMPLETE"}
 
 
 def _new_stages(host, port, app_id, before):
+    """Get list of NEW COMPLETE stages that appeared after 'before' snapshot.
+
+    Filters to only stages that:
+    1. Are in COMPLETE status (not RUNNING or FAILED)
+    2. Were not in the 'before' snapshot
+
+    These are the stages we care about (the ones that just ran).
+    """
     stages = _get(f"/api/v1/applications/{app_id}/stages", host, port) or []
     return [s for s in stages
             if s.get("status") == "COMPLETE" and s["stageId"] not in before]
 
 
 def _get_all_stages(host, port, app_id):
-    """Get ALL stages (including running/failed) for debugging."""
+    """Get ALL stages including RUNNING/FAILED (for debugging/logging).
+
+    Unlike _new_stages(), this includes incomplete stages.
+    Used to check if stages are still being indexed by History Server.
+    """
     stages = _get(f"/api/v1/applications/{app_id}/stages", host, port) or []
     return stages
 
 
 def _capture_stages_with_retry(host, port, app_id, before, elapsed):
-    """Intelligently retry stage capture with History Server.
+    """Intelligently retry stage capture with adaptive delays.
 
-    History Server has latency (1-5 seconds), so we use smart retry logic:
-    - Quick jobs: longer waits, more retries
-    - Long jobs: shorter waits, fewer retries
-    - Timeout: never wait more than 15 seconds total
+    Problem: Spark History Server reads event logs from S3, which has latency.
+    For quick jobs, HS hasn't even started indexing yet. For long jobs, HS
+    is likely already indexed.
 
-    Returns the new stages found, or empty list if none found within timeout.
+    Solution: Vary retry strategy based on job elapsed time:
+    - Very quick job (< 0.5s): HS not started, wait 3.0s initial, 8 retries
+    - Quick job (0.5-2.0s): HS catching up, wait 2.0s initial, 6 retries
+    - Normal job (2.0-5.0s): HS mostly caught up, wait 1.0s initial, 5 retries
+    - Long job (> 5.0s): HS definitely caught up, wait 0.8s initial, 2 retries
+
+    Global timeout: Never wait more than 15 seconds total.
+
+    Args:
+        host, port, app_id: Spark connection info
+        before: Set of stage IDs that were complete before cell ran
+        elapsed: How long the cell took to execute (in seconds)
+
+    Returns:
+        List of new COMPLETE stages, or [] if none found within timeout
     """
     # Determine retry strategy based on job duration
-    # INCREASED WAITS for History Server latency on S3 event logs
     if elapsed < 0.5:
         # Very quick job - History Server likely hasn't indexed yet
         initial_wait = 3.0      # Increased from 1.5
@@ -406,6 +415,27 @@ def _fmt_elapsed(s):
 #  why      — why it slows things down or risks the cluster
 #  fix      — what the modeller should do (plain text)
 #  code     — copy-paste code snippet shown in a dark code box
+#
+# ═══════════════════════════════════════════════════════════════
+#  PERFORMANCE THRESHOLDS
+# ═══════════════════════════════════════════════════════════════
+#
+#  Shuffle (Network Transfer) Thresholds:
+#    0 - 500 MB:   ✓ Healthy (no warning)
+#    500 MB - 1 GB: ⚠️ Warning (getting expensive, consider broadcast/repartition)
+#    > 1 GB:       ❌ Error (critical bottleneck, almost certainly your problem)
+#
+#  Why these thresholds?
+#    - 500 MB = Starting to notice network delay in typical clusters
+#    - 1 GB = Shuffle dominates total runtime, all executors wait for network
+#    - Examples: 100GB data → 100 partitions = 1GB per shuffle = CRITICAL
+#
+#  Byte Conversions:
+#    1024 bytes       = 1 KB
+#    1024**2 bytes    = 1 MB  (1,048,576 bytes)
+#    1024**3 bytes    = 1 GB  (1,073,741,824 bytes)
+#    1024**4 bytes    = 1 TB  (1,099,511,627,776 bytes)
+#
 # ═══════════════════════════════════════════════════════════════
 
 _ADVICE = [
@@ -444,6 +474,11 @@ _ADVICE = [
     ),
 
     dict(
+        # Shuffle warning threshold: 500MB to 1GB
+        # 500 * 1024**2 = 524,288,000 bytes = 500 MB (lower limit, warn starts here)
+        # 1 * 1024**3   = 1,073,741,824 bytes = 1 GB (upper limit, becomes error)
+        # Network transfers above 500MB are expensive but manageable.
+        # Above 1GB, shuffle usually dominates total runtime.
         trigger = lambda t, e: 500 * 1024**2 < t["shuffleWriteBytes"] <= 1 * 1024**3,
         level   = "warn",
         title   = "Large shuffle in {max_shuffle_stage} — join or groupBy moved a lot of data",
@@ -464,6 +499,11 @@ _ADVICE = [
     ),
 
     dict(
+        # Shuffle error threshold: > 1GB
+        # 1 * 1024**3 = 1,073,741,824 bytes = 1 GB
+        # At this scale, shuffle becomes the dominant cost and limits parallelism.
+        # All executors must wait for network transfers to complete before proceeding.
+        # This is almost always the top reason for slow jobs at this scale.
         trigger = lambda t, e: t["shuffleWriteBytes"] > 1 * 1024**3,
         level   = "error",
         title   = "Very large shuffle in {max_shuffle_stage} — this is your main bottleneck",
@@ -935,10 +975,7 @@ def _render_report(stages, elapsed_s, ml_libs=None):
             "df = df.cache()                   # Cache BEFORE ML\n"
             "df.count()                        # Force cache load\n\n"
             "# Now use with ML library\n"
-            "from sklearn.ensemble import RandomForestClassifier\n"
-            "pdf = df.toPandas()               # Uses cached data\n"
-            "model = RandomForestClassifier()\n"
-            "model.fit(pdf, y)"
+            "ml_model.fit(df, y)"
         )
         cards_html = ml_card + cards_html
 
@@ -1004,9 +1041,13 @@ def _render_report(stages, elapsed_s, ml_libs=None):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  CELL MAGIC
+#  SECTION 2: CELL MAGIC (%%measure command)
+#  ═════════════════════════════════════════════════════════════
+#  This is what runs when you add %%measure to a cell.
+#  It measures cell execution, captures Spark metrics, and shows a report.
 # ═══════════════════════════════════════════════════════════════
 
+# GLOBAL STATE: Connection info determined when module is loaded
 _HOST, _PORT = _find_spark_port_and_host()
 _APP_ID = _get_app_id(_HOST, _PORT) if _HOST and _PORT else None
 
@@ -1038,7 +1079,7 @@ def _detect_ml_patterns(cell_code):
         "lightgbm": r"(?:import\s+lightgbm|lgb\.train|LGBMClassifier|LGBMRegressor)",
         "tensorflow": r"(?:import\s+tensorflow|model\.fit)",
         "pytorch": r"(?:import\s+torch|optimizer\.step)",
-        "to_pandas": r"\.toPandas\s*\(\)",
+        "fit_check": r"(?:\.fit\()",
     }
 
     detected = []
@@ -1051,19 +1092,26 @@ def _detect_ml_patterns(cell_code):
 
 @register_cell_magic
 def measure(line, cell):
-    """Spark performance monitor.
+    """Spark performance monitor cell magic.
 
-    Add  %%measure  as the first line of any cell to see a
-    plain-English performance report after it runs.
-
-    Example:
+    Usage:
         %%measure
         df = spark.read.parquet("s3://bucket/data/")
         df.groupBy("country").count().show()
+
+    What happens:
+    1. Executes your code
+    2. Captures which Spark stages completed
+    3. Measures elapsed time
+    4. Waits for Spark History Server to index metrics
+    5. Analyzes metrics and generates a performance report
     """
-    # Get Jupyter user namespace for exec()
+
+    # STEP 1: Get Jupyter namespace so exec() can access user variables
+    # (This is needed because exec() runs in the module's scope, not the user's)
     user_ns = _get_jupyter_namespace()
 
+    # STEP 2: Check if Spark connection was established during module load
     if not _HOST or not _PORT or not _APP_ID:
         display(HTML("""
         <div style="font-family:Arial,sans-serif;max-width:560px;padding:12px 16px;
@@ -1077,21 +1125,27 @@ def measure(line, cell):
           from sparkContext. If detection still fails, check that the SparkSession is initialized.
           </span>
         </div>"""))
+        # Still execute the cell code so we don't break their workflow
         exec(cell, user_ns)
         return
 
-    before  = _stage_ids_done(_HOST, _PORT, _APP_ID)
-    t0      = time.monotonic()
-    exec(cell, user_ns)  # Execute in user's Jupyter namespace
+    # STEP 3: Record which stages are already complete
+    # (We only care about NEW stages that appear after this cell runs)
+    before = _stage_ids_done(_HOST, _PORT, _APP_ID)
+
+    # STEP 4: Time and execute user's code
+    t0 = time.monotonic()
+    exec(cell, user_ns)  # Execute in user's Jupyter namespace (so 'spark', 'df', etc. work)
     elapsed = time.monotonic() - t0
 
-    # Smart retry loop for History Server stage capture
-    # History Server has latency (1-5 seconds), so we need intelligent waiting
+    # STEP 5: Wait for Spark History Server to index the new stages
+    # History Server has latency (1-5 seconds), so we use smart adaptive waits
     new = _capture_stages_with_retry(_HOST, _PORT, _APP_ID, before, elapsed)
 
-    # Check for ML library usage
+    # STEP 6: Detect if ML libraries are being used (for caching advice)
     ml_libs = _detect_ml_patterns(cell)
 
+    # STEP 7: Render the performance report
     _render_report(new, elapsed, ml_libs)
 
 
