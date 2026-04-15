@@ -485,117 +485,214 @@ def _fmt_elapsed(s):
 # ═══════════════════════════════════════════════════════════════
 
 _ADVICE = [
+
+    # ─── 1. DISK SPILL ──────────────────────────────────────────────────────────
+    # Any disk spill is an error: executor ran out of RAM.
     dict(
         trigger=lambda t, e: t["diskBytesSpilled"] > 0,
         level="error",
-        title="Data Spill to Disk: Potential Memory Exhaustion",
-        what="Spark ran out of RAM in stage {max_spill_stage} and spilled "
+        title="Data spill to disk: potential memory exhaustion",
+        what="Spark ran out of RAM in {max_spill_stage} and spilled "
              "{max_spill_bytes} to the cluster's local NVMe/SSD storage.",
         why="Reading from local disk is significantly slower than RAM. This is usually caused by "
             "data skew (one partition is too big) or having too few partitions for the data volume.",
         fix="1. Increase the number of partitions using .repartition(N).\n"
-            "2. Use .cache() on DataFrames used multiple times.\n"
-            "3. Check for 'Data Skew'—if one key has millions of rows while others have hundreds.",
+            "2. Use .cache() on DataFrames that are reused across multiple operations.\n"
+            "3. Check for data skew — if one key has millions of rows while others have hundreds, "
+            "one executor drowns while the rest sit idle.",
         code="# Increase parallelism to shrink individual partition size:\n"
              "df = df.repartition(1000)\n\n"
              "# Or cache if the DataFrame is reused:\n"
-             "df.cache().count()",
+             "df.cache().count()  # .count() forces the cache to load eagerly",
     ),
 
+    # ─── 2. DATA SKEW (proxy) ───────────────────────────────────────────────────
     dict(
-        # New Advice: Data Skew Detection
-        # Trigger: If the max task duration is > 3x the median task duration in a stage
-        trigger=lambda t, e: t.get("taskMaxDuration", 0) > (t.get("taskMedianDuration", 0) * 3) and t.get("numTasks",
-                                                                                                          0) > 10,
+        # Trigger logic:
+        # 1. Significant data was moved (200MB+)
+        # 2. At least one task spilled to disk
+        # 3. The 'max' shuffle/spill is > 3x the 'median' (The definition of skew)
+        trigger=lambda t, e: (
+                t["shuffleWriteBytes"] > 200 * 1024 ** 2
+                and t["diskBytesSpilled"] > 0
+                and t.get("maxTaskShuffleWrite", 0) > (t.get("medianTaskShuffleWrite", 0) * 3)
+        ),
         level="warn",
-        title="Data Skew Detected: Uneven Workload",
-        what="One or two tasks are taking much longer than all others in stage {stage_id}.",
-        why="Spark divides work into tasks. If one 'key' (e.g., a null value or a very popular ID) "
-            "has way more data than others, one executor works while the rest of the cluster sits idle.",
-        fix="If joining, try 'salting' the join key or check for nulls in your join columns. "
-            "If on Spark 3+, ensure 'Adaptive Query Execution' (AQE) is enabled.",
-        code="# Enable AQE Skew Join optimization:\n"
+        title="Data Skew Detected: Uneven workload distribution",
+        what="One task is doing significantly more work than others. "
+             "While most tasks finished quickly, one executor had to process "
+             "{max_task_shuffle} of data and spilled to disk.",
+        why="This happens when your join/groupBy key is not evenly distributed (e.g., millions of "
+            "rows have a NULL key or a default '0' ID). One executor gets all that data, "
+            "runs out of RAM, and the whole job waits for that one task to finish.",
+        fix="1. **Check for NULLs**: Filters nulls before joining if they aren't needed.\n"
+            "2. **AQE Skew Join**: Ensure Spark 3's automatic skew handling is on.\n"
+            "3. **Salting**: If a real key (e.g., 'Country=US') is just massive, use 'salting' "
+            "to break that one key into multiple parallel tasks.",
+        code="# 1. Identify the 'heavy' keys:\n"
+             "df.groupBy('join_key').count().sort('count', ascending=False).show()\n\n"
+             "# 2. Enable Spark's Auto-Skew Fix:\n"
              "spark.conf.set('spark.sql.adaptive.enabled', 'true')\n"
-             "spark.conf.set('spark.sql.adaptive.skewJoin.enabled', 'true')",
+             "spark.conf.set('spark.sql.adaptive.skewJoin.enabled', 'true')\n\n"
+             "# 3. Salting example (to spread one key across 10 tasks):\n"
+             "from pyspark.sql.functions import expr\n"
+             "df = df.withColumn('salt', (rand() * 10).cast('int'))\n"
+             "df = df.withColumn('salted_key', concat(col('join_key'), lit('_'), col('salt')))"
     ),
+    # ─── 3. MEMORY PRESSURE ─────────────────────────────────────────────────────
+    # memoryBytesSpilled > 0 but no disk spill yet: executor is near its RAM limit.
+    # This is the "early warning" before the disk-spill error fires on a larger run.
     dict(
-        # Shuffle warning threshold: 500MB to 1GB
+        trigger=lambda t, e: (
+                t["memoryBytesSpilled"] > 0
+                and t["diskBytesSpilled"] == 0  # disk-spill rule already covers the worse case
+        ),
+        level="warn",
+        title="Memory pressure: RAM running low in executors",
+        what="Spark spilled {mem_spill} between memory pools (execution ↔ storage) "
+             "while staying off disk — but disk spill will follow if data volume grows.",
+        why="Memory pressure means executors are near their RAM ceiling. The next run with "
+            "slightly more data will tip into disk spill, which is significantly slower and "
+            "can crash long jobs.",
+        fix="1. Drop unused columns early — df.select('col1', 'col2') before any join or "
+            "aggregation reduces the memory footprint of every subsequent stage.\n"
+            "2. Repartition to smaller partition sizes so each task holds less data at once.\n"
+            "3. If this is a recurring job, increase spark.executor.memory in the cluster config.",
+        code="# Drop unused columns first to shrink the data each task must hold:\n"
+             "df = df.select('only', 'needed', 'columns')\n\n"
+             "# More partitions = less RAM per task:\n"
+             "df = df.repartition(500)\n\n"
+             "# Or increase executor memory (set before the SparkSession is created):\n"
+             "spark.conf.set('spark.executor.memory', '8g')",
+    ),
+
+    # ─── 4. MODERATE SHUFFLE (warn) ─────────────────────────────────────────────
+    # 500 MB – 1 GB: notable network cost but not yet critical.
+    dict(
         trigger=lambda t, e: 500 * 1024 ** 2 < t["shuffleWriteBytes"] <= 1 * 1024 ** 3,
         level="warn",
-        title="Moderate shuffle in {max_shuffle_stage} — room for optimization",
-        what="Spark moved {max_shuffle_bytes} across the network. This adds latency but is not yet critical.",
-        why="Every byte sent over the network costs time. If you can reduce this now, "
-            "your job will be much more resilient as your data grows.",
-        fix="1. **Drop unused columns** before the join to reduce shuffle size.\n"
-            "2. Increase the auto-broadcast limit if the smaller table is ~50MB.\n"
-            "3. Use `broadcast()` explicitly if you know one side is small.",
-        code="# Increase auto-broadcast threshold from 10MB to 50MB:\n"
+        title="Moderate shuffle in {max_shuffle_stage} — room to optimise",
+        what="Spark moved {shuffle_write} across the network. "
+             "This adds latency but is not yet the dominant cost.",
+        why="Every byte moved over the network costs time and cluster I/O. At this scale it is "
+            "worth reducing now — your job will be more resilient as data grows.",
+        fix="1. Drop unused columns before the join to reduce the amount shuffled.\n"
+            "2. Raise the auto-broadcast threshold if the smaller table is around 50 MB.\n"
+            "3. Use broadcast() explicitly if you know one side is small.",
+        code="# Raise auto-broadcast threshold from 10 MB to 50 MB:\n"
              "spark.conf.set('spark.sql.autoBroadcastJoinThreshold', 50 * 1024 * 1024)\n\n"
-             "# Only select necessary columns to shrink the shuffle:\n"
-             "df_small = df_small.select('join_key', 'needed_col')\n"
+             "# Select only the columns you need before joining:\n"
+             "df_small = df_small.select('join_key', 'needed_col')\n\n"
+             "# Or broadcast explicitly:\n"
+             "from pyspark.sql.functions import broadcast\n"
              "result = df_big.join(broadcast(df_small), 'join_key')",
     ),
 
+    # ─── 5. CRITICAL SHUFFLE (error) ────────────────────────────────────────────
+    # > 1 GB: this all-to-all transfer is almost certainly the bottleneck.
     dict(
-        # Shuffle error threshold: > 1GB
         trigger=lambda t, e: t["shuffleWriteBytes"] > 1 * 1024 ** 3,
         level="error",
-        title="Critical shuffle in {max_shuffle_stage} — your main bottleneck",
-        what="Spark moved {max_shuffle_bytes} across the network. This 'All-to-All' "
-             "transfer is likely why the job is slow.",
-        why="Large shuffles force executors to wait for I/O instead of processing data. "
-            "At this scale, you must optimize the join strategy or enable adaptive features.",
-        fix="1. **Enable AQE**: This lets Spark handle skew and coalesce partitions automatically.\n"
-            "2. **Broadcast Join**: Best if one table can fit in memory (<100MB).\n"
-            "3. **Pre-shuffle**: Repartition both tables on the join key to avoid a cross-cluster shuffle.",
-        code="# Enable Adaptive Query Execution (standard on modern EMR):\n"
+        title="Critical shuffle in {max_shuffle_stage} — likely your main bottleneck",
+        what="Spark moved {shuffle_write} across the network in {max_shuffle_stage}. "
+             "This all-to-all transfer is likely why the job is slow.",
+        why="Large shuffles force every executor to wait for network I/O before it can continue. "
+            "At this scale you must change the join strategy or enable adaptive features — "
+            "tuning partition counts alone will not be enough.",
+        fix="1. Enable AQE — lets Spark coalesce small partitions and handle skew automatically.\n"
+            "2. Broadcast join — best when one table fits in memory (under ~100 MB).\n"
+            "3. Pre-shuffle on the join key — repartition both sides by the join key "
+            "before the join so Spark does not have to do a cross-cluster exchange.",
+        code="# Enable Adaptive Query Execution (on by default in EMR 6+):\n"
              "spark.conf.set('spark.sql.adaptive.enabled', 'true')\n\n"
-             "# Option 1: Broadcast Join (Best if one table is small)\n"
+             "# Option A — Broadcast join (best when one table is small):\n"
              "from pyspark.sql.functions import broadcast\n"
              "df = big_df.join(broadcast(small_df), 'id')\n\n"
-             "# Option 2: Pre-shuffle on Join Key (Prevents expensive exchange)\n"
+             "# Option B — Pre-shuffle on join key (avoids cross-cluster exchange):\n"
              "df1 = df1.repartition(500, 'join_key')\n"
              "df2 = df2.repartition(500, 'join_key')\n"
-             "df = df1.join(df2, 'join_key')",
+             "df  = df1.join(df2, 'join_key')",
     ),
 
+    # ─── 6. UNDER-PARALLELISED ──────────────────────────────────────────────────
+    # < 10 tasks on > 100 MB of input: most CPUs are idle.
     dict(
         trigger=lambda t, e: t["numTasks"] < 10 and t["inputBytes"] > 100 * 1024 ** 2,
         level="warn",
-        title="Under-parallelized: Small File or Single Partition Problem",
-        what="Only {num_tasks} tasks are processing {input_bytes} of data.",
-        why="Spark creates one task per file/block. If you have a few giant files or one partition, "
-            "most of your cluster's CPUs are doing nothing. You are paying for a cluster but running like a laptop.",
-        fix="Force a repartition to distribute the load across all available executors.",
-        code="# Increase tasks to at least 2-3x the number of CPU cores in your cluster:\n"
-             "df = df.repartition(200)",
+        title="Under-parallelised: small-file or single-partition problem",
+        what="Only {num_tasks} tasks processed {input_bytes} of data.",
+        why="Spark creates one task per file or partition. A handful of large files means "
+            "most of your cluster's CPUs sit idle. You are paying for a cluster but running "
+            "like a single machine.",
+        fix="Repartition the DataFrame to distribute work across all available executors. "
+            "A good target is 2–3× the total CPU core count of your cluster.",
+        code="# Repartition to use all available cores:\n"
+             "df = df.repartition(200)\n\n"
+             "# Alternatively, set the default shuffle partition count globally:\n"
+             "spark.conf.set('spark.sql.shuffle.partitions', '400')",
     ),
 
+    # ─── 7. OVER-PARTITIONED ────────────────────────────────────────────────────
+    # > 1 000 tasks AND < 1 MB per task on average: task scheduling overhead
+    # dominates useful work. The opposite problem to under-parallelisation.
+    dict(
+        trigger=lambda t, e: (
+                t["numTasks"] > 1000
+                and t["inputBytes"] > 0
+                and (t["inputBytes"] / t["numTasks"]) < 1 * 1024 ** 2  # < 1 MB per task
+        ),
+        level="warn",
+        title="Over-partitioned: too many tiny tasks",
+        what="{num_tasks} tasks ran on {input_bytes} total — "
+             "each task processed less than 1 MB of data on average.",
+        why="Spark has fixed overhead for every task: scheduling, serialisation, and JVM "
+            "bookkeeping. When partitions are tiny, this overhead dominates the actual "
+            "computation. The cluster spends more time managing tasks than running them.",
+        fix="Use coalesce() to reduce the partition count without a full reshuffle. "
+            "A healthy target is 128 MB–512 MB of data per partition.",
+        code="# coalesce() reduces partitions without a full shuffle (cheaper than repartition):\n"
+             "df = df.coalesce(100)\n\n"
+             "# Or cap the default shuffle partition count before any aggregation/join:\n"
+             "spark.conf.set('spark.sql.shuffle.partitions', '200')\n\n"
+             "# AQE can also coalesce small partitions automatically (Spark 3+):\n"
+             "spark.conf.set('spark.sql.adaptive.enabled', 'true')\n"
+             "spark.conf.set('spark.sql.adaptive.coalescePartitions.enabled', 'true')",
+    ),
+
+    # ─── 8. HIGH GC OVERHEAD ────────────────────────────────────────────────────
+    # JVM spent > 10 % of executor run time on garbage collection.
     dict(
         trigger=lambda t, e: (
                 t["executorRunTime"] > 0
                 and t["jvmGcTime"] / t["executorRunTime"] > 0.10
         ),
         level="warn",
-        title="High GC Overhead — Standard Python UDFs suspected",
-        what="The JVM spent {gc_pct}% of executor time on Garbage Collection (GC) "
-             "instead of running your code.",
-        why="Standard Python UDFs process data row-by-row. This forces the JVM to "
-            "constantly create and destroy objects to move data between Java and Python, "
-            "triggering frequent and expensive memory cleanups.",
-        fix="1. **Best**: Use built-in Spark SQL functions (e.g., `when()`, `regexp_replace()`).\n"
-            "2. **Better**: If you need Python logic, use **Pandas UDFs** (Vectorized). "
-            "They use Apache Arrow to move data in large batches, drastically reducing GC pressure.",
-        code="# SLOW: Standard UDF (Row-by-row)\n"
+        title="High GC overhead — standard Python UDFs suspected",
+        what="The JVM spent {gc_pct}% of executor time on garbage collection "
+             "({gc_time}) instead of running your code.",
+        why="Standard Python UDFs move data row-by-row between the JVM and Python. "
+            "The JVM must create and destroy a new Java object for every single row, "
+            "triggering frequent and expensive memory cleanups (GC pauses). "
+            "These pauses block all other work on the executor.",
+        fix="1. Best — replace the UDF with a built-in Spark SQL function "
+            "(when(), regexp_replace(), date_trunc(), etc.). These run entirely in the JVM.\n"
+            "2. Better — if custom Python logic is unavoidable, use a Pandas UDF "
+            "(also called a vectorised UDF). It transfers data in Arrow batches instead of "
+            "row-by-row, cutting object churn by orders of magnitude.\n"
+            "3. If no UDFs are in use, try repartitioning to reduce per-executor data volume "
+            "or increasing executor memory.",
+        code="# SLOW — standard UDF (one Java object per row):\n"
              "from pyspark.sql.functions import udf\n"
              "@udf('double')\n"
-             "def slow_plus_one(x): return x + 1\n\n"
-             "# FAST: Pandas UDF (Vectorized/Batched)\n"
+             "def slow_plus_one(x):\n"
+             "    return x + 1\n\n"
+             "# FAST — Pandas UDF (Arrow-batched, avoids per-row object creation):\n"
+             "import pandas as pd\n"
              "from pyspark.sql.functions import pandas_udf\n"
              "@pandas_udf('double')\n"
              "def fast_plus_one(s: pd.Series) -> pd.Series:\n"
              "    return s + 1\n\n"
-             "df = df.withColumn('v', fast_plus_one(df.col))",
+             "df = df.withColumn('v', fast_plus_one(df['col']))",
     ),
 ]
 
@@ -834,6 +931,8 @@ def _render_report(stages, elapsed_s, ml_libs=None):
         "jvmGcTime": sum(s.get("jvmGcTime", 0) for s in stages),
         "shuffleReadBytes": sum(s.get("shuffleReadBytes", 0) for s in stages),
         "shuffleWriteBytes": sum(s.get("shuffleWriteBytes", 0) for s in stages),
+        "maxTaskShuffleWrite": max(s.get("shuffleWriteBytes", 0) for s in stages),
+        "medianTaskShuffleWrite": median(s.get("shuffleWriteBytes", 0) for s in stages),
         "diskBytesSpilled": sum(s.get("diskBytesSpilled", 0) for s in stages),
         "memoryBytesSpilled": sum(s.get("memoryBytesSpilled", 0) for s in stages),
         "inputBytes": sum(s.get("inputBytes", 0) for s in stages),
@@ -953,10 +1052,11 @@ def _render_report(stages, elapsed_s, ml_libs=None):
     # Advice cards
     cards_html = ""
     for rule in fired:
+        ti = rule["title"].format(**subs)  # ← add this
         w = rule["what"].format(**subs)
         y = rule["why"].format(**subs)
         f = rule["fix"].format(**subs)
-        cards_html += _advice_card(rule["level"], rule["title"], w, y, f, rule.get("code"))
+        cards_html += _advice_card(rule["level"], ti, w, y, f, rule.get("code"))
 
     # ML library detection advice
     if ml_libs:
