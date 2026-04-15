@@ -26,6 +26,7 @@ import urllib.request
 from IPython.core.magic import register_cell_magic
 from IPython.display import display, HTML
 
+
 # ═══════════════════════════════════════════════════════════════
 #  SECTION 1: SPARK CONTEXT DETECTION
 #  ═════════════════════════════════════════════════════════════
@@ -355,24 +356,24 @@ def _capture_stages_with_retry(host, port, app_id, before, elapsed):
     # Determine retry strategy based on job duration
     if elapsed < 0.5:
         # Very quick job - History Server likely hasn't indexed yet
-        initial_wait = 3.0      # Increased from 1.5
-        max_retries = 8         # Increased from 5
-        retry_interval = 1.5    # Increased from 1.0
+        initial_wait = 3.0  # Increased from 1.5
+        max_retries = 8  # Increased from 5
+        retry_interval = 1.5  # Increased from 1.0
     elif elapsed < 2.0:
         # Quick job
-        initial_wait = 2.0      # Increased from 1.0
-        max_retries = 6         # Increased from 4
-        retry_interval = 1.0    # Increased from 0.8
+        initial_wait = 2.0  # Increased from 1.0
+        max_retries = 6  # Increased from 4
+        retry_interval = 1.0  # Increased from 0.8
     elif elapsed < 5.0:
         # Normal job
-        initial_wait = 1.0      # Increased from 0.6
-        max_retries = 5         # Increased from 3
-        retry_interval = 0.8    # Increased from 0.6
+        initial_wait = 1.0  # Increased from 0.6
+        max_retries = 5  # Increased from 3
+        retry_interval = 0.8  # Increased from 0.6
     else:
         # Long job - lag is negligible
-        initial_wait = 0.8      # Increased from 0.6
-        max_retries = 2         # Increased from 1
-        retry_interval = 0.6    # Same
+        initial_wait = 0.8  # Increased from 0.6
+        max_retries = 2  # Increased from 1
+        retry_interval = 0.6  # Same
 
     # First attempt
     time.sleep(initial_wait)
@@ -390,8 +391,8 @@ def _capture_stages_with_retry(host, port, app_id, before, elapsed):
     # Retry loop for History Server catching up
     total_wait = initial_wait
     max_wait = 180.0  # Hard timeout: Never wait more than 3 minutes (180 seconds) total
-                      # This is the absolute maximum time we'll wait for all new stages to complete
-                      # If stages don't complete in 3 minutes, we give up and return what we have
+    # This is the absolute maximum time we'll wait for all new stages to complete
+    # If stages don't complete in 3 minutes, we give up and return what we have
 
     for attempt in range(1, max_retries + 1):
         # Check if we've exceeded maximum wait time
@@ -440,13 +441,13 @@ def _fmt_ms(ms):
     if not ms:
         return "0 ms"
     if ms < 1000:   return f"{ms:.0f} ms"
-    if ms < 60_000: return f"{ms/1000:.1f} s"
-    return f"{ms/60_000:.1f} min"
+    if ms < 60_000: return f"{ms / 1000:.1f} s"
+    return f"{ms / 60_000:.1f} min"
 
 
 def _fmt_elapsed(s):
     if s < 60:  return f"{s:.1f} s"
-    return f"{int(s//60)} min {int(s%60)} s"
+    return f"{int(s // 60)} min {int(s % 60)} s"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -484,168 +485,119 @@ def _fmt_elapsed(s):
 # ═══════════════════════════════════════════════════════════════
 
 _ADVICE = [
-
     dict(
-        trigger = lambda t, e: t["diskBytesSpilled"] > 0,
-        level   = "error",
-        title   = "Your data spilled to disk ({max_spill_stage})",
-        what    = "Spark ran out of memory in {max_spill_stage} and had to write "
-                  "{max_spill_bytes} to the cluster's hard drive to continue.",
-        why     = "Reading from disk is 10-100x slower than reading from memory. "
-                  "This is one of the most common reasons a job takes much longer than expected. "
-                  "If enough data spills, the job can crash entirely.",
-        fix     = "Add .cache() on the DataFrame you reuse most, right after you build it. "
-                  "This keeps it in memory so Spark never needs to recompute or reload it.",
-        code    = "# Find the DataFrame used in multiple cells and cache it:\n"
-                  "df = df.cache()\n"
-                  "df.count()  # this line forces the cache to load now\n\n"
-                  "# From this point, all .show(), .count(), .groupBy() on df\n"
-                  "# will read from memory — not from S3 again.",
+        trigger=lambda t, e: t["diskBytesSpilled"] > 0,
+        level="error",
+        title="Data Spill to Disk: Potential Memory Exhaustion",
+        what="Spark ran out of RAM in stage {max_spill_stage} and spilled "
+             "{max_spill_bytes} to the cluster's local NVMe/SSD storage.",
+        why="Reading from local disk is significantly slower than RAM. This is usually caused by "
+            "data skew (one partition is too big) or having too few partitions for the data volume.",
+        fix="1. Increase the number of partitions using .repartition(N).\n"
+            "2. Use .cache() on DataFrames used multiple times.\n"
+            "3. Check for 'Data Skew'—if one key has millions of rows while others have hundreds.",
+        code="# Increase parallelism to shrink individual partition size:\n"
+             "df = df.repartition(1000)\n\n"
+             "# Or cache if the DataFrame is reused:\n"
+             "df.cache().count()",
     ),
 
     dict(
-        trigger = lambda t, e: t["memoryBytesSpilled"] > 0 and t["diskBytesSpilled"] == 0,
-        level   = "warn",
-        title   = "Memory pressure — close to spilling",
-        what    = "Spark shuffled {mem_spill} of data between memory pools "
-                  "because executors were running low on RAM.",
-        why     = "This is a warning sign. Your job is close to the edge. "
-                  "If you add more data or remove a filter, the next run "
-                  "will likely spill to disk and become much slower.",
-        fix     = "Cache the DataFrame you use most to reduce memory pressure, "
-                  "or ask the platform team if executor memory can be increased.",
-        code    = "df = df.cache()\n"
-                  "df.count()  # materialise the cache now",
+        # New Advice: Data Skew Detection
+        # Trigger: If the max task duration is > 3x the median task duration in a stage
+        trigger=lambda t, e: t.get("taskMaxDuration", 0) > (t.get("taskMedianDuration", 0) * 3) and t.get("numTasks",
+                                                                                                          0) > 10,
+        level="warn",
+        title="Data Skew Detected: Uneven Workload",
+        what="One or two tasks are taking much longer than all others in stage {stage_id}.",
+        why="Spark divides work into tasks. If one 'key' (e.g., a null value or a very popular ID) "
+            "has way more data than others, one executor works while the rest of the cluster sits idle.",
+        fix="If joining, try 'salting' the join key or check for nulls in your join columns. "
+            "If on Spark 3+, ensure 'Adaptive Query Execution' (AQE) is enabled.",
+        code="# Enable AQE Skew Join optimization:\n"
+             "spark.conf.set('spark.sql.adaptive.enabled', 'true')\n"
+             "spark.conf.set('spark.sql.adaptive.skewJoin.enabled', 'true')",
     ),
-
     dict(
         # Shuffle warning threshold: 500MB to 1GB
-        # 500 * 1024**2 = 524,288,000 bytes = 500 MB (lower limit, warn starts here)
-        # 1 * 1024**3   = 1,073,741,824 bytes = 1 GB (upper limit, becomes error)
-        # Network transfers above 500MB are expensive but manageable.
-        # Above 1GB, shuffle usually dominates total runtime.
-        trigger = lambda t, e: 500 * 1024**2 < t["shuffleWriteBytes"] <= 1 * 1024**3,
-        level   = "warn",
-        title   = "Large shuffle in {max_shuffle_stage} — join or groupBy moved a lot of data",
-        what    = "Spark moved {max_shuffle_bytes} of data across the network in {max_shuffle_stage} "
-                  "to complete a join or groupBy.",
-        why     = "Network transfers are expensive. Every worker has to wait "
-                  "for data to arrive before it can continue. "
-                  "The bigger the shuffle, the longer everything waits.",
-        fix     = "If you are joining a large table to a small one, "
-                  "use broadcast() to send the small table to every node. "
-                  "This eliminates the shuffle entirely.",
-        code    = "from pyspark.sql.functions import broadcast\n\n"
-                  "# Before (causes a big shuffle):\n"
-                  "result = big_df.join(small_df, 'key')\n\n"
-                  "# After (no shuffle — small_df is sent to every node):\n"
-                  "result = big_df.join(broadcast(small_df), 'key')\n\n"
-                  "# Use broadcast() when the small table is under ~100 MB.",
+        trigger=lambda t, e: 500 * 1024 ** 2 < t["shuffleWriteBytes"] <= 1 * 1024 ** 3,
+        level="warn",
+        title="Moderate shuffle in {max_shuffle_stage} — room for optimization",
+        what="Spark moved {max_shuffle_bytes} across the network. This adds latency but is not yet critical.",
+        why="Every byte sent over the network costs time. If you can reduce this now, "
+            "your job will be much more resilient as your data grows.",
+        fix="1. **Drop unused columns** before the join to reduce shuffle size.\n"
+            "2. Increase the auto-broadcast limit if the smaller table is ~50MB.\n"
+            "3. Use `broadcast()` explicitly if you know one side is small.",
+        code="# Increase auto-broadcast threshold from 10MB to 50MB:\n"
+             "spark.conf.set('spark.sql.autoBroadcastJoinThreshold', 50 * 1024 * 1024)\n\n"
+             "# Only select necessary columns to shrink the shuffle:\n"
+             "df_small = df_small.select('join_key', 'needed_col')\n"
+             "result = df_big.join(broadcast(df_small), 'join_key')",
     ),
 
     dict(
         # Shuffle error threshold: > 1GB
-        # 1 * 1024**3 = 1,073,741,824 bytes = 1 GB
-        # At this scale, shuffle becomes the dominant cost and limits parallelism.
-        # All executors must wait for network transfers to complete before proceeding.
-        # This is almost always the top reason for slow jobs at this scale.
-        trigger = lambda t, e: t["shuffleWriteBytes"] > 1 * 1024**3,
-        level   = "error",
-        title   = "Very large shuffle in {max_shuffle_stage} — this is your main bottleneck",
-        what    = "Spark moved {max_shuffle_bytes} of data across the network in {max_shuffle_stage}. "
-                  "At this scale the shuffle is almost certainly why the job is slow.",
-        why     = "Every executor has to send data to every other executor. "
-                  "Nothing can proceed until all transfers are complete. "
-                  "At 1 GB+ this dominates total runtime.",
-        fix     = "Option 1 (best): If one table is small, use broadcast(). "
-                  "Option 2: Repartition both tables on the join key before joining — "
-                  "this ensures matching keys land on the same node and avoids a full cross-cluster shuffle.",
-        code    = "# Option 1 — use broadcast() if small_df is under ~100 MB:\n"
-                  "from pyspark.sql.functions import broadcast\n"
-                  "result = big_df.join(broadcast(small_df), 'join_key')\n\n"
-                  "# Option 2 — repartition on the join key before joining:\n"
-                  "df1 = df1.repartition(200, 'join_key')\n"
-                  "df2 = df2.repartition(200, 'join_key')\n"
-                  "result = df1.join(df2, 'join_key')",
+        trigger=lambda t, e: t["shuffleWriteBytes"] > 1 * 1024 ** 3,
+        level="error",
+        title="Critical shuffle in {max_shuffle_stage} — your main bottleneck",
+        what="Spark moved {max_shuffle_bytes} across the network. This 'All-to-All' "
+             "transfer is likely why the job is slow.",
+        why="Large shuffles force executors to wait for I/O instead of processing data. "
+            "At this scale, you must optimize the join strategy or enable adaptive features.",
+        fix="1. **Enable AQE**: This lets Spark handle skew and coalesce partitions automatically.\n"
+            "2. **Broadcast Join**: Best if one table can fit in memory (<100MB).\n"
+            "3. **Pre-shuffle**: Repartition both tables on the join key to avoid a cross-cluster shuffle.",
+        code="# Enable Adaptive Query Execution (standard on modern EMR):\n"
+             "spark.conf.set('spark.sql.adaptive.enabled', 'true')\n\n"
+             "# Option 1: Broadcast Join (Best if one table is small)\n"
+             "from pyspark.sql.functions import broadcast\n"
+             "df = big_df.join(broadcast(small_df), 'id')\n\n"
+             "# Option 2: Pre-shuffle on Join Key (Prevents expensive exchange)\n"
+             "df1 = df1.repartition(500, 'join_key')\n"
+             "df2 = df2.repartition(500, 'join_key')\n"
+             "df = df1.join(df2, 'join_key')",
     ),
 
     dict(
-        trigger = lambda t, e: t["numTasks"] < 10 and t["inputBytes"] > 100 * 1024**2,
-        level   = "warn",
-        title   = "Work is barely parallelised — cluster is mostly idle",
-        what    = "Spark used only {num_tasks} parallel tasks to process "
-                  "{input_bytes} of data.",
-        why     = "Your cluster has many cores, but only {num_tasks} are doing any work. "
-                  "The rest are sitting idle. Your job is running almost single-threaded, "
-                  "which makes it far slower than it needs to be.",
-        fix     = "Add .repartition() right after reading your data. "
-                  "This tells Spark to split the data into more pieces so "
-                  "more of the cluster can work in parallel.",
-        code    = "# Add this immediately after spark.read:\n"
-                  "df = spark.read.parquet('s3://your-bucket/data/')\n"
-                  "df = df.repartition(200)   # 200 is a safe starting point\n\n"
-                  "# Then continue with your filters, joins, groupBys as normal.\n"
-                  "# The cluster will now use many more cores in parallel.",
+        trigger=lambda t, e: t["numTasks"] < 10 and t["inputBytes"] > 100 * 1024 ** 2,
+        level="warn",
+        title="Under-parallelized: Small File or Single Partition Problem",
+        what="Only {num_tasks} tasks are processing {input_bytes} of data.",
+        why="Spark creates one task per file/block. If you have a few giant files or one partition, "
+            "most of your cluster's CPUs are doing nothing. You are paying for a cluster but running like a laptop.",
+        fix="Force a repartition to distribute the load across all available executors.",
+        code="# Increase tasks to at least 2-3x the number of CPU cores in your cluster:\n"
+             "df = df.repartition(200)",
     ),
 
     dict(
-        trigger = lambda t, e: (
-            t["executorRunTime"] > 0
-            and t["jvmGcTime"] / t["executorRunTime"] > 0.10
+        trigger=lambda t, e: (
+                t["executorRunTime"] > 0
+                and t["jvmGcTime"] / t["executorRunTime"] > 0.10
         ),
-        level   = "warn",
-        title   = "High garbage collection time — Python UDFs suspected",
-        what    = "The JVM spent {gc_pct}% of executor time cleaning up memory "
-                  "({gc_time}), not running your computation.",
-        why     = "Python UDFs (functions you write yourself with @udf) force Spark to "
-                  "pass data between Java and Python constantly, creating thousands of "
-                  "short-lived objects that the JVM must then clean up. "
-                  "This steals time from your actual job.",
-        fix     = "Replace Python UDFs with Spark's built-in SQL functions where possible. "
-                  "Built-in functions run entirely inside the JVM and have no Python overhead.",
-        code    = "# SLOW — Python UDF:\n"
-                  "from pyspark.sql.functions import udf\n"
-                  "from pyspark.sql.types import StringType\n"
-                  "my_upper = udf(lambda x: x.upper(), StringType())\n"
-                  "df = df.withColumn('name_upper', my_upper('name'))\n\n"
-                  "# FAST — built-in function (same result, no Python overhead):\n"
-                  "from pyspark.sql.functions import upper\n"
-                  "df = df.withColumn('name_upper', upper('name'))\n\n"
-                  "# Other common built-ins: lower, trim, split, regexp_replace,\n"
-                  "# to_date, datediff, coalesce, when, col — check the Spark docs.",
+        level="warn",
+        title="High GC Overhead — Standard Python UDFs suspected",
+        what="The JVM spent {gc_pct}% of executor time on Garbage Collection (GC) "
+             "instead of running your code.",
+        why="Standard Python UDFs process data row-by-row. This forces the JVM to "
+            "constantly create and destroy objects to move data between Java and Python, "
+            "triggering frequent and expensive memory cleanups.",
+        fix="1. **Best**: Use built-in Spark SQL functions (e.g., `when()`, `regexp_replace()`).\n"
+            "2. **Better**: If you need Python logic, use **Pandas UDFs** (Vectorized). "
+            "They use Apache Arrow to move data in large batches, drastically reducing GC pressure.",
+        code="# SLOW: Standard UDF (Row-by-row)\n"
+             "from pyspark.sql.functions import udf\n"
+             "@udf('double')\n"
+             "def slow_plus_one(x): return x + 1\n\n"
+             "# FAST: Pandas UDF (Vectorized/Batched)\n"
+             "from pyspark.sql.functions import pandas_udf\n"
+             "@pandas_udf('double')\n"
+             "def fast_plus_one(s: pd.Series) -> pd.Series:\n"
+             "    return s + 1\n\n"
+             "df = df.withColumn('v', fast_plus_one(df.col))",
     ),
-
-    dict(
-        trigger = lambda t, e: (
-            e > 30
-            and t["shuffleWriteBytes"] == 0
-            and t["inputBytes"] == 0
-        ),
-        level   = "warn",
-        title   = "Slow cell with no data reads — possible uncached lineage replay",
-        what    = "This cell took {elapsed} but Spark did not read any data from storage.",
-        why     = "Spark is lazy — it remembers the steps to build a DataFrame "
-                  "but doesn't actually run them until you call an action like .show() or .count(). "
-                  "If a previous cell defined a DataFrame without caching it, "
-                  "Spark may be re-running all those steps from scratch every time.",
-        fix     = "Go back to the cell where your main DataFrame was first built. "
-                  "Add .cache() there and call .count() to force it to load. "
-                  "Every cell that uses that DataFrame afterwards will be instant.",
-        code    = "# In the cell where your DataFrame is first built:\n"
-                  "df = (\n"
-                  "    spark.read.parquet('s3://your-bucket/data/')\n"
-                  "    .filter(df.year == 2024)\n"
-                  "    .groupBy('region')\n"
-                  "    .agg({'revenue': 'sum'})\n"
-                  ")\n"
-                  "df = df.cache()   # <-- add this line\n"
-                  "df.count()        # <-- triggers the cache to load\n\n"
-                  "# Now every subsequent cell that uses df will be fast\n"
-                  "# because Spark reads from memory, not from S3 again.",
-    ),
-
 ]
-
 
 # ═══════════════════════════════════════════════════════════════
 #  HTML BUILDING BLOCKS
@@ -676,7 +628,7 @@ def _advice_card(level, title, what, why, fix, code):
     th = _THEME[level]
     code_html = ""
     if code:
-        esc = code.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+        esc = code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         code_html = f"""
         <div style="margin-top:10px">
           <div style="font-size:10px;font-weight:700;color:{th['bar']};
@@ -729,7 +681,7 @@ def _advice_card(level, title, what, why, fix, code):
 
 
 def _metric_row(label, tooltip, value_str, highlight=False):
-    bg  = "background:#FFF8E6;" if highlight else "background:#fff;"
+    bg = "background:#FFF8E6;" if highlight else "background:#fff;"
     dot = " ⚠" if highlight else ""
     return f"""
     <tr title="{tooltip}">
@@ -775,7 +727,7 @@ def _per_stage_breakdown(stages):
         status = stage.get("status", "?")
 
         # Highlight stages with issues
-        shuffle_issue = shuffle_write > 500 * 1024**2
+        shuffle_issue = shuffle_write > 500 * 1024 ** 2
         spill_issue = disk_spill > 0
         row_bg = ""
         if spill_issue:
@@ -850,7 +802,6 @@ def _find_problem_stages(stages):
 
 
 def _render_report(stages, elapsed_s, ml_libs=None):
-
     ml_libs = ml_libs or []
 
     # No Spark work ran
@@ -877,43 +828,43 @@ def _render_report(stages, elapsed_s, ml_libs=None):
 
     # Aggregate totals
     t = {
-        "numTasks":           sum(s.get("numTasks", 0)             for s in stages),
-        "executorRunTime":    sum(s.get("executorRunTime", 0)      for s in stages),
-        "executorCpuTime":    sum(s.get("executorCpuTime", 0)      for s in stages),
-        "jvmGcTime":          sum(s.get("jvmGcTime", 0)            for s in stages),
-        "shuffleReadBytes":   sum(s.get("shuffleReadBytes", 0)     for s in stages),
-        "shuffleWriteBytes":  sum(s.get("shuffleWriteBytes", 0)    for s in stages),
-        "diskBytesSpilled":   sum(s.get("diskBytesSpilled", 0)     for s in stages),
-        "memoryBytesSpilled": sum(s.get("memoryBytesSpilled", 0)   for s in stages),
-        "inputBytes":         sum(s.get("inputBytes", 0)           for s in stages),
-        "outputBytes":        sum(s.get("outputBytes", 0)          for s in stages),
-        "peakExecutionMemory":max((s.get("peakExecutionMemory", 0) for s in stages), default=0),
+        "numTasks": sum(s.get("numTasks", 0) for s in stages),
+        "executorRunTime": sum(s.get("executorRunTime", 0) for s in stages),
+        "executorCpuTime": sum(s.get("executorCpuTime", 0) for s in stages),
+        "jvmGcTime": sum(s.get("jvmGcTime", 0) for s in stages),
+        "shuffleReadBytes": sum(s.get("shuffleReadBytes", 0) for s in stages),
+        "shuffleWriteBytes": sum(s.get("shuffleWriteBytes", 0) for s in stages),
+        "diskBytesSpilled": sum(s.get("diskBytesSpilled", 0) for s in stages),
+        "memoryBytesSpilled": sum(s.get("memoryBytesSpilled", 0) for s in stages),
+        "inputBytes": sum(s.get("inputBytes", 0) for s in stages),
+        "outputBytes": sum(s.get("outputBytes", 0) for s in stages),
+        "peakExecutionMemory": max((s.get("peakExecutionMemory", 0) for s in stages), default=0),
     }
 
     # Find problem stages for stage-specific advice
     problem_stages = _find_problem_stages(stages)
 
     gc_pct = int(100 * t["jvmGcTime"] / t["executorRunTime"]) \
-             if t["executorRunTime"] > 0 else 0
+        if t["executorRunTime"] > 0 else 0
 
     # Template substitutions for advice text
     max_shuffle_stage_id, max_shuffle_bytes = problem_stages["max_shuffle_stage"]
     max_spill_stage_id, max_spill_bytes = problem_stages["max_spill_stage"]
 
     subs = {
-        "disk_spill":    _fmt_bytes(t["diskBytesSpilled"]),
-        "mem_spill":     _fmt_bytes(t["memoryBytesSpilled"]),
+        "disk_spill": _fmt_bytes(t["diskBytesSpilled"]),
+        "mem_spill": _fmt_bytes(t["memoryBytesSpilled"]),
         "shuffle_write": _fmt_bytes(t["shuffleWriteBytes"]),
-        "num_tasks":     str(t["numTasks"]),
-        "input_bytes":   _fmt_bytes(t["inputBytes"]),
-        "gc_pct":        str(gc_pct),
-        "gc_time":       _fmt_ms(t["jvmGcTime"]),
-        "elapsed":       _fmt_elapsed(elapsed_s),
+        "num_tasks": str(t["numTasks"]),
+        "input_bytes": _fmt_bytes(t["inputBytes"]),
+        "gc_pct": str(gc_pct),
+        "gc_time": _fmt_ms(t["jvmGcTime"]),
+        "elapsed": _fmt_elapsed(elapsed_s),
         # Stage-specific info
-        "max_shuffle_stage":   f"Stage {max_shuffle_stage_id}" if max_shuffle_stage_id is not None else "a stage",
-        "max_shuffle_bytes":   _fmt_bytes(max_shuffle_bytes),
-        "max_spill_stage":     f"Stage {max_spill_stage_id}" if max_spill_stage_id is not None else "a stage",
-        "max_spill_bytes":     _fmt_bytes(max_spill_bytes),
+        "max_shuffle_stage": f"Stage {max_shuffle_stage_id}" if max_shuffle_stage_id is not None else "a stage",
+        "max_shuffle_bytes": _fmt_bytes(max_shuffle_bytes),
+        "max_spill_stage": f"Stage {max_spill_stage_id}" if max_spill_stage_id is not None else "a stage",
+        "max_spill_bytes": _fmt_bytes(max_spill_bytes),
     }
 
     # Fire advice rules
@@ -927,7 +878,7 @@ def _render_report(stages, elapsed_s, ml_libs=None):
 
     # Health banner
     has_error = any(r["level"] == "error" for r in fired)
-    has_warn  = any(r["level"] == "warn"  for r in fired)
+    has_warn = any(r["level"] == "warn" for r in fired)
     if has_error:
         hth = _THEME["error"]
         htext = "Issues found — see the advice cards below"
@@ -940,11 +891,12 @@ def _render_report(stages, elapsed_s, ml_libs=None):
 
     # Metrics table
     # These flags determine which metrics get highlighted in yellow (warning)
-    spill_disk   = t["diskBytesSpilled"] > 0         # ⚠️ ANY disk spill = problem (memory pressure)
-    spill_mem    = t["memoryBytesSpilled"] > 0       # ⚠️ ANY memory pressure = warning (precedes disk spill)
-    big_shuffle  = t["shuffleWriteBytes"] > 500 * 1024**2  # ⚠️ > 500 MB shuffle = expensive network operation
-    few_tasks    = t["numTasks"] < 10 and t["inputBytes"] > 100 * 1024**2  # ⚠️ < 10 tasks on large data = cluster underused
-    high_gc      = gc_pct > 10                       # ⚠️ > 10% GC time = memory overhead (Python UDFs common cause)
+    spill_disk = t["diskBytesSpilled"] > 0  # ⚠️ ANY disk spill = problem (memory pressure)
+    spill_mem = t["memoryBytesSpilled"] > 0  # ⚠️ ANY memory pressure = warning (precedes disk spill)
+    big_shuffle = t["shuffleWriteBytes"] > 500 * 1024 ** 2  # ⚠️ > 500 MB shuffle = expensive network operation
+    few_tasks = t["numTasks"] < 10 and t[
+        "inputBytes"] > 100 * 1024 ** 2  # ⚠️ < 10 tasks on large data = cluster underused
+    high_gc = gc_pct > 10  # ⚠️ > 10% GC time = memory overhead (Python UDFs common cause)
 
     metrics_html = "".join([
         _metric_row(
@@ -1047,7 +999,7 @@ def _render_report(stages, elapsed_s, ml_libs=None):
                   display:flex;justify-content:space-between;align-items:center">
         <span>⚡ sparkmonitor</span>
         <span style="font-weight:400;font-size:12px;opacity:.75">
-          {len(stages)} stage{'s' if len(stages)!=1 else ''}
+          {len(stages)} stage{'s' if len(stages) != 1 else ''}
           &nbsp;·&nbsp; {t['numTasks']} tasks
           &nbsp;·&nbsp; {_fmt_elapsed(elapsed_s)}
         </span>
