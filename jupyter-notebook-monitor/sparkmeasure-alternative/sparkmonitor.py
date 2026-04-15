@@ -939,11 +939,12 @@ def _render_report(stages, elapsed_s, ml_libs=None):
         htext = "Looks healthy — no major issues detected"
 
     # Metrics table
-    spill_disk   = t["diskBytesSpilled"] > 0
-    spill_mem    = t["memoryBytesSpilled"] > 0
-    big_shuffle  = t["shuffleWriteBytes"] > 500 * 1024**2
-    few_tasks    = t["numTasks"] < 10 and t["inputBytes"] > 100 * 1024**2
-    high_gc      = gc_pct > 10
+    # These flags determine which metrics get highlighted in yellow (warning)
+    spill_disk   = t["diskBytesSpilled"] > 0         # ⚠️ ANY disk spill = problem (memory pressure)
+    spill_mem    = t["memoryBytesSpilled"] > 0       # ⚠️ ANY memory pressure = warning (precedes disk spill)
+    big_shuffle  = t["shuffleWriteBytes"] > 500 * 1024**2  # ⚠️ > 500 MB shuffle = expensive network operation
+    few_tasks    = t["numTasks"] < 10 and t["inputBytes"] > 100 * 1024**2  # ⚠️ < 10 tasks on large data = cluster underused
+    high_gc      = gc_pct > 10                       # ⚠️ > 10% GC time = memory overhead (Python UDFs common cause)
 
     metrics_html = "".join([
         _metric_row(
@@ -984,14 +985,16 @@ def _render_report(stages, elapsed_s, ml_libs=None):
             highlight=spill_mem),
         _metric_row(
             "GC time (memory housekeeping)",
-            "Time the JVM spent cleaning up objects. "
-            "Above 10% of run time usually means Python UDFs are causing overhead.",
+            "Time the JVM spent garbage collecting (cleaning up unused objects). "
+            "⚠️ WARNING if > 10% of run time. Common causes: Python UDFs, slow shuffles, or memory pressure. "
+            "Fix: Use Scala UDFs, repartition data, or increase executor memory.",
             f"{_fmt_ms(t['jvmGcTime'])}  ({gc_pct}% of run time)",
             highlight=high_gc),
         _metric_row(
             "Peak executor memory",
             "The most memory any single executor used at one time. "
-            "If close to the executor memory limit, spill is likely on the next run.",
+            "If this is close to your executor memory limit (default 4GB), you will get disk spill on next run. "
+            "Indicator: If this is > 80% of executor memory, increase executor memory or reduce data per partition.",
             _fmt_bytes(t["peakExecutionMemory"])),
     ])
 
