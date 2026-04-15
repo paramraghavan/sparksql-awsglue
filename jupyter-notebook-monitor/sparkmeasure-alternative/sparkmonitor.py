@@ -491,19 +491,21 @@ _ADVICE = [
     dict(
         trigger=lambda t, e: t["diskBytesSpilled"] > 0,
         level="error",
-        title="Data spill to disk: potential memory exhaustion",
-        what="Spark ran out of RAM in {max_spill_stage} and spilled "
+        title="Data Spill to Disk: Potential Memory Exhaustion",
+        what="Spark ran out of RAM in {max_spill_stage} and had to write "
              "{max_spill_bytes} to the cluster's local NVMe/SSD storage.",
-        why="Reading from local disk is significantly slower than RAM. This is usually caused by "
-            "data skew (one partition is too big) or having too few partitions for the data volume.",
-        fix="1. Increase the number of partitions using .repartition(N).\n"
-            "2. Use .cache() on DataFrames that are reused across multiple operations.\n"
-            "3. Check for data skew — if one key has millions of rows while others have hundreds, "
-            "one executor drowns while the rest sit idle.",
-        code="# Increase parallelism to shrink individual partition size:\n"
-             "df = df.repartition(1000)\n\n"
+        why="Spilling happens when a partition is too large for the executor's memory. "
+            "Reading from disk is 10-100x slower than RAM, and this is the most "
+            "common reason jobs take hours instead of minutes.",
+        fix="1. **Increase Parallelism**: Spread the data across more tasks so each task is smaller.\n"
+            "2. **Eager Caching**: Use .cache() on DataFrames used multiple times.\n"
+            "3. **Check for Skew**: If only one task is spilling, you likely have skewed keys.",
+        code="# Dynamically scale partitions based on cluster size (aim for 3x total cores):\n"
+             "num_cores = spark.sparkContext.defaultParallelism\n"
+             "df = df.repartition(num_cores * 3)\n\n"
              "# Or cache if the DataFrame is reused:\n"
-             "df.cache().count()  # .count() forces the cache to load eagerly",
+             "df = df.cache()\n"
+             "df.count()  # This forces the cache to load immediately",
     ),
 
     # ─── 2. DATA SKEW (proxy) ───────────────────────────────────────────────────
