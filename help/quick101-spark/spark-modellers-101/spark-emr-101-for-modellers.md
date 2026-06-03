@@ -1,251 +1,646 @@
-![Hadoop yarn Cluster](hadoop_yarn_cluster.png)
-> What happens if we read a pandas dataframe > 16GB. Pandas will load the entire dataframe onta a single node
-> If the data exceeds available ram on that node (~64GB), we get OOM and node becomes unstable, unresponsive adn will
-> be killed by yarn or by OS itself
-> if it were a pyspark dataframe it iwll be distributed across nodes. It read 500 GB dataset and only nodes available
-> are 6X64 --> 384 GB(10 - 15% overhead), so avaialble memeory 300 - 330 GB. With memory deficiet of 170 - 200 GB,
-> spilling to
-> disk or OOM , node thrashing managing memory.
+# EMR 101 for Modellers: Spark on AWS
 
-## Spark submit
+## Why Spark Instead of Pandas?
+
+![Hadoop yarn Cluster](hadoop_yarn_cluster.png)
+
+### The Problem: Pandas on a Single Node
+
+When you read a pandas DataFrame larger than ~16GB:
+- **What happens**: Pandas loads the ENTIRE dataframe onto a single node
+- **Memory limit**: If data exceeds available RAM on that node (~64GB), you hit an **Out of Memory (OOM)** error
+- **Result**: Node becomes unstable, unresponsive, and gets killed by YARN or the OS
+
+**Example - Pandas fails:**
+```python
+import pandas as pd
+
+# Reading 500GB with pandas on a single 64GB node
+df = pd.read_csv("s3://bucket/huge-file-500gb.csv")  # ❌ CRASH!
+# OutOfMemoryError: Cannot allocate 500GB on 64GB node
+```
+
+### The Solution: Spark Distributes Data
+
+When you read a PySpark DataFrame with 500GB across a 6-node cluster:
+- **Memory per node**: 6 nodes × 64GB = 384GB total
+- **After overhead (10-15%)**: ~300-330GB usable
+- **Distribution**: 500GB ÷ 6 nodes = ~83GB per node
+- **Result**: Works perfectly! No memory pressure.
+
+**Example - Spark succeeds:**
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("BigData").master("yarn").getOrCreate()
+
+# Reading 500GB with Spark across 6 nodes
+df = spark.read.csv("s3://bucket/huge-file-500gb.csv")  # ✅ SUCCESS!
+# Each node handles ~83GB - easy!
+df.count()  # Processes in parallel
+```
+
+### Key Insight: Distributed vs Single-Node
+
+| Aspect | Pandas | PySpark |
+|--------|--------|---------|
+| **Data Location** | Single node | Distributed across cluster |
+| **500GB dataset** | 500GB on 1 node (crashes) | 83GB per node on 6 nodes (works) |
+| **Processing** | Sequential on 1 core | Parallel on all cores |
+| **Best for** | Small data (<16GB) | Large data (>100GB) |
+
+## Understanding Spark Cluster Architecture
 
 ![spark-submit.png](spark-submit.png)
 
-- Node1/Worker1: 1 executor [4 Cores, 16 GB]
-- Node2/Worker2: 1 executor [4 Cores, 16 GB]
-- Node3/Worker3: 1 executor [4 Cores, 16 GB]
-- Node4/Worker4: 1 executor [4 Cores, 16 GB]
+### Cluster Setup Example
 
-> Node1/Worker1 with one executor has 4 cores , which means each core runs a task in separate thread. The memeory
-> allocated to each task is flexible.
-> While you have 4 cores, "1 task per core" is a logical limit for processing, but memory is not physically hard-wired
-> to specific cores. Instead, it is managed as a shared pool. How it's allocated: If you are running 4 tasks (one per
-> core), they all dip into this pool.The "Fair Share" Rule: Most executors try to ensure each task gets at least $1/N$ of
-> the available execution memory (where $N$ is the number of active tasks). If Task A needs more and Task B isn't using
-> its share, Task A can often "borrow" the extra space
-
-
-> It could have been Node7 instead of Node1 and Node 10 instead of Node 4
-
-## Transformation and Actions -Spark Jobs/Stages
-
-- Transformation
-    - Narrow Dependency - can be performed in a parallel on data partitions
-        - select, filter, drop, etc
-    - Wide dependency
-        - grouping data
-        - group by, join, agg, repartition etc
-- Actions
-    - read, write, collect, take , count
-
-## Jobs, Stages , Read/Write Exchange buffer, Tasks
-
-> A typical spark application looks like a set of code blocks, spark driver analyses the following code into Block 0 and
-> Block 1 below
-> The application driver will take this block, compile it and create a Spark job.
-> But this job must be performed by the executors.
-> Because the driver doesn't perform any data processing job.
-> The driver must break this job into smaller tasks and assign them to the executors.
-
-**Original Code here**
-[sample_spark_code.py](sample_spark_code.py)
-
-**start Job 0**
-
-```python
-# code Block 0
-readAsDF = spark.read
-.option("header", "true")
-.option("inferSchema", "true")
-.csv(args(0))  # <<---- action
+When you submit a Spark job to EMR with this configuration:
+```bash
+spark-submit --num-executors 4 --executor-cores 4 --executor-memory 16g my_job.py
 ```
 
-**end Job 0**
+You get:
+- **Node1/Worker1**: 1 executor (1 JVM) with 4 cores and 16GB memory
+- **Node2/Worker2**: 1 executor (1 JVM) with 4 cores and 16GB memory
+- **Node3/Worker3**: 1 executor (1 JVM) with 4 cores and 16GB memory
+- **Node4/Worker4**: 1 executor (1 JVM) with 4 cores and 16GB memory
 
-**start Job 1**
+**Total cluster capacity**: 4 nodes × 4 cores = **16 parallel tasks** can run simultaneously
 
-```python
-# code Block 1
-partitionedDF = readAsDF.repartition(numPartitions=2)  # wide dependency transformation, stage1
-#  we apply 4 transformations to partitionedDF 
-countDF = partitionedDF.where(conditionExpr=Age ‹ 40 )  # narrow transformation
-select(col="Age", cols="Gender", "Country", "state")  # narrow transformation
-.groupBy(col1="Country")  # wide dependency transformation, stage2
-.count()  # this is count on groupby, Still lazy! result is a DataFrame with columns: [department, count], stage3
-# so it is a narrow transform here and not an action
-logger.info(countDF.collect())  # <<---- action
+### ⚠️ CRITICAL CLARIFICATION: 1 JVM Per Executor, NOT Per Core
+
+**Question**: Do we have 1 JVM per executor or 1 JVM per core?
+
+**Answer**: **1 JVM per executor** (NOT per core)
+
+#### Example Architecture
+
+```
+Node1 (Physical Server)
+│
+└── Executor 1 (1 JVM Process)
+    │
+    ├── Task 1 (Thread 1)
+    ├── Task 2 (Thread 2)
+    ├── Task 3 (Thread 3)
+    └── Task 4 (Thread 4)
+
+    ← All 4 tasks run in the SAME JVM
+    ← Each task runs in a separate thread
+    ← They share the same 16GB memory pool
 ```
 
-**end Job 1**
+#### Why This Matters
 
-> Spark will run each code block **as one Spark Job**.
-> Note Job 0 is a read, so it's an action
+**Misconception**: "4 cores = 4 JVMs"
+```
+❌ WRONG:
+Node1 has:
+├── JVM 1 (for core 1)
+├── JVM 2 (for core 2)
+├── JVM 3 (for core 3)
+└── JVM 4 (for core 4)
+```
 
-> Spark driver will create a logical query plan for each spark job.
+**Correct Architecture**:
+```
+✅ RIGHT:
+Node1 has:
+└── JVM 1 (1 Executor)
+    ├── Thread 1 (runs on core 1)
+    ├── Thread 2 (runs on core 2)
+    ├── Thread 3 (runs on core 3)
+    └── Thread 4 (runs on core 4)
+```
 
-### Job 0
+#### Detailed Example with 4 Executors
 
-WE are reading a CSV file and also inferring the schema and created an initial data frame and named it readPopulationDF.
+```bash
+spark-submit \
+  --num-executors 4 \
+  --executor-cores 4 \
+  --executor-memory 16g \
+  my_job.py
+```
 
-Technically, spark.read is a transformation, but because of your specific configuration, it behaves like an action.
-Here is the breakdown of what happens on your EMR cluster with that specific code block.
+Creates this structure:
 
-1. Is it an Action or Transform?
-   In a vacuum, spark.read is a transformation. However, because you added .option("inferSchema", "true"), Spark is
-   forced to act like it’s executing an action.
-   **The Conflict:** To "infer" a schema, Spark cannot just look at file names. It must physically open the files, read
-   a
-   sample of the rows, and check the data types (Is this a string? An integer?).
-   **The Result:** This triggers a Spark Job immediately on your EMR cluster. If you had not used inferSchema (or if you
-   had
-   provided a manual schema), no job would have started until you called something like .count() or .save().
+```
+Cluster (4 nodes × 1 executor each = 4 JVMs total)
+│
+├── Node1: Executor 1 JVM
+│   ├── Thread 1 on Core 1
+│   ├── Thread 2 on Core 2
+│   ├── Thread 3 on Core 3
+│   └── Thread 4 on Core 4
+│
+├── Node2: Executor 2 JVM
+│   ├── Thread 1 on Core 1
+│   ├── Thread 2 on Core 2
+│   ├── Thread 3 on Core 3
+│   └── Thread 4 on Core 4
+│
+├── Node3: Executor 3 JVM
+│   ├── Thread 1 on Core 1
+│   ├── Thread 2 on Core 2
+│   ├── Thread 3 on Core 3
+│   └── Thread 4 on Core 4
+│
+└── Node4: Executor 4 JVM
+    ├── Thread 1 on Core 1
+    ├── Thread 2 on Core 2
+    ├── Thread 3 on Core 3
+    └── Thread 4 on Core 4
 
-2. How the "Read" Stage looks (Task Count)
-   You have 40 Total Slots ($8\ executors \times 5\ cores$). However, the number of tasks in a Read Stage is almost
-   never determined by your executor count or the "default shuffle size."Instead, the number of tasks for a CSV read is
-   determined by the Input Split (how the data is stored on S3/HDFS).
-   **The Factors:**
-    1. File Size: Spark splits files based on
-       spark.sql.files.maxPartitionBytes (default is 128 MB).
-    2. Number of Files: If you have 100 small CSV files, Spark will
-       create 100 tasks (one per file).
-    3. Total Tasks Calculation:If your input data is 10 GB (10,240 MB):
-       $$\frac{10,240\ MB}{128\ MB\ (Split\ Size)} = 80\ Tasks$$
+Total: 4 JVMs, 16 threads (one per core), 16GB per JVM
+```
 
-3. The "Default Shuffle Size" Confusion
-   The "Default Shuffle Size" (parameter spark.sql.shuffle.partitions, which defaults to 200) has zero
-   impact on the Read stage.
-    - **Read Stage (Stage 0):** Task count is based on Input Data Size / 128MB.
-    - **Shuffle Stage (Stage 1):** Task count is based on the 200 default. This only happens if you do a groupBy, join, or
-      distinct later in your code.
+#### Why 1 JVM vs 1 JVM Per Core?
 
-   **Summary of Execution on EMR**
+**Efficiency**: JVM startup is expensive
+- Creating 4 JVMs per 4 cores = overhead
+- 1 JVM with 4 threads = lightweight, efficient
 
-   Given your 40-slot cluster and a hypothetical 10GB file:
-    ```markdown
-    | Component           | Value        | Role in the Job                                                   |
-    |--------------------|-------------|-------------------------------------------------------------------|
-    | Parallel Capacity   | 40 Cores    | How many tasks can run at once.                                   |
-    | Read Stage Tasks    | ~80 Tasks   | Calculated by data size (10GB / 128MB).                           |
-    | Execution Flow      | 2 Waves     | 40 tasks run, then the next 40 tasks run.                         |
-    | Shuffle Tasks       | 200 Tasks   | Ignored for the read; used only for later shuffles.               |
-    ```
+**Shared Memory**: All threads in same JVM share memory pool
+- Task 1 needs extra memory? It can use Task 2's unused allocation
+- This is the "Fair Share" memory management
 
-### Job 1 in detail
+**Process Overhead**: Each JVM needs:
+- Memory for the runtime
+- Garbage collection threads
+- Class loading
+- Metadata storage
 
-**First step**, Spark driver will creates a logical query plan for each spark job. Once we have the logical plan, the
-driver will start breaking this plan into stages.
+With 4 cores, you want 1 JVM with 4 threads, NOT 4 JVMs with 1 thread each.
 
-#### Logical Plan
+### How Cores and Memory Work Together
+
+#### Cores: Task Parallelism
+- **4 cores** = Each executor can run 4 tasks in parallel (one per core)
+- **1 task per core** is the typical rule for CPU-bound work
+- Example: Processing 100 partitions with 16 cores takes ~100÷16 = 6.25 "waves" of execution
+
+#### Memory: Shared Pool (Not Hard-Wired to Cores)
+Memory allocation is **NOT** tied to specific cores. Instead, it's a **shared pool**:
+
+```python
+# Example: 4 tasks running on one executor with 16GB total
+# Task 1: Uses 6GB
+# Task 2: Uses 4GB
+# Task 3: Uses 3GB
+# Task 4: Uses 2GB
+# Total: 15GB (within 16GB limit)
+
+# If Task 1 needs more memory:
+# Task 4 releases its memory → Task 1 can borrow it
+# This is called "Fair Share" memory management
+```
+
+### Fair Share Memory Rule
+
+Each task gets at least `1/N` of available execution memory, where `N` = number of active tasks.
+
+**Example with 4 tasks on 16GB executor:**
+```
+Initial fair share: 16GB ÷ 4 tasks = 4GB per task minimum
+Task 1 needs 10GB? → It can use up to 10GB if others don't need it
+Task 4 only needs 1GB? → Releases 3GB back to the pool
+Task 1 can borrow that 3GB
+```
+
+**Result**: Flexible memory allocation allows tasks to get what they need without being tied to cores.
+
+### Note on Node Assignment
+The specific node assignment (Node1, Node2, etc.) can vary based on cluster availability. Node7 could be used instead of Node1, or Node10 instead of Node4—the distribution depends on YARN resource manager's scheduling.
+
+## Transformations vs Actions: The Foundation
+
+### Key Concept: Lazy Evaluation
+Spark doesn't execute code immediately. It builds a **logical plan** and only executes when you call an action.
+
+### Transformations (Lazy - No Execution Yet)
+
+**Narrow Transformations** - No data movement between nodes
+```python
+df.select("name", "age")        # Pick columns
+df.filter(df.age > 30)          # Filter rows
+df.drop("unnecessary_column")   # Remove columns
+df.withColumn("new_col", df.age * 2)  # Create new column
+```
+**Key**: Each input partition → only affects that partition (no shuffle)
+
+**Wide Transformations** - Data moves between nodes (Shuffle)
+```python
+df.groupBy("department")        # Group data
+df.join(other_df, on="id")      # Join two DataFrames
+df.agg({"salary": "avg"})       # Aggregate across partitions
+df.repartition(200)              # Redistribute data
+```
+**Key**: Input partitions → output partitions (requires network shuffle)
+
+### Actions (Eager - Execute Immediately)
+
+Actions trigger the entire lazy evaluation pipeline:
+```python
+df.count()                        # Count rows
+df.collect()                      # Return all data to driver
+df.show()                         # Display first 20 rows
+df.write.parquet("output/")       # Write to disk
+df.take(10)                       # Get first 10 rows
+```
+
+### Example: Which are Transformations vs Actions?
+
+```python
+# Chain of transformations (nothing happens yet)
+df = spark.read.csv("data.csv")           # Lazy transformation
+df = df.filter(df.age > 30)               # Lazy transformation
+df = df.select("name", "salary")          # Lazy transformation
+df = df.groupBy("name").count()           # Still lazy! Returns DataFrame
+
+# THIS triggers execution (action)
+df.show()  # ✅ NOW Spark executes everything above
+```
+
+## Jobs, Stages, and Tasks: How Spark Organizes Work
+
+### The Three-Level Hierarchy
+
+```
+Application
+    ↓
+Jobs (triggered by actions)
+    ↓
+Stages (separated by wide transformations)
+    ↓
+Tasks (one per partition)
+```
+
+### How the Driver Processes Your Code
+
+The **Spark Driver** (your application) does NOT process data. Instead, it:
+
+1. **Analyzes** your code into logical blocks
+2. **Creates a Spark Job** for each action (read, write, collect, etc.)
+3. **Breaks the job** into stages based on wide transformations
+4. **Assigns tasks** to executors for parallel processing
+
+### Example Code Walkthrough
+
+**Sample code** [sample_spark_code.py](sample_spark_code.py):
+
+```python
+# =================== JOB 0 ===================
+# Block 0: Read data (this is an ACTION)
+readAsDF = spark.read \
+    .option("header", "true") \
+    .option("inferSchema", "true") \
+    .csv("s3://bucket/data.csv")
+
+# =================== JOB 1 ===================
+# Block 1: Transform and process data
+
+# Stage 1: Repartition (WIDE transformation)
+partitionedDF = readAsDF.repartition(numPartitions=2)
+
+# Stage 2: Filter & Select (NARROW transformations)
+countDF = partitionedDF \
+    .filter(partitionedDF.Age < 40) \
+    .select("Age", "Gender", "Country", "State")
+
+# Stage 3: GroupBy & Count (WIDE transformation)
+countDF = countDF.groupBy("Country").count()  # Result is a DataFrame
+
+# Final action: Collect results
+results = countDF.collect()  # <<---- THIS is the ACTION
+logger.info(results)
+```
+
+### Why Two Jobs?
+
+**Job 0**: Triggered by `.csv()` read action
+- Executes immediately due to `inferSchema=true` (needs to scan file for types)
+
+**Job 1**: Triggered by `.collect()` action
+- Executes the entire transformation chain above it
+
+### Job 0 Deep Dive: Reading Data
+
+#### Reading and Schema Inference
+
+```python
+readAsDF = spark.read \
+    .option("header", "true") \
+    .option("inferSchema", "true") \
+    .csv("s3://bucket/data.csv")
+```
+
+**Question**: Is `spark.read` a transformation or action?
+
+**Answer**: It depends on your options!
+
+#### Without `inferSchema` (Lazy Transformation)
+```python
+readAsDF = spark.read \
+    .option("header", "true") \
+    .csv("s3://bucket/data.csv")  # ← Lazy! No job runs yet
+# No tasks are assigned. Job doesn't start until .count() or .show()
+```
+
+#### With `inferSchema=true` (Acts Like an Action)
+```python
+readAsDF = spark.read \
+    .option("header", "true") \
+    .option("inferSchema", "true") \
+    .csv("s3://bucket/data.csv")  # ← Triggers a job!
+# Spark must read sample rows to detect types → Job runs immediately
+```
+
+**Why**: To infer schema, Spark must:
+1. Open the files
+2. Read sample rows
+3. Analyze data types (Is "123" an integer or string?)
+4. Infer column types
+5. Create a schema
+
+This forces Spark to execute a job right away.
+
+#### Task Count in Read Stage
+
+With a 40-slot cluster (8 executors × 5 cores), how many tasks in a read stage?
+
+**NOT 40 tasks!** Instead, it's determined by **data size and file splits**.
+
+**Example: Reading 10GB CSV**
+
+| Factor | Calculation | Result |
+|--------|-------------|--------|
+| File size | 10GB = 10,240 MB | - |
+| Default split | `spark.sql.files.maxPartitionBytes` | 128 MB |
+| Number of tasks | 10,240 MB ÷ 128 MB | **80 tasks** |
+
+**Execution on 40-slot cluster**:
+```
+Wave 1: 40 tasks execute (0-39)
+Wave 2: 40 remaining tasks execute (40-79)
+Total time: 2 waves
+```
+
+**Multiple files example**:
+```python
+# If reading from 100 small CSV files
+spark.read.csv("s3://bucket/data_*.csv")
+# Tasks = number of files = 100 tasks (one per file)
+```
+
+#### The "Default Shuffle Partitions" Misconception
+
+⚠️ **Common mistake**: Thinking `spark.sql.shuffle.partitions` affects read stages.
+
+**The truth**:
+- **Read Stage**: Tasks = Data Size ÷ 128MB (not affected by shuffle.partitions)
+- **Shuffle Stage**: Tasks = spark.sql.shuffle.partitions (default 200)
+
+**Example with 40-slot cluster reading 10GB**:
+
+| Component | Value | Note |
+|-----------|-------|------|
+| Cluster capacity | 40 cores | Max parallel tasks |
+| Read stage tasks | ~80 tasks | 10GB ÷ 128MB splits |
+| Execution waves | 2 waves | Run 40, then 40 more |
+| Shuffle.partitions | 200 (default) | Used ONLY for groupBy, join, etc. |
+
+**Key takeaway**: The read stage ignores `shuffle.partitions`. It's only used after you do a groupBy, join, or repartition.
+
+### Job 1 Deep Dive: Complex Transformations
+
+```python
+partitionedDF = readAsDF.repartition(numPartitions=2)
+countDF = partitionedDF \
+    .filter(partitionedDF.Age < 40) \
+    .select("Age", "Gender", "Country", "State") \
+    .groupBy("Country") \
+    .count()
+results = countDF.collect()  # ← ACTION triggers Job 1
+```
+
+#### Step 1: Logical Plan Creation
 
 ![logical_plan.png](logical_plan.png)
 
-#### Stages
+Spark analyzes your transformations and creates a logical execution plan. This is the "what" - the sequence of operations without considering how many cores/nodes.
 
-The driver will look at this plan to find out the wide dependency transformations.
-We have two wide dependencies in this plan. The first one is the repartition() method, and the second one is the
-groupBy() method.
-So the driver will break logical plan after each wide dependency.
-The first one becomes the first stage. The second one goes to the second stage and the last one is the third stage.
-So the logical plan is now broken down into three stages. Each stage can have one or more narrow transformations,
-and the last step/operation of the stage is a wide transformation.
+#### Step 2: Breaking into Stages
 
-Note that spark cannot run these stages in parallel. We should finish the first stage, and only then we can start the
-next stage.
-Because the output of the first stage is an input for the next stage.
-So a spark job is broken into stages, in our case job1 is broken down into three stages. All the stages can run one
-after
-the other because the output of one stage is input for the next stage.
-
-**Logical Plan with stages**
 ![logical_plan_with_stages.png](logical_plan_with_stages.png)
 
-> Note: If you N wide-dependencies, your plan should have N+1 Stages. In our case 2+1 stages
+**Key Rule**: Spark breaks the plan at every **wide transformation**
 
-**Stage1**
-In the first stage I am reading into readingDF and repartitioning it to create partitionedDF. LEt me assume we start
-with 1 partition
-and we repartition creates 2 partitions and now stage becomes a task. Notice that the output of one stage(write excahnge
-buffer)
-becomes the input to the next stage.
+Your code has 2 wide transformations:
+1. `repartition()` - Wide dependency
+2. `groupBy()` - Wide dependency
+
+**So you get N+1 stages**: 2 wide + 1 = **3 stages**
+
+| Stage | Transformations | Type |
+|-------|-----------------|------|
+| Stage 1 | repartition() | Wide (shuffle required) |
+| Stage 2 | filter() + select() | Narrow operations |
+| Stage 3 | groupBy().count() | Wide (shuffle required) |
+
+**Important**: Stages run **sequentially**, not in parallel. Output of Stage 1 → Input to Stage 2 → Input to Stage 3.
+
+#### Stage 1 Deep Dive: Repartition
+
 ![stage1.png](stage1.png)
 
-**Stage2**
-Stage 2 starts with read exchange buffer. Spark is a distributed system.
-So the Write exchange and the read exchange may be on two different worker nodes or may be on same worker node/executor
-> Assume I have configured spark shuffle partitions to ensure I preserve those two partitions in the read exchange. have
-> set the spark.sql.shuffle.partitions=2,
-> so we get 2 shuffled partitons in stage 2, meaning we have two input partitions here.
-> And new these transformations run in parallel on those two partitions. Spark can execute the
-> same plan in parallel on two partitions because we have two partitions.
+```python
+# Input: 1 partition with data
+partitionedDF = readAsDF.repartition(numPartitions=2)
+# Output: 2 partitions with data shuffled
+```
 
-And we have two parallel tasks in stage two. Stage two also ends with a wide dependency transformation.
+**What happens**:
+1. Data from partition 0 is written to **Exchange Buffer** (temporary storage)
+2. Data is redistributed across 2 new partitions
+3. Each partition is ready for Stage 2 processing
 
-And this copy operation is popularly known as the Shuffle/Sort operation.
-The shuffle/sort is not a plain copy of data, lets keep as a copy operataion for now
-The shuffle/sort will move data from the Write exchange to the read exchange.
+**Task count**: Input partitions = 1, so 1 task writes to exchange buffer
 
-> The stage ends with a wide dependency transformation, and hence it requires a shuffle/sort of the data.
+#### Stage 2 Deep Dive: Filter and Select
 
-The Shuffle/Sort is an expensive operation in the Spark cluster.
-It requires a write exchange buffer and a read exchange buffer.
-The data from the write exchange buffer is sent to the read exchange buffer over the network.
+**Input**: 2 partitions from Stage 1 (via exchange buffer)
+
+```python
+countDF = partitionedDF \
+    .filter(partitionedDF.Age < 40) \      # Narrow
+    .select("Age", "Gender", "Country")     # Narrow
+```
+
+**Key insight**: These narrow transformations run **in parallel on 2 partitions**
+
+**Task count**: 2 partitions = 2 tasks (one per partition)
+
+Example execution:
+- **Task 1**: Processes partition 0 (filter + select)
+- **Task 2**: Processes partition 1 (filter + select)
+- Both run simultaneously
+
+#### Stage 3 Deep Dive: GroupBy and Count
+
+```python
+countDF = countDF.groupBy("Country").count()
+```
+
+**Why it's wide**: `groupBy` requires data to move between partitions
+- All rows with Country="USA" must go to the same partition
+- All rows with Country="Canada" must go to the same partition
+- This requires a **shuffle**
+
+**Shuffle operation**:
+1. **Write Phase**: Each task writes grouped data to exchange buffer
+2. **Network Phase**: Data moves across network to correct partition
+3. **Read Phase**: New tasks read grouped data and count
+
 ![stage2.png](stage2.png)
 
-**Stage3**
+**Task count**: Determined by `spark.sql.shuffle.partitions` (default 200)
+- Even though input is 2 partitions, output is 200 partitions
+- 200 new tasks process the shuffled data
 
-![stage3.png](stage3.png)
-
-**A pyspark job**
+#### Overall Job Execution
 
 ![a_spark_job.png](a_spark_job.png)
 
-Summary:
-Spark creates one job for each action. This job may contain a series of multiple transformations.
-The Spark engine will optimize those transformations and create a logical plan for the job.
-Then spark will break the logical plan at the end of every wide dependency and create two or more stages.
-If you do not have any wide dependency, your plan will be a single-stage plan.
-But if you have N wide-dependencies, your plan should have N+1 stages.
-Data from one stage to another stage is shared using the shuffle/sort operation.
-Now each stage may be executed as one or more parallel tasks.
+**Complete execution flow**:
+```
+Job 1 Action: .collect()
+    ↓
+Stage 1: Read + Repartition (1 task)
+    ↓ (Exchange buffer - data moves)
+Stage 2: Filter + Select (2 parallel tasks)
+    ↓ (Shuffle operation - expensive!)
+Stage 3: GroupBy + Count (200 parallel tasks)
+    ↓
+Collect results back to driver
+```
 
-The number of tasks in the stage is equal to the number of input partitions.
-In our example, the first stage starts with one single partition.
-So it can have a maximum of one parallel task.
-We made sure two partitions in the second stage. So we can have two parallel tasks in stage two. If we create 100
-partitions for stage two, we can have 100 parallel tasks for stage two.
+---
 
-**Task and Application Driver**
-A task is the smallest unit of work in a Spark job. The Spark driver assigns these tasks to the executors and asks them
-to do the work.
-The executor needs the following things to perform the task.
+## Tasks: The Smallest Unit of Work
 
-- The task Code
-- And Data Partition
+### What is a Task?
 
-So the driver is responsible for assigning a task to the executor. The executor will ask for the code or API to be
-executed for the task.
-It will also ask for the data frame partition on which to execute the given code.
-The application driver facilitates both these things to the executor, and the executor performs the task.
+A **task** is the smallest unit of work in Spark:
+```
+Task = Code to execute + Data partition to process
+```
 
-**Spark Cluster**
+The driver assigns tasks to executors with:
+1. The transformation code
+2. The specific partition to process
+
+### Task Assignment with Executor Slots
 
 ![spark-cluster.png](spark-cluster.png)
 
-Our spark cluster has a driver and four executors. Each executor will have one JVM process.
-And we assigned 4 CPU cores to each executor. So, our Executor-JVM can create four parallel threads.
-And this we call slot capacity of my executor.
-So each executor can have four parallel threads, and we call them executor slots.
-Let's now assume the driver has a job stage to finish. And you have ten input partitions for the stage.
-So you can have ten parallel tasks for the same. Now the driver will assign those ten tasks in these slots.
-This assignment may not be as uniform as I showed here.
-But we have some extra capacity that we are wasting because we do not have enough tasks for this stage.
-Now let's assume this stage is complete. All slots are now free.
-Now the driver should start the next stage.
-And we have 32 tasks for the next stage. But we have 16 slots only.
-The driver will schedule 16 tasks in the available slots.
-The remaining 16 will wait for slots to become available again.
-That's how these tasks are assigned and run by the executor.
+**Cluster setup**: Driver + 4 executors, each with 4 cores
+
+**Total capacity**: 4 executors × 4 cores = **16 parallel tasks**
+
+#### JVM Architecture: 1 Per Executor, NOT Per Core
+
+**Critical clarification**: When you have 1 executor with 4 cores, you have:
+- ✅ **1 JVM** (not 4 JVMs)
+- ✅ **4 threads** (one per core, all running in the same JVM)
+- ✅ **1 shared memory pool** (16GB for all threads)
+
+**Visual representation**:
+```
+Executor 1 (1 JVM)
+│
+├── Thread 1 (runs on Core 1) ← One task
+├── Thread 2 (runs on Core 2) ← One task
+├── Thread 3 (runs on Core 3) ← One task
+└── Thread 4 (runs on Core 4) ← One task
+
+All 4 threads share:
+- 1 JVM process
+- 16GB memory pool
+- Garbage collection
+- Class loader
+```
+
+**Why 1 JVM, not 4?**
+- JVM startup is expensive
+- Shared memory more efficient than 4 separate heaps
+- Each thread can borrow memory from unused allocations
+- One garbage collector manages all threads
+
+**For your cluster** (4 executors × 4 cores):
+```
+Total JVMs: 4 (one per executor)
+Total threads: 16 (4 per JVM, one per core)
+Total parallel tasks: 16
+```
+
+#### Example 1: Fewer tasks than slots
+
+```
+Stage with 10 input partitions = 10 tasks
+
+Executor 1 (4 slots):  Task 0, Task 1, Task 2, Task 3
+Executor 2 (4 slots):  Task 4, Task 5, Task 6, Task 7
+Executor 3 (4 slots):  Task 8, Task 9, (empty), (empty)
+Executor 4 (4 slots):  (empty), (empty), (empty), (empty)
+
+⚠️ Wasted capacity! 6 slots are idle.
+```
+
+#### Example 2: More tasks than slots
+
+```
+Stage with 32 input partitions = 32 tasks
+
+Wave 1 (Slots full):   Task 0-15 execute (all 16 slots)
+Wave 2 (Slots full):   Task 16-31 execute (all 16 slots)
+
+✅ Full utilization! Executes in 2 waves.
+```
+
+#### Example 3: Optimal case
+
+```
+Stage with 16 input partitions = 16 tasks
+
+All 16 tasks execute simultaneously on all 16 slots
+
+✅ Perfect match! One wave, no wasted capacity.
+```
+
+### Task Failures and Retries
+
+If a task fails:
+1. Driver retries on a different executor (up to 4 times by default)
+2. If all retries fail, the entire job fails
+3. If partition was lost, Spark can recompute from source
+
+---
+
+## Summary: Jobs, Stages, and Tasks
+
+| Level | What is it? | How many? |
+|-------|-----------|----------|
+| **Job** | Triggered by an action (count, collect, write) | One per action |
+| **Stage** | Execution between wide transformations | N + 1 (where N = wide transforms) |
+| **Task** | Process one partition with the stage's code | = Number of partitions in stage |
+
+**Execution model**:
+```
+Driver submits Job → Breaks into Stages → Assigns Tasks to Executors
+→ Executors run tasks in parallel → Results sent back to Driver
+```
 
 **Lets discuss collect() action**
 
@@ -260,63 +655,297 @@ If any task fails, the driver might want to retry it.
 So it can restart the task at a different executor. If all retries also fail, then the driver returns an exception and
 marks the job failed.
 
-## Explain why count on a groupby() is not action but a transformation
+## The Confusion: Is `groupBy().count()` a Transformation or Action?
+
+### The Answer: It's a TRANSFORMATION
+
+Many beginners think `df.groupBy("col").count()` triggers execution because it has "count" in it. **This is wrong!**
+
+### Breaking It Down
 
 ```python
-# This is an ACTION - triggers execution
-df.count()  # Returns a number immediately
+# ❌ This is an ACTION - immediately returns a NUMBER to driver
+total = df.count()
+print(total)  # Prints: 1000
 
-# This is TRANSFORMATION + ACTION combined
-df.groupBy("column").count()  # Returns a new DataFrame
+# ✅ This is a TRANSFORMATION - returns a new DataFrame (still lazy!)
+result = df.groupBy("department").count()
+print(result)  # Prints: DataFrame object
+# NOTHING executes yet!
 ```
 
-### **What Actually Happens:**
+### Why the Confusion?
 
-**1. `groupBy()` is a Transformation:**
+**`df.count()`** returns a Python integer (an action).
 
-```python
-grouped = df.groupBy("department")  # Lazy - nothing executed yet
-# grouped is a GroupedData object, not a DataFrame
-```
+**`df.groupBy().count()`** returns a DataFrame with columns [department, count] (a transformation).
 
-**2. `.count()` on GroupedData creates a new DataFrame:**
+They have the same name but completely different behavior!
 
-```python
-result = df.groupBy("department").count()  # Still lazy!
-# result is a DataFrame with columns: [department, count]
-```
-
-**3. To actually execute, you need an action:**
+### Complete Example
 
 ```python
-# NOW it executes - this is the action
-result.show()
-result.collect()
-result.write.parquet("output/")
-```
+from pyspark.sql import SparkSession
 
-### Here with an Example:**
+spark = SparkSession.builder.appName("Demo").getOrCreate()
 
-```python
 # Sample data
 df = spark.createDataFrame([
-    ("Sales", "John"),
-    ("Sales", "Jane"),
-    ("IT", "Bob"),
-    ("IT", "Alice")
-], ["department", "name"])
+    ("Sales", "John", 50000),
+    ("Sales", "Jane", 60000),
+    ("IT", "Bob", 80000),
+    ("IT", "Alice", 90000),
+    ("HR", "Charlie", 55000)
+], ["department", "name", "salary"])
 
-# This is lazy - no execution yet
-grouped_counts = df.groupBy("department").count()
-print("No execution happened yet!")
+print("Starting example...")
 
-# THIS triggers execution
-grouped_counts.show()
+# ==========================================
+# Step 1: GroupBy + Count (TRANSFORMATION)
+# ==========================================
+employee_counts = df.groupBy("department").count()
+
+print("After groupBy().count()")
+print("Type:", type(employee_counts))  # DataFrame
+print("Execution happened? NO!")
+print()
+
+# ==========================================
+# Step 2: Final Action (Now it executes!)
+# ==========================================
+employee_counts.show()
+# NOW the job executes!
 # Output:
 # +----------+-----+
 # |department|count|
 # +----------+-----+
 # |     Sales|    2|
 # |        IT|    2|
+# |        HR|    1|
 # +----------+-----+
 ```
+
+### Multiple Ways to Trigger Execution
+
+Once you have the grouped result, you need an **action** to execute:
+
+```python
+grouped = df.groupBy("department").count()  # Lazy - no execution
+
+# All of these trigger execution:
+grouped.show()                          # Action 1: Display
+grouped.count()                         # Action 2: Count rows
+grouped.collect()                       # Action 3: Collect all
+grouped.write.parquet("output/")        # Action 4: Write
+results = grouped.take(10)              # Action 5: Take first 10
+```
+
+### Beginner vs Advanced: Same Concept, Different Context
+
+**Beginner understanding**:
+```
+groupBy().count() returns a DataFrame
+DataFrame operations are lazy
+Need .show() or .collect() to see results
+```
+
+**Advanced understanding**:
+```
+groupBy() returns a GroupedData object (intermediate)
+.count() on GroupedData returns a new DataFrame (aggregation)
+DataFrame is still a logical plan until action executes
+Execution creates N+1 stages (2 wide deps = 3 stages)
+Count aggregation triggers shuffle to group data by department
+```
+
+---
+
+## Quick Recap: Key Takeaways for Beginners
+
+### 1. **Distributed Processing**
+- Pandas: All data on one node (crashes with >16GB)
+- Spark: Data split across cluster (scales to TB)
+
+### 2. **Cluster Architecture**
+- **Driver**: Your application (doesn't process data)
+- **Executors**: Worker processes (do the actual work)
+- **Cores**: Parallel execution threads
+- **Memory**: Shared pool managed by Spark
+
+### 3. **Lazy Evaluation**
+```python
+df.read → df.filter → df.select  # Nothing happens yet
+df.show()                          # NOW it executes
+```
+
+### 4. **Transformations vs Actions**
+- **Transformations**: Lazy (select, filter, groupBy, join)
+- **Actions**: Eager (show, count, collect, write)
+
+### 5. **Jobs, Stages, Tasks**
+- **Job**: Triggered by action
+- **Stage**: Separated by wide transformations
+- **Task**: One per partition (runs in parallel)
+
+### 6. **Why Understanding Matters**
+Knowing this helps you:
+- Debug slow jobs ("Stage 2 is shuffling 500GB!")
+- Design efficient queries ("Join big with big - will shuffle")
+- Optimize configurations ("200 shuffle partitions for 10GB data")
+- Understand error messages ("Out of memory in Stage 3")
+
+### 7. **Remember**
+```
+Big Data Problem:
+  1 node can't hold 500GB
+
+Spark Solution:
+  Split across 6 nodes
+  Process in parallel
+  Shuffle data as needed
+  Return results efficiently
+```
+
+---
+
+## How Spark Decides Task Count
+
+This is one of the most important decisions Spark makes, and it directly affects your job performance.
+
+### Reading Data: Task Count = Data Size ÷ File Split Size
+
+```python
+df = spark.read.csv("s3://bucket/data.csv")
+```
+
+**Formula**:
+```
+Number of tasks = Total data size ÷ maxPartitionBytes
+                = 10GB ÷ 128MB
+                = 10,240 MB ÷ 128 MB
+                = 80 tasks
+```
+
+**Key insights**:
+- **Default split size**: 128MB (configurable)
+- **One file minimum**: Even if file is 50MB, it gets 1 task
+- **Multiple files**: Number of tasks = at least 1 per file
+- **NOT influenced by**: `spark.sql.shuffle.partitions`
+
+**Examples**:
+
+```
+Scenario 1: Single 10GB file
+  10,240 MB ÷ 128 MB = 80 tasks
+
+Scenario 2: 100 small files (50MB each = 5GB total)
+  100 files × 1 task = 100 tasks (NOT just 5GB ÷ 128MB = 39)
+  Spark respects file boundaries!
+
+Scenario 3: Custom split size (64MB instead of 128MB)
+  10,240 MB ÷ 64 MB = 160 tasks (more parallelism)
+```
+
+**Visualization**:
+```
+Reading 10GB file with 128MB splits:
+
+10GB File
+│
+├─ Task 1: Reads 0-128MB (128 MB)
+├─ Task 2: Reads 128-256MB (128 MB)
+├─ Task 3: Reads 256-384MB (128 MB)
+├─ ... (continues)
+└─ Task 80: Reads 10,112-10,240MB (128 MB)
+
+All 80 tasks read in parallel (in waves based on cluster capacity)
+```
+
+### Writing Data: Task Count = Number of Partitions in DataFrame
+
+```python
+df = spark.read.csv("s3://bucket/data.csv")  # 80 partitions
+df.write.parquet("s3://bucket/output/")       # 80 write tasks
+```
+
+**Simple rule**:
+```
+Write tasks = DataFrame partitions at write time
+```
+
+**Where do partitions come from?**
+```
+1. After read: Same as number of read tasks
+   df.read → 80 tasks → 80 partitions
+
+2. After groupBy/join: Uses spark.sql.shuffle.partitions (default 200)
+   df.groupBy().count() → 200 partitions → 200 write tasks
+
+3. After repartition(N): Exactly N
+   df.repartition(50) → 50 partitions → 50 write tasks
+```
+
+**Example - Complete Flow**:
+```python
+# Step 1: Read 10GB CSV
+df = spark.read.csv("data.csv")
+# Result: 80 partitions (10GB ÷ 128MB)
+
+# Step 2: Filter (narrow transformation)
+df_filtered = df.filter(df.age > 30)
+# Result: Still 80 partitions (narrow = no change)
+
+# Step 3: GroupBy (wide transformation = SHUFFLE)
+df_agg = df_filtered.groupBy("country").count()
+# Result: 200 partitions (from spark.sql.shuffle.partitions = 200)
+
+# Step 4: Write
+df_agg.write.parquet("output/")
+# Result: 200 write tasks → 200 output files
+
+# Summary:
+├─ Read: 80 tasks
+├─ Filter: 80 tasks (pipelined with read)
+├─ GroupBy: 80 map tasks + 200 reduce tasks (shuffle)
+└─ Write: 200 tasks
+```
+
+### Optimization: Controlling Task Count
+
+**Too many tasks? Reduce them**:
+```python
+df = spark.read.csv("many_small_files/")  # 1000 tasks (too many!)
+df_coalesced = df.coalesce(100)            # Merge to 100 partitions
+df_coalesced.write.parquet("output/")      # 100 write tasks
+```
+
+**Too few tasks? Increase them**:
+```python
+df = spark.read \
+    .option("maxPartitionBytes", "64MB") \  # Reduce split size
+    .csv("huge_file.csv")                   # More tasks!
+# Result: 10GB ÷ 64MB = 160 tasks (instead of 80)
+```
+
+**Partition by column for organized output**:
+```python
+df.write \
+    .partitionBy("year", "month") \
+    .parquet("output/")
+# Result: output/year=2024/month=01/part-00000.parquet, etc.
+```
+
+For complete details, see: **[TASK_COUNT_DECISION_GUIDE.md](TASK_COUNT_DECISION_GUIDE.md)**
+
+---
+
+## Advanced Topics to Explore Next
+
+Once you understand Jobs, Stages, and Tasks:
+- **Task count tuning**: Balance parallelism vs overhead
+- **Partitioning strategies**: How to design partitions for performance
+- **Shuffle optimization**: Reduce network overhead
+- **Catalyst optimizer**: How Spark optimizes your logical plan
+- **Physical execution**: How stages turn into network I/O
+- **Caching**: Persist intermediate results
+- **Adaptive Query Execution**: Spark 3.0+ auto-optimization
