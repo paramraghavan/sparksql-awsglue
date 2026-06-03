@@ -293,6 +293,7 @@ The **Spark Driver** (your application) does NOT process data. Instead, it:
 ```python
 # =================== JOB 0 ===================
 # Block 0: Read data (this is an ACTION)
+# Your code appears lazy (just assigns to variable), but inferSchema=true makes it execute immediately to detect column types
 readAsDF = spark.read \
     .option("header", "true") \
     .option("inferSchema", "true") \
