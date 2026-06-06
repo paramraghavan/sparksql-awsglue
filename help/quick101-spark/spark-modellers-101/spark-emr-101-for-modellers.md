@@ -26,18 +26,265 @@ When you read a PySpark DataFrame with 500GB across a 6-node cluster:
 - **Memory per node**: 6 nodes × 64GB = 384GB total
 - **After overhead (10-15%)**: ~300-330GB usable
 - **Distribution**: 500GB ÷ 6 nodes = ~83GB per node
-- **Result**: Works perfectly! No memory pressure.
 
-**Example - Spark succeeds:**
+#### ⚠️ IMPORTANT: Disk Spill Will Occur
+
+**The issue**: Per-node data (83GB) **EXCEEDS** node memory (64GB)
+
+```
+Memory per node: 64GB
+├─ Reserved (JVM, system): ~6GB
+├─ Usable memory: ~58GB
+└─ Spark execution memory: ~35GB (60% of usable)
+
+Data per node: 83GB
+├─ Fits in node memory? NO (83GB > 64GB)
+└─ Spill to disk: ~19GB per node required
+```
+
+**Result**: When operations like `groupBy()`, `join()`, or `sort()` happen, Spark will:
+1. Load 83GB per node into memory (overflows to 64GB limit)
+2. Write overflow to disk: **Spill happens** (~19GB/node)
+3. Read from disk during shuffle (much slower)
+4. Performance impact: 10-50x slower due to disk I/O
+
+**Example - Spark with disk spill:**
 ```python
 from pyspark.sql import SparkSession
 
 spark = SparkSession.builder.appName("BigData").master("yarn").getOrCreate()
 
 # Reading 500GB with Spark across 6 nodes
-df = spark.read.csv("s3://bucket/huge-file-500gb.csv")  # ✅ SUCCESS!
-# Each node handles ~83GB - easy!
-df.count()  # Processes in parallel
+df = spark.read.csv("s3://bucket/huge-file-500gb.csv")  # ✅ Reads OK
+# Each node handles ~83GB
+
+# But this triggers disk spill!
+result = df.groupBy("customer_id").count()  # ❌ Disk spill occurs!
+# Spark UI shows: "Spill (Memory): 19GB"
+# Expected time: 1-2 hours (very slow!)
+```
+
+#### How to Avoid Disk Spill
+
+**Option 1: Use more memory per node**
+```bash
+# Upgrade to 128GB nodes minimum
+spark-submit \
+  --num-executors 6 \
+  --executor-memory 100g \
+  my_job.py
+# Now: Per-node data (83GB) < Spark memory (60GB? No, still tight!)
+# Better: Use 256GB nodes or more nodes
+```
+
+**Option 2: Add more nodes (Recommended)**
+```bash
+# With 15 nodes:
+# Per-node data: 500GB ÷ 15 = 33GB
+# Node memory: 64GB
+# Spill: NO! (33GB < 64GB available)
+
+spark-submit \
+  --num-executors 15 \
+  --executor-memory 32g \
+  my_job.py
+```
+
+**Option 3: Reduce data before operations**
+```python
+# Select only needed columns
+df_optimized = spark.read.csv("s3://bucket/huge-file-500gb.csv") \
+    .select("customer_id", "amount", "date")  # ~200GB instead of 500GB
+
+# New per-node: 200GB ÷ 6 = 33GB per node
+# NO spill! (33GB < 64GB)
+
+result = df_optimized.groupBy("customer_id").count()  # Fast! ✅
+```
+
+**Option 4: Batch Processing Patterns**
+
+#### ⚠️ Important: DataFrame State in Batch Loops
+
+When using batch processing in a loop, each iteration's DataFrame is **not available** to the next iteration:
+
+```python
+# ❌ PROBLEM: DataFrame state is lost between iterations
+for month in range(1, 13):
+    df = spark.read.csv("s3://bucket/huge-file-500gb.csv") \
+        .filter(col("year") == 2024) \
+        .filter(month(col("date")) == month)
+
+    result = df.groupBy("customer_id").count()
+    # df is GONE after this iteration
+
+    # You CANNOT do this later:
+    # combined = df_month1.union(df_month2)  # df_month1 doesn't exist!
+```
+
+#### Solution A: Batch Loop with Disk Persistence (If Results Are Independent)
+
+Use this when each month's result is **independent**:
+
+```python
+# Process each month separately, save to disk
+for month in range(1, 13):
+    df = spark.read.csv("s3://bucket/huge-file-500gb.csv") \
+        .filter(col("year") == 2024) \
+        .filter(month(col("date")) == month)
+
+    # Per-node: 42GB ÷ 6 = 7GB per node (NO spill!) ✅
+    result = df.groupBy("customer_id").agg(sum("amount"))
+
+    # Write to disk
+    result.write.mode("overwrite").parquet(f"s3://bucket/output/month_{month}")
+
+# Later: If you need to combine all months
+from functools import reduce
+from pyspark.sql import DataFrame
+
+all_months = [
+    spark.read.parquet(f"s3://bucket/output/month_{m}")
+    for m in range(1, 13)
+]
+
+# Union all months into single result
+combined = reduce(DataFrame.union, all_months)
+combined.write.parquet("s3://bucket/output/all_months_combined")
+```
+
+**When to use**:
+- Each month analyzed independently
+- Results written separately
+- Combine later if needed
+
+**Pros**: No spill (7GB/node), simple to understand
+**Cons**: Reads file 12 times, writes intermediate results
+
+#### Solution B: Single Read + Column Reduction (Recommended)
+
+Use this when you need **multiple operations on same data**:
+
+```python
+from pyspark.sql.functions import col, month, sum, count, max
+
+# ✅ BEST APPROACH: Read once with column selection
+# Select only needed columns (reduces from 500GB to ~200GB)
+df = spark.read.csv("s3://bucket/huge-file-500gb.csv") \
+    .select("customer_id", "date", "amount", "product_id", "region") \
+    .filter(col("year") == 2024)
+
+# Per-node: 200GB ÷ 6 = 33GB per node (NO spill!) ✅
+
+# Now do multiple operations on SAME DataFrame
+# (All results available, all without spill)
+
+monthly_stats = df.groupBy(month(col("date")).alias("month"), "customer_id") \
+    .agg(sum("amount").alias("total_amount"), count("*").alias("transactions"))
+
+customer_stats = df.groupBy("customer_id") \
+    .agg(sum("amount").alias("lifetime_total"), max("date").alias("last_purchase"))
+
+regional_stats = df.groupBy("region") \
+    .agg(sum("amount").alias("region_total"), count("*").alias("transactions"))
+
+product_stats = df.groupBy("product_id") \
+    .agg(count("*").alias("quantity_sold"))
+
+# Write all results (all available!)
+monthly_stats.write.parquet("s3://bucket/output/monthly_stats")
+customer_stats.write.parquet("s3://bucket/output/customer_stats")
+regional_stats.write.parquet("s3://bucket/output/regional_stats")
+product_stats.write.parquet("s3://bucket/output/product_stats")
+```
+
+**When to use**:
+- Multiple operations on same dataset
+- Need to keep results together
+- Want to reduce spill and file reads
+
+**Pros**: Single read, no spill, all results available, efficient
+**Cons**: Must select columns upfront
+
+#### Solution C: Single Read + Cache (For Expensive Transformations)
+
+Use this when transformations before operations are **expensive**:
+
+```python
+from pyspark.sql.functions import col, sum, count, month
+
+# Read once and cache (after expensive transformations)
+df = spark.read.csv("s3://bucket/huge-file-500gb.csv") \
+    .select("customer_id", "date", "amount", "product_id") \
+    .filter(col("year") == 2024) \
+    .filter(col("status") == "completed")  # Expensive filter
+    .cache()  # Cache the filtered result
+
+# Per-node: ~30GB (NO spill!) ✅
+
+# Multiple operations benefit from cache
+result1 = df.groupBy("customer_id").sum("amount")
+result2 = df.groupBy("product_id").count()
+result3 = df.filter(col("amount") > 1000)
+
+# Results available, cache reused for result2 and result3
+result1.write.parquet("s3://bucket/output/result1")
+result2.write.parquet("s3://bucket/output/result2")
+result3.write.parquet("s3://bucket/output/result3")
+
+df.unpersist()  # Clean up cache
+```
+
+**When to use**:
+- Expensive transformations before groupBy/join
+- Multiple operations need results
+- Transformations same for all operations
+
+**Pros**: Cache reused across operations, efficient
+**Cons**: Takes memory for cache
+
+#### Comparison Table
+
+| Solution | Per-Node Memory | Spill | Reads File | Results Available | Best For |
+|----------|-----------------|-------|------------|------------------|----------|
+| **A: Batch Loop** | 7GB | NO ✅ | 12 times | Only current month | Independent analysis by period |
+| **B: Single Read + Select** | 33GB | NO ✅ | 1 time | ALL together ✅ | Multiple operations on same data |
+| **C: Single Read + Cache** | 30GB | NO ✅ | 1 time | ALL together ✅ | Expensive transformations |
+
+#### Recommendation
+
+For your 500GB case across 6×64GB nodes:
+- **Use Solution B (Single Read + Column Reduction)** ✅
+- Reads file only once (saves I/O)
+- Reduces per-node data to 33GB (no spill)
+- All results available together
+- Most efficient for multi-operation analysis
+
+#### How to Detect Disk Spill in Your Job
+
+**In Spark UI** (http://driver-ip:4040):
+```
+Go to: Stages tab
+Look for: "Spill (Memory)" metric
+
+Example Good Stage:
+├─ Spill (Memory): 0B ✓
+├─ Spill (Disk): 0B ✓
+└─ Duration: 20 seconds ✅
+
+Example Bad Stage (Your case):
+├─ Spill (Memory): 19GB ✗
+├─ Spill (Disk): 15GB ✗
+└─ Duration: 5+ minutes ❌
+```
+
+**In YARN logs**:
+```bash
+yarn logs -applicationId application_xxx | grep -i "spill"
+
+# Output indicates:
+# INFO SpillableIterator: Spilled 19GB to disk
+# WARN MemoryManager: Writing 15GB to disk
 ```
 
 ### Key Insight: Distributed vs Single-Node
