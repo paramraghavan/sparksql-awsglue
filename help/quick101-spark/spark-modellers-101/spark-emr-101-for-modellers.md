@@ -528,8 +528,32 @@ result = df_repart.join(other_df, "customer_id")
 
 ### Quick Debug: Check Partition Count
 
+#### Important: Files ≠ Partitions (Not Always!)
+
+**Number of files and partitions are NOT always the same:**
+
 ```python
-# Always check after reading small files
+# Case 1: Small files (< 128MB each)
+# 1000 files × 1MB each = 1000 partitions
+# Ratio: 1000 ÷ 1000 = 1.0 ✅ (SAME!)
+
+# Case 2: Large files (> 128MB each)
+# 3 files × 500MB each = 12 partitions (each file splits: 500÷128=4 partitions)
+# Ratio: 12 ÷ 3 = 4.0 ❌ (DIFFERENT!)
+
+# Case 3: Mixed sizes
+# 2 small (1MB) + 2 large (200MB) = 1 + 1 + 2 + 2 = 6 partitions
+# Ratio: 6 ÷ 4 = 1.5 ❌ (DIFFERENT!)
+
+# Formula:
+# Partitions = SUM of ceiling(each_file_size ÷ 128MB)
+# └─ Default maxPartitionBytes = 128MB
+```
+
+#### Debug Code
+
+```python
+# Always check after reading files
 df = spark.read.csv("path/")
 
 num_partitions = df.rdd.getNumPartitions()
@@ -539,14 +563,22 @@ print(f"Files: {num_files}")
 print(f"Partitions: {num_partitions}")
 print(f"Ratio: {num_partitions / num_files:.2f}")
 
-# If ratio ≈ 1.0, you have 1 partition per file
-# This is the problem!
-# Apply: df.coalesce(target)
+# Interpret the ratio:
+# ├─ Ratio ≈ 1.0: Small files (< 128MB each) - Problem if > 100!
+# ├─ Ratio > 1.0: Large files (split across partitions) - Usually fine
+# └─ Ratio < 1.0: Files combined (parquet optimization) - Usually fine
 
-if num_partitions > 100:
-    print(f"⚠️ WARNING: Too many partitions! Coalesce recommended.")
+# Action if ratio ≈ 1.0 AND num_partitions > 100:
+# This means many small files - COALESCE RECOMMENDED!
+
+if num_partitions > 100 and (num_partitions / num_files) > 0.9:
+    print(f"⚠️ WARNING: Too many partitions from small files!")
+    print(f"   {num_files} files → {num_partitions} partitions")
+    print(f"   Coalesce recommended to reduce scheduling overhead.")
+
     target = max(50, num_partitions // 10)
     df = df.coalesce(target)
+    print(f"   ✅ Coalesced to {target} partitions")
 ```
 
 ### Key Takeaways: Small Files
@@ -1457,8 +1489,6 @@ df.write \
     .parquet("output/")
 # Result: output/year=2024/month=01/part-00000.parquet, etc.
 ```
-
-For complete details, see: **[TASK_COUNT_DECISION_GUIDE.md](TASK_COUNT_DECISION_GUIDE.md)**
 
 ---
 
