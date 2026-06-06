@@ -287,6 +287,281 @@ yarn logs -applicationId application_xxx | grep -i "spill"
 # WARN MemoryManager: Writing 15GB to disk
 ```
 
+---
+
+## Reading Many Small Files: Partition & Coalesce Strategy
+
+### The Problem: Default Partition Size (128MB)
+
+When reading many small files, Spark creates **one partition per file** by default, not based on the 128MB partition size limit.
+
+```python
+# Directory structure:
+# many_small_files/
+# ├─ file_001.csv (1MB)
+# ├─ file_002.csv (1MB)
+# ├─ ...
+# └─ file_1000.csv (1MB)
+# Total: 1000 files × 1MB = 1GB
+
+df = spark.read.csv("many_small_files/")
+print(f"Partitions: {df.rdd.getNumPartitions()}")  # Output: 1000
+
+# Expected (by maxPartitionBytes=128MB): 1000MB ÷ 128MB = ~8 partitions
+# Actual: 1000 partitions (1 per file) ❌
+
+# Why? Spark doesn't split files by default
+# └─ File boundaries are respected
+# └─ Even 1MB file = 1 partition
+# └─ 1000 files = 1000 partitions = 1000 tasks!
+```
+
+### Why This Is a Performance Killer
+
+#### Task Scheduling Overhead
+
+```
+Scenario: 1000 tasks from 1000 small files
+
+Cluster: 4 executors × 4 cores = 16 cores total
+
+Task Execution:
+├─ Running tasks: 16 (1 per core, in parallel)
+├─ Queued tasks: 984 (waiting)
+├─ Per-task time: 0.5 seconds (small file)
+├─ Scheduling overhead: 0.5s per task
+└─ Total scheduling: 1000 × 0.5s = 500 seconds!
+
+Actual Work:
+├─ Reading 1GB data: ~5 seconds
+├─ Processing: ~2 seconds
+└─ Total work: 7 seconds
+
+Overall Performance:
+├─ Total time: 500s scheduling + 7s work = 507 seconds ❌
+├─ Actual processing: 7 ÷ 507 = 1.4% of time
+└─ Wasted: 98.6% on scheduling overhead!
+
+Comparison to fewer partitions:
+├─ With 100 partitions: 50s scheduling + 7s work = 57 seconds ✅
+└─ Speedup: 9x faster! ⚡
+```
+
+#### Memory and Tracking Overhead
+
+```
+Per-task overhead:
+├─ Task metadata: ~500 bytes
+├─ Task tracking: ~1KB
+├─ Executor metadata tracking: ~2KB
+└─ Total per task: ~3.5KB
+
+For 1000 tasks:
+├─ Memory for tracking: 1000 × 3.5KB = 3.5MB (small)
+├─ More importantly: GC pressure from task creation
+├─ JVM must track 1000 tasks (heap fragmentation)
+└─ Result: GC pauses increase from 100ms to 1000ms+
+
+For 100 tasks:
+└─ Minimal overhead
+```
+
+### The Solution: Coalesce After Reading
+
+Coalesce **merges partitions** without shuffling data:
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("SmallFiles").getOrCreate()
+
+# Step 1: Read many small files
+df = spark.read.csv("many_small_files/")
+print(f"Before: {df.rdd.getNumPartitions()} partitions")  # 1000
+
+# Step 2: Coalesce to reasonable number
+df_coal = df.coalesce(100)  # Merge 10 files per partition
+print(f"After: {df_coal.rdd.getNumPartitions()} partitions")  # 100
+
+# Step 3: Write (now with 100 write tasks instead of 1000)
+df_coal.write.parquet("s3://bucket/output/")
+```
+
+#### How Coalesce Works
+
+```
+Before Coalesce (1000 partitions, 1 file each):
+├─ Partition 0: file_001.csv (1MB)
+├─ Partition 1: file_002.csv (1MB)
+├─ ...
+└─ Partition 999: file_1000.csv (1MB)
+
+After Coalesce(100):
+├─ Partition 0: file_001.csv + file_002.csv + ... + file_010.csv (10MB)
+├─ Partition 1: file_011.csv + file_012.csv + ... + file_020.csv (10MB)
+├─ ...
+└─ Partition 99: file_991.csv + ... + file_1000.csv (10MB)
+
+Result:
+├─ Partitions: 1000 → 100 (90% reduction!)
+├─ Tasks: 1000 → 100 (90% reduction!)
+├─ Scheduling overhead: 500s → 50s (90% reduction!)
+├─ Total time: 507s → 57s (9x faster!) ⚡
+```
+
+### Coalesce vs Repartition
+
+**Critical difference**:
+
+```python
+# ❌ DON'T USE: repartition() causes SHUFFLE!
+df_repart = df.repartition(100)  # Full shuffle!
+# Shuffles 1GB across network
+# Takes minutes!
+
+# ✅ DO USE: coalesce() just MERGES (no shuffle)
+df_coal = df.coalesce(100)  # Just merges locally
+# No network I/O
+# Takes seconds!
+
+# Performance:
+# coalesce(): 5 seconds (just local merging)
+# repartition(): 60+ seconds (network shuffle)
+# Difference: 12x slower with repartition!
+```
+
+### Best Practices for Small File Reads
+
+#### Rule 1: Target Partition Size
+
+```python
+# Rule: 1 partition per 128MB (default maxPartitionBytes)
+
+# Example: 1000 files × 1MB = 1GB total
+# Target partitions: 1GB ÷ 128MB = ~8 partitions
+
+df = spark.read.csv("many_small_files/")
+df_coal = df.coalesce(8)  # Coalesce to ~8 partitions
+```
+
+#### Rule 2: Match Cluster Parallelism
+
+```python
+# Rule: 1 partition per 2 cores (1-2 tasks per core)
+
+# Example: 4 executors × 4 cores = 16 cores
+# Target partitions: 16-32 partitions
+
+df = spark.read.csv("many_small_files/")
+df_coal = df.coalesce(32)  # Optimal for 16 cores
+```
+
+#### Rule 3: Choose Conservatively
+
+```python
+# Conservative rule: 1-2% of original partitions
+
+# Example: 1000 files
+# Conservative: 1000 × 0.01 to 0.02 = 10-20 partitions
+
+df = spark.read.csv("many_small_files/")  # 1000 partitions
+df_coal = df.coalesce(50)  # Safe middle ground
+```
+
+### Complete Example: Before and After
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, sum, count
+
+spark = SparkSession.builder.appName("SmallFileOptimization").getOrCreate()
+
+# ❌ BEFORE: Without coalesce
+print("=== BEFORE (No Coalesce) ===")
+df_bad = spark.read.csv("many_small_files/")
+print(f"Partitions: {df_bad.rdd.getNumPartitions()}")  # 1000
+
+result_bad = df_bad.groupBy("customer_id").agg(sum("amount"))
+result_bad.write.parquet("s3://bucket/output_bad/")
+# Expected time: 500s scheduling + 7s work = 507 seconds ❌
+
+# ✅ AFTER: With coalesce
+print("\n=== AFTER (With Coalesce) ===")
+df_good = spark.read.csv("many_small_files/").coalesce(50)
+print(f"Partitions: {df_good.rdd.getNumPartitions()}")  # 50
+
+result_good = df_good.groupBy("customer_id").agg(sum("amount"))
+result_good.write.parquet("s3://bucket/output_good/")
+# Expected time: 25s scheduling + 7s work = 32 seconds ✅
+
+# Speedup: 507 ÷ 32 = 15.8x faster!
+```
+
+### Advanced: Coalesce + Repartition for Joins
+
+```python
+# When you need to join later on a specific key
+df = spark.read.csv("many_small_files/").coalesce(50)
+
+# Then repartition on join key for future joins
+df_repart = df.repartition(100, "customer_id")
+
+# Two operations:
+# 1. coalesce(50): Local merge, no shuffle (fast!)
+# 2. repartition(100, "customer_id"): Shuffle by key (necessary)
+
+# Total: 1 shuffle for repartition, instead of 1000 shuffles
+# if you didn't coalesce first!
+
+result = df_repart.join(other_df, "customer_id")
+# Joins are fast because data already partitioned on join key
+```
+
+### Comparison Table: Small File Strategies
+
+| Strategy | Read 1000 files | Partitions | Write Tasks | Total Time | Use Case |
+|----------|-----------------|-----------|-------------|-----------|----------|
+| **No coalesce** | Direct | 1000 | 1000 | 507s ❌ | Never! |
+| **Coalesce(50)** | Direct | 50 | 50 | 32s ✅ | Most cases |
+| **Coalesce(100)** | Direct | 100 | 100 | 57s ✅ | Large cluster |
+| **Coalesce + Repartition** | Direct | 100 | 100 | 60s ✅ | Before joins |
+
+### Quick Debug: Check Partition Count
+
+```python
+# Always check after reading small files
+df = spark.read.csv("path/")
+
+num_partitions = df.rdd.getNumPartitions()
+num_files = # number of files in path
+
+print(f"Files: {num_files}")
+print(f"Partitions: {num_partitions}")
+print(f"Ratio: {num_partitions / num_files:.2f}")
+
+# If ratio ≈ 1.0, you have 1 partition per file
+# This is the problem!
+# Apply: df.coalesce(target)
+
+if num_partitions > 100:
+    print(f"⚠️ WARNING: Too many partitions! Coalesce recommended.")
+    target = max(50, num_partitions // 10)
+    df = df.coalesce(target)
+```
+
+### Key Takeaways: Small Files
+
+✅ **DO**: Coalesce after reading many small files
+✅ **DO**: Target 50-200 partitions as a good range
+✅ **DO**: Use coalesce (not repartition) for reducing partitions
+✅ **DO**: Check partition count with `df.rdd.getNumPartitions()`
+
+❌ **DON'T**: Leave 1000+ partitions from small files
+❌ **DON'T**: Use repartition to merge small files
+❌ **DON'T**: Ignore scheduling overhead (it's real!)
+
+---
+
 ### Key Insight: Distributed vs Single-Node
 
 | Aspect | Pandas | PySpark |
