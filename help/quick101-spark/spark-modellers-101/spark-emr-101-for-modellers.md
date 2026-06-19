@@ -1,4 +1,4 @@
-# Spark on AWS Glue/EMR - Quick Guide for Modellers
+# Spark on EMR Spark/EMR - Quick Guide for Modellers
 
 ## Why Spark Instead of Pandas?
 
@@ -67,26 +67,91 @@ See: [how_spark_read_files.md](how_spark_read_files.md) for detailed explanation
 | 16GB | Plenty | 30 sec | 0GB | Large data |
 
 **How to get 8GB** (Recommended):
-1. Open AWS Glue Console
-2. Change worker type: **G.2X → G.4X**
-3. Cost: +50% but 5x faster (net savings!)
+
+```bash
+# Method 1: spark-submit with 8GB executors
+spark-submit \
+  --num-executors 10 \
+  --executor-cores 4 \
+  --executor-memory 8g \
+  --driver-memory 4g \
+  my_job.py
+
+# Method 2: Launch EMR cluster with m5.2xlarge (32GB nodes)
+aws emr create-cluster \
+  --name "spark-job-cluster" \
+  --release-label emr-6.10.0 \
+  --instances InstanceGroups='[{Name=Master,Market=ON_DEMAND,InstanceRole=MASTER,InstanceType=m5.2xlarge,InstanceCount=1},{Name=Worker,Market=ON_DEMAND,InstanceRole=CORE,InstanceType=m5.2xlarge,InstanceCount=5}]' \
+  --spark-defaults "spark.executor.memory=8g,spark.executor.cores=4,spark.driver.memory=4g"
+
+# Cost: m5.2xlarge = ~$0.50/hour (vs m5.xlarge = ~$0.25/hour)
+# But: 5x faster = net savings!
+```
 
 ---
 
 ## Cluster Architecture Essentials
 
-```
-AWS Glue Job Configuration:
-├─ 5 Worker Nodes (G.4X = m5.2xlarge)
-├─ Memory per node: 32GB
+### EMR Cluster Configuration
+
+```bash
+# Launch EMR cluster for Spark jobs
+aws emr create-cluster \
+  --name "my-spark-cluster" \
+  --release-label emr-6.10.0 \
+  --instances InstanceGroups='[
+    {Name=Master,InstanceType=m5.2xlarge,InstanceCount=1},
+    {Name=Worker,InstanceType=m5.2xlarge,InstanceCount=5}
+  ]' \
+  --spark-defaults "
+    spark.executor.memory=8g,
+    spark.executor.cores=4,
+    spark.driver.memory=4g,
+    spark.executor.instances=10,
+    spark.sql.shuffle.partitions=200
+  "
+
+Cluster Breakdown:
+├─ 1 Master Node (m5.2xlarge = 32GB)
+├─ 5 Worker Nodes (m5.2xlarge = 32GB each)
+│
+Per Worker Node:
+├─ Memory: 32GB
 ├─ Executors per node: 2
 ├─ Memory per executor: 8GB ← THIS IS IMPORTANT!
-├─ Total executors: 10
-└─ Total parallel tasks: 40 (if 4 cores per executor)
+├─ Cores per executor: 4
+│
+Total Cluster:
+├─ Total executors: 10 (5 nodes × 2)
+├─ Total cores: 40 (10 executors × 4)
+├─ Total parallel tasks: 40
+└─ Total memory: 80GB (10 executors × 8GB)
 
 KEY: 1 JVM per executor (NOT per core)
   Each JVM has multiple threads (one per core)
-  All threads share memory pool
+  All threads share memory pool (8GB in this case)
+```
+
+### Submit Spark Job to EMR Cluster
+
+```bash
+# Step 1: Get cluster ID
+CLUSTER_ID=$(aws emr list-clusters --active --query 'Clusters[0].Id' --output text)
+
+# Step 2: Submit Spark job
+aws emr add-steps \
+  --cluster-id $CLUSTER_ID \
+  --steps Type=Spark,Name=my-spark-job,ActionOnFailure=CONTINUE,\
+Args=[--class,org.example.MyClass,--num-executors,10,--executor-memory,8g,s3://bucket/my-job.jar]
+
+# OR use spark-submit directly on master node
+ssh -i my-key.pem hadoop@master-node-dns \
+  spark-submit \
+    --num-executors 10 \
+    --executor-cores 4 \
+    --executor-memory 8g \
+    --driver-memory 4g \
+    s3://bucket/my-job.jar
 ```
 
 ---
@@ -233,154 +298,238 @@ df.filter(...)                 # No shuffle
 df.withColumn(...)             # No shuffle
 ```
 
-### Shuffle Process (3 Phases) - Write Buffer & Read Buffer
+### Shuffle Process (3 Phases) - Write Executor & Read Executor
 
-**Write Buffer** and **Read Buffer** are the core of the shuffle operation:
+**Write Executor** (Phase 1) and **Read Executor** (Phase 3) form the core shuffle operation:
 
 ```
-Phase 1: WRITE (Map Side) → WRITE BUFFER
-├─ Each executor accumulates output in WRITE BUFFER
-├─ Buffer = In-memory hash map organized by partition key
+WRITE EXECUTORS (Phase 1): MAP SIDE - Create WRITE BUFFER
+├─ Executor 0, 1, 2, 3 each accumulate output in WRITE BUFFER
+├─ WRITE BUFFER = In-memory hash map organized by partition key
 │  └─ Partition 0 → [row1, row2, row3...]
 │  └─ Partition 1 → [row4, row5, row6...]
 │  └─ Partition 2 → [row7, row8, row9...]
 ├─ When buffer full or stage completes:
-│  └─ SPILL to disk: /mnt/shuffle/app_xxx/shuffle_0_0_0.data
-│  └─ (Creates shuffle write files)
-├─ Why disk? → Can't fit all partitions in memory!
-└─ Result: Shuffle write files on local executor disk
+│  └─ WRITE EXECUTOR spills to local disk
+│  └─ Creates shuffle write files: /mnt/shuffle/app_xxx/shuffle_0_0_0.data
+│  └─ (shuffle_0_0_0 = executor 0 writes partition 0)
+│  └─ (shuffle_1_0_0 = executor 1 writes partition 0)
+├─ Why disk? → Can't fit all partitions in memory (4GB buffer)!
+└─ Result: Each WRITE EXECUTOR has its own shuffle files on local disk
 
-Phase 2: NETWORK TRANSFER (Shuffle) - Between Write & Read Buffer
-├─ Shuffle Manager fetches all shuffle files
-├─ Executor 0 requests: "Give me all Partition 0 data"
-│  └─ Fetches from Executor 0, 1, 2, 3... disk
-│  └─ Combines into READ BUFFER
-├─ Executor 1 requests: "Give me all Partition 1 data"
-│  └─ Fetches from Executor 0, 1, 2, 3... disk
-│  └─ Combines into READ BUFFER
+Phase 2: NETWORK TRANSFER (Shuffle) - Fetch Between Write & Read Executors
+├─ READ EXECUTOR needs to process one partition
+├─ READ EXECUTOR 0 requests: "Give me ALL Partition 0 data"
+│  └─ Fetches from WRITE EXECUTOR 0 disk: shuffle_0_0_0.data
+│  └─ Fetches from WRITE EXECUTOR 1 disk: shuffle_1_0_0.data
+│  └─ Fetches from WRITE EXECUTOR 2 disk: shuffle_2_0_0.data
+│  └─ Fetches from WRITE EXECUTOR 3 disk: shuffle_3_0_0.data
+│  └─ Combines all into READ BUFFER
+├─ READ EXECUTOR 1 requests: "Give me ALL Partition 1 data"
+│  └─ Fetches from WRITE EXECUTOR 0 disk: shuffle_0_0_1.data
+│  └─ Fetches from WRITE EXECUTOR 1 disk: shuffle_1_0_1.data
+│  └─ (same pattern for executors 2, 3)
+│  └─ Combines all into READ BUFFER
 ├─ Data moves over NETWORK (expensive!)
 │  └─ Speed: ~100MB/s (vs Disk: 1GB/s vs RAM: 10GB/s)
-└─ All data merged into unified READ BUFFER at destination
+└─ Each READ EXECUTOR's READ BUFFER now has consolidated partition data
 
 Phase 3: READ (Reduce Side) - READ BUFFER Processing
-├─ Each executor reads from its READ BUFFER
-├─ Data is now co-located by partition key:
-│  └─ Executor 0 has all Partition 0 records
-│  └─ Executor 1 has all Partition 1 records
-│  └─ Executor 2 has all Partition 2 records
+├─ READ EXECUTOR 0 reads from its READ BUFFER
+├─ READ BUFFER now contains ALL Partition 0 records from all WRITE EXECUTORS
+│  └─ Partition 0 records from WRITE Executor 0
+│  └─ Partition 0 records from WRITE Executor 1
+│  └─ Partition 0 records from WRITE Executor 2
+│  └─ Partition 0 records from WRITE Executor 3
 ├─ Merges/sorts data if needed (sort-merge join)
 ├─ Performs final aggregation (groupBy, join result)
 └─ Results ready for next stage
 
 Timeline:
-  Executor 0        Network         Executor 1
-  ┌──────────┐      ┌───────┐       ┌──────────┐
-  │WRITE BUF │─────→│FETCH  │──────→│READ BUF  │
-  │ Partition│      │& MERGE│       │ Partition│
-  │   0,1,2  │      └───────┘       │   0,1,2  │
-  └──────────┘                      └──────────┘
-  (All executors do this for their assigned partitions)
+  WRITE EXECUTORS       NETWORK TRANSFER        READ EXECUTORS
+  ┌──────────┐         ┌───────────┐            ┌──────────┐
+  │WRITE BUF │──────→  │FETCH from │───────→   │READ BUF  │
+  │Exec 0,1  │         │Write Exec │           │Exec 0,1  │
+  │Partition │         │ disks &   │           │Partition │
+  │ 0,1,2    │         │ MERGE     │           │  0,1,2   │
+  └──────────┘         └───────────┘            └──────────┘
+  (All WRITE executors write)  (All data consolidated) (All READ executors process)
 ```
 
-### Visual: Write Buffer → Shuffle Files → Read Buffer
+### Executor Role: Write AND Read
+
+**Important**: The same executor can be BOTH a write executor AND a read executor!
 
 ```
-EXECUTOR 0 (Map Phase):
+Example: 4 executors, groupBy("country")
+
+WRITE PHASE (Phase 1):
+├─ Executor 0: Writes shuffle_0_0_0.data, shuffle_0_0_1.data, ...
+├─ Executor 1: Writes shuffle_1_0_0.data, shuffle_1_0_1.data, ...
+├─ Executor 2: Writes shuffle_2_0_0.data, shuffle_2_0_1.data, ...
+└─ Executor 3: Writes shuffle_3_0_0.data, shuffle_3_0_1.data, ...
+
+NETWORK PHASE (Phase 2):
+├─ READ Executor 0 fetches all _0_0_* files from all WRITE executors
+├─ READ Executor 1 fetches all _0_1_* files from all WRITE executors
+└─ (Each READ executor gets different partition)
+
+RESULT:
+├─ Executor 0: WRITE in Phase 1, READ in Phase 2 (for partition 0)
+├─ Executor 1: WRITE in Phase 1, READ in Phase 2 (for partition 1)
+└─ (Same executor wears both hats!)
+```
+
+### Visual: Write Executor → Shuffle Files → Read Executor
+
+```
+WRITE EXECUTOR 0 (Phase 1 - Map Side):
   Input: Row1(key=A), Row2(key=B), Row3(key=A)
     ↓
   WRITE BUFFER (in-memory):
-    A: [Row1, Row3]
-    B: [Row2]
+    Partition A: [Row1, Row3]
+    Partition B: [Row2]
     ↓ (when full or done)
-  WRITE to Disk: shuffle_0_0_0.data
+  WRITE EXECUTOR 0 WRITES to Disk:
+    shuffle_0_0_A.data  ← Partition A records
+    shuffle_0_0_B.data  ← Partition B records
+    shuffle_0_0_C.data  ← (empty, no C records)
 
-EXECUTOR 1 (Map Phase):
+WRITE EXECUTOR 1 (Phase 1 - Map Side):
   Input: Row4(key=B), Row5(key=C)
     ↓
   WRITE BUFFER (in-memory):
-    B: [Row4]
-    C: [Row5]
+    Partition A: (empty)
+    Partition B: [Row4]
+    Partition C: [Row5]
     ↓ (when full or done)
-  WRITE to Disk: shuffle_1_0_0.data
+  WRITE EXECUTOR 1 WRITES to Disk:
+    shuffle_1_0_A.data  ← (empty)
+    shuffle_1_0_B.data  ← Partition B records
+    shuffle_1_0_C.data  ← Partition C records
 
-NETWORK TRANSFER:
-  Shuffle Manager collects:
-    └─ All A records from all executors
-    └─ All B records from all executors
-    └─ All C records from all executors
+NETWORK TRANSFER (Phase 2):
+  READ EXECUTOR A requests: "All Partition A data"
+    ├─ Fetches: shuffle_0_0_A.data from WRITE EXECUTOR 0
+    ├─ Fetches: shuffle_1_0_A.data from WRITE EXECUTOR 1
+    └─ Fetches: shuffle_2_0_A.data, shuffle_3_0_A.data (from other WRITE executors)
 
-EXECUTOR 0 (Reduce Phase) - READ BUFFER:
-  Receives all A records (from all executors)
-    A: [Row1, Row3]  ← From Executor 0
-    A: [...]         ← From Executor 2
-    A: [...]         ← From Executor 3
+  READ EXECUTOR B requests: "All Partition B data"
+    ├─ Fetches: shuffle_0_0_B.data from WRITE EXECUTOR 0
+    ├─ Fetches: shuffle_1_0_B.data from WRITE EXECUTOR 1
+    └─ Fetches: shuffle_2_0_B.data, shuffle_3_0_B.data (from other WRITE executors)
+
+  READ EXECUTOR C requests: "All Partition C data"
+    ├─ Fetches: shuffle_1_0_C.data from WRITE EXECUTOR 1
+    └─ Fetches: shuffle_2_0_C.data, shuffle_3_0_C.data (from other WRITE executors)
+
+READ EXECUTOR A (Phase 3 - Reduce Side):
+  READ BUFFER receives consolidated data:
+    A: [Row1, Row3]  ← From WRITE EXECUTOR 0
+    A: [...]         ← From WRITE EXECUTOR 1
+    A: [...]         ← From WRITE EXECUTOR 2
+    A: [...]         ← From WRITE EXECUTOR 3
     ↓
-  READ BUFFER now has ALL A records aggregated
+  READ BUFFER now has ALL A records in one place
     ↓
   Processes: sum/count/etc on all A records
     ↓
-  Output: A=2 (or whatever aggregation)
+  Output: A=2 (sum) or whatever aggregation
 
-EXECUTOR 1 (Reduce Phase) - READ BUFFER:
-  Receives all B records (from all executors)
-    B: [Row2]       ← From Executor 0
-    B: [Row4]       ← From Executor 1
-    B: [...]        ← From other executors
+READ EXECUTOR B (Phase 3 - Reduce Side):
+  READ BUFFER receives consolidated data:
+    B: [Row2]       ← From WRITE EXECUTOR 0
+    B: [Row4]       ← From WRITE EXECUTOR 1
+    B: [...]        ← From WRITE EXECUTOR 2, 3
     ↓
-  READ BUFFER now has ALL B records aggregated
+  READ BUFFER now has ALL B records in one place
     ↓
   Processes: sum/count/etc on all B records
     ↓
-  Output: B=3 (or whatever aggregation)
+  Output: B=3 (sum) or whatever aggregation
 
-EXECUTOR 2 (Reduce Phase) - READ BUFFER:
-  Receives all C records (from all executors)
-    C: [Row5]       ← From Executor 1
+READ EXECUTOR C (Phase 3 - Reduce Side):
+  READ BUFFER receives consolidated data:
+    C: [Row5]       ← From WRITE EXECUTOR 1
+    C: [...]        ← From WRITE EXECUTOR 2, 3
     ↓
-  READ BUFFER now has ALL C records
+  READ BUFFER now has ALL C records in one place
     ↓
   Processes: sum/count/etc on all C records
     ↓
-  Output: C=1 (or whatever aggregation)
+  Output: C=1 (sum) or whatever aggregation
 ```
 
 ### Memory Pressure & Spill Connection
 
 **Why does spill happen?**
 ```
-WRITE BUFFER problem:
-├─ Too much data for WRITE BUFFER
-├─ Buffer: 4GB (executor memory)
-├─ Incoming: 10GB of data per executor
-├─ Solution: Spill WRITE BUFFER to disk
-└─ Result: Slow disk I/O
+WRITE EXECUTOR - WRITE BUFFER SPILL:
+├─ WRITE EXECUTOR accumulates data in WRITE BUFFER
+├─ WRITE BUFFER: 4GB (executor memory limit)
+├─ Incoming data: 10GB of records to organize
+├─ Problem: Can't fit all records in 4GB buffer!
+├─ Solution: WRITE EXECUTOR spills excess to disk
+└─ Result: Slow disk I/O during write phase
+   └─ This shows as "Memory Spill: 10GB" in Spark UI
 
-READ BUFFER problem:
-├─ Too many records from remote executors
-├─ READ BUFFER can't hold all of them
-├─ Solution: Spill READ BUFFER to disk temporarily
-└─ Result: Read from disk instead of memory
+READ EXECUTOR - READ BUFFER SPILL:
+├─ READ EXECUTOR fetches data from multiple WRITE EXECUTORS
+├─ READ BUFFER: 4GB (executor memory limit)
+├─ Consolidating: 15GB of records from 4 WRITE executors
+├─ Problem: Can't hold all consolidated data in 4GB buffer!
+├─ Solution: READ EXECUTOR spills excess to disk temporarily
+└─ Result: Slow disk I/O during read/process phase
+   └─ This shows as "Disk Spill: 8GB" in Spark UI
 ```
 
 **Example: groupBy with spill**
 ```
-groupBy("user_id") on 100GB data:
-├─ WRITE phase:
-│  ├─ Executor creates WRITE BUFFER
-│  ├─ Accumulates all user_id groups
-│  ├─ Buffer fills up (4GB full)
-│  └─ SPILLS remaining data to disk → "Memory Spill: 10GB"
-│
-├─ NETWORK phase:
-│  ├─ Shuffle Manager transfers data
-│  └─ Network I/O happens
-│
-└─ READ phase:
-   ├─ Executor reads WRITE BUFFER data for its partition
-   ├─ Buffer fills up (4GB full)
-   └─ SPILLS to disk → "Disk Spill: 8GB"
+groupBy("user_id") on 100GB data across 4 WRITE EXECUTORS:
 
-Result: "Memory Spill: 10GB, Disk Spill: 8GB" (from Spark UI)
+WRITE EXECUTOR PHASE (Phase 1):
+├─ WRITE EXECUTOR 0 reads 25GB of data
+├─ Creates WRITE BUFFER (4GB limit)
+├─ Accumulates user_id groups:
+│  └─ user_1: [trans1, trans2, ...]
+│  └─ user_2: [trans3, trans4, ...]
+│  └─ user_3000000: [...]
+├─ Buffer fills up (4GB = full!)
+├─ SPILLS excess 21GB to disk
+└─ Writes shuffle_0_0_*.data files
+
+NETWORK TRANSFER PHASE (Phase 2):
+├─ Data moves from 4 WRITE EXECUTORS to READ EXECUTORS
+├─ Example: READ EXECUTOR handles user_1-1000000
+├─ Fetches user_1-1000000 data from:
+│  ├─ WRITE EXECUTOR 0: shuffle_0_0_user_1_*.data
+│  ├─ WRITE EXECUTOR 1: shuffle_1_0_user_1_*.data
+│  ├─ WRITE EXECUTOR 2: shuffle_2_0_user_1_*.data
+│  └─ WRITE EXECUTOR 3: shuffle_3_0_user_1_*.data
+└─ Network transfers ~25GB for this partition
+
+READ EXECUTOR PHASE (Phase 3):
+├─ READ EXECUTOR consolidates in READ BUFFER (4GB limit)
+├─ Receives all user_1-1000000 data from network:
+│  └─ 10GB from WRITE EXECUTOR 0
+│  └─ 6GB from WRITE EXECUTOR 1
+│  └─ 5GB from WRITE EXECUTOR 2
+│  └─ 4GB from WRITE EXECUTOR 3
+├─ Total incoming: 25GB
+├─ READ BUFFER: 4GB (FULL!)
+├─ SPILLS remaining 21GB to disk
+└─ Gradually reads from disk to aggregate
+
+Spark UI Metrics:
+├─ Memory Spill: 10GB ← From WRITE EXECUTOR phase
+├─ Disk Spill: 8GB ← From READ EXECUTOR phase
+└─ Total Spill: 18GB (sign of undersized executors!)
+
+Root Cause:
+├─ Executor memory: 4GB
+├─ Data per executor: 25GB
+├─ Deficit: 21GB must spill to disk
+└─ Fix: Use 8GB executors (G.4X) or more nodes
 ```
 
 ### Shuffle Strategies in Spark
@@ -1018,20 +1167,60 @@ To Fix Spill:
 
 ---
 
-## Quick Config Reference
+## Quick Config Reference - EMR/spark-submit
 
+### Method 1: spark-submit Command Line
+
+```bash
+spark-submit \
+  --num-executors 10 \
+  --executor-cores 4 \
+  --executor-memory 8g \
+  --driver-memory 4g \
+  --conf spark.sql.shuffle.partitions=200 \
+  --conf spark.sql.files.maxPartitionBytes=128MB \
+  --conf spark.shuffle.sort.bypassMergeThreshold=200 \
+  --conf spark.memory.offHeap.enabled=true \
+  --conf spark.memory.offHeap.size=2GB \
+  my_job.py
 ```
-# For 100GB data with 4-5 minute SLA
-spark.executor.memory = 8GB           # At least this
-spark.sql.shuffle.partitions = 200    # Default is fine
-spark.sql.files.maxPartitionBytes = 128MB  # Read splits
 
-# For expensive groupBy/join
-spark.sql.shuffle.partitions = 400    # More parallelism
-spark.shuffle.sort.bypassMergeThreshold = 200  # Optimize
+### Method 2: EMR Cluster Configuration
 
-# For many small files
-df.coalesce(50)  # Reduce partitions before write
+```bash
+aws emr create-cluster \
+  --name "my-spark-job" \
+  --release-label emr-6.10.0 \
+  --instances InstanceGroups='[{InstanceType=m5.2xlarge,InstanceCount=5}]' \
+  --spark-defaults "
+    spark.executor.memory=8g,
+    spark.executor.cores=4,
+    spark.driver.memory=4g,
+    spark.sql.shuffle.partitions=200,
+    spark.sql.files.maxPartitionBytes=128MB,
+    spark.shuffle.sort.bypassMergeThreshold=200,
+    spark.memory.offHeap.enabled=true,
+    spark.memory.offHeap.size=2GB
+  "
+```
+
+### Method 3: Code Configuration
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder \
+    .appName("my-spark-job") \
+    .config("spark.executor.memory", "8g") \
+    .config("spark.executor.cores", "4") \
+    .config("spark.sql.shuffle.partitions", "200") \
+    .config("spark.memory.offHeap.enabled", "true") \
+    .config("spark.memory.offHeap.size", "2GB") \
+    .getOrCreate()
+
+# Now use spark object
+df = spark.read.parquet("s3://bucket/data/")
+result = df.groupBy("key").agg(sum("amount"))
 ```
 
 ---
@@ -1039,18 +1228,23 @@ df.coalesce(50)  # Reduce partitions before write
 ## Key Takeaways
 
 ✅ **Do**:
-- Use G.4X worker type for 100GB+ jobs
+- Use m5.2xlarge (32GB) or larger nodes for 100GB+ jobs
+- Configure 8GB+ executor memory
 - Filter before groupBy/join
-- Coalesce many small files
-- Monitor Spark UI Stages tab
-- Cache expensive transformations
+- Coalesce many small files (1000+ partitions)
+- Monitor Spark UI Stages tab for spill
+- Enable off-heap memory for large shuffles
+- Pre-partition data before multiple joins
 
 ❌ **Don't**:
+- Use undersized nodes (< 32GB) with large data
+- Set executor memory > 16GB (GC pauses)
 - Leave 1000+ partitions from small files
 - Use repartition() to merge (use coalesce!)
-- GroupBy on high-cardinality column without filtering
-- Ignore spill warnings
-- Join without checking data skew
+- GroupBy on high-cardinality columns without filtering
+- Ignore spill warnings (sign of undersized cluster)
+- Join multiple large tables without pre-partitioning
+- Use Cartesian joins (no ON condition)
 
 ---
 
