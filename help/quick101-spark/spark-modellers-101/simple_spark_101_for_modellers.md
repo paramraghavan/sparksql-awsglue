@@ -29,12 +29,120 @@
 
 ## Jobs, Stages , Read/Write Exchange buffer, Tasks
 
-> A typical spark application looks like a set of code blocks, spark driver analyses the following code into Block 0 and
-> Block 1 below
-> The application driver will take this block, compile it and create a Spark job.
-> But this job must be performed by the executors.
-> Because the driver doesn't perform any data processing job.
-> The driver must break this job into smaller tasks and assign them to the executors.
+### How the Driver Breaks Code into Jobs
+
+**Key Rule**: **Each ACTION creates ONE JOB**
+
+A typical Spark application has multiple code blocks. The driver scans your code looking for **actions** (read, write, collect, show, count). Each action becomes a separate job.
+
+**Example**:
+```python
+# ACTION 1: read → JOB 0
+readAsDF = spark.read.csv("file.csv")
+
+# Transformations (lazy - no job yet)
+partitionedDF = readAsDF.repartition(2)
+filteredDF = partitionedDF.filter(age < 40)
+
+# ACTION 2: collect → JOB 1
+result = filteredDF.collect()
+```
+
+**How driver processes this**:
+1. Scans code from top to bottom
+2. Finds first action: `spark.read` → Creates **JOB 0**
+3. Scans remaining code for next action
+4. Finds second action: `collect()` → Creates **JOB 1**
+5. Assigns each job to executors
+
+**Execution Flow**:
+```
+JOB 0: Read + infer schema
+  ↓ (Job 0 completes, readAsDF becomes available)
+JOB 1: Use readAsDF, apply transformations, collect
+  ↓ (Job 1 completes, result sent to driver)
+Done
+```
+
+### Why Multiple Jobs?
+
+```
+❌ WRONG assumption: "My code has multiple transformations, so 1 job"
+✅ CORRECT: "My code has 2 actions, so 2 jobs"
+
+Actions = Job count
+├─ 0 actions = 0 jobs (code never executes)
+├─ 1 action = 1 job
+├─ 2 actions = 2 jobs
+├─ N actions = N jobs
+```
+
+### Job vs Stage (Don't Confuse!)
+
+```
+JOB = Triggered by an ACTION
+     = Entire pipeline from source to action
+     = Contains multiple STAGES
+
+STAGE = Separated by WIDE TRANSFORMATIONS
+      = Parallel unit within a job
+      = Contains multiple TASKS
+```
+
+Example:
+```
+JOB 1
+├─ STAGE 1: Read data
+├─ STAGE 2: Repartition (wide)
+├─ STAGE 3: Filter + Select (narrow)
+├─ STAGE 4: GroupBy (wide)
+└─ STAGE 5: Count
+
+Total stages in Job 1: 5 (because 2 wide transformations + others = N+1)
+```
+
+### The Driver's Detailed Process
+
+**Step 1**: Identify all actions in your code
+```python
+spark.read.csv(...)        # ACTION 1 → JOB 0
+df.groupBy(...).count()    # Transformation (lazy)
+df.show()                  # ACTION 2 → JOB 1
+df.write.parquet(...)      # ACTION 3 → JOB 2
+```
+
+**Step 2**: For each job, create logical plan
+```
+JOB 0 logical plan:
+  Read CSV → Create DataFrame readAsDF
+```
+
+**Step 3**: Break logical plan into stages at wide transformations
+```
+JOB 1 logical plan:
+  readAsDF → Repartition (WIDE) → [STAGE BREAK]
+  → Filter → Select (NARROW)
+  → GroupBy (WIDE) → [STAGE BREAK]
+  → Count → Collect (ACTION)
+
+Result: 3 stages in JOB 1
+```
+
+**Step 4**: For each stage, determine number of tasks
+```
+STAGE 1: repartition creates 2 partitions → 1 task (write to 2 partitions)
+STAGE 2: 2 input partitions → 2 parallel tasks
+STAGE 3: shuffle.partitions=200 → 200 parallel tasks
+```
+
+**Step 5**: Assign tasks to executors
+```
+Driver says:
+"Executor 1: Run STAGE 1 Task 0"
+"Executor 2: Run STAGE 2 Task 0"
+"Executor 3: Run STAGE 2 Task 1"
+... (assign based on available slots)
+```
 
 **Original Code here**
 [sample_spark_code.py](sample_spark_code.py)
