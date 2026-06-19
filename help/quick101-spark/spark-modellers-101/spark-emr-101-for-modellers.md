@@ -233,26 +233,154 @@ df.filter(...)                 # No shuffle
 df.withColumn(...)             # No shuffle
 ```
 
-### Shuffle Process (3 Phases)
+### Shuffle Process (3 Phases) - Write Buffer & Read Buffer
+
+**Write Buffer** and **Read Buffer** are the core of the shuffle operation:
 
 ```
-Phase 1: WRITE (Map Side)
-├─ Each executor writes its data to local disk
-├─ Data organized by partition key
-├─ Creates shuffle write files
-└─ File: /mnt/shuffle/app_xxx/shuffle_0_0_0.data
+Phase 1: WRITE (Map Side) → WRITE BUFFER
+├─ Each executor accumulates output in WRITE BUFFER
+├─ Buffer = In-memory hash map organized by partition key
+│  └─ Partition 0 → [row1, row2, row3...]
+│  └─ Partition 1 → [row4, row5, row6...]
+│  └─ Partition 2 → [row7, row8, row9...]
+├─ When buffer full or stage completes:
+│  └─ SPILL to disk: /mnt/shuffle/app_xxx/shuffle_0_0_0.data
+│  └─ (Creates shuffle write files)
+├─ Why disk? → Can't fit all partitions in memory!
+└─ Result: Shuffle write files on local executor disk
 
-Phase 2: NETWORK TRANSFER (Shuffle)
-├─ Fetch shuffle files from remote executors
-├─ Data moves over network
-├─ Bottleneck! (Network is slower than disk/RAM)
-└─ Time: 100MB/s vs Disk 1GB/s vs RAM 10GB/s
+Phase 2: NETWORK TRANSFER (Shuffle) - Between Write & Read Buffer
+├─ Shuffle Manager fetches all shuffle files
+├─ Executor 0 requests: "Give me all Partition 0 data"
+│  └─ Fetches from Executor 0, 1, 2, 3... disk
+│  └─ Combines into READ BUFFER
+├─ Executor 1 requests: "Give me all Partition 1 data"
+│  └─ Fetches from Executor 0, 1, 2, 3... disk
+│  └─ Combines into READ BUFFER
+├─ Data moves over NETWORK (expensive!)
+│  └─ Speed: ~100MB/s (vs Disk: 1GB/s vs RAM: 10GB/s)
+└─ All data merged into unified READ BUFFER at destination
 
-Phase 3: READ (Reduce Side)
-├─ Each executor reads its shuffled data
-├─ Merges/sorts if needed
-├─ Performs final aggregation
+Phase 3: READ (Reduce Side) - READ BUFFER Processing
+├─ Each executor reads from its READ BUFFER
+├─ Data is now co-located by partition key:
+│  └─ Executor 0 has all Partition 0 records
+│  └─ Executor 1 has all Partition 1 records
+│  └─ Executor 2 has all Partition 2 records
+├─ Merges/sorts data if needed (sort-merge join)
+├─ Performs final aggregation (groupBy, join result)
 └─ Results ready for next stage
+
+Timeline:
+  Executor 0        Network         Executor 1
+  ┌──────────┐      ┌───────┐       ┌──────────┐
+  │WRITE BUF │─────→│FETCH  │──────→│READ BUF  │
+  │ Partition│      │& MERGE│       │ Partition│
+  │   0,1,2  │      └───────┘       │   0,1,2  │
+  └──────────┘                      └──────────┘
+  (All executors do this for their assigned partitions)
+```
+
+### Visual: Write Buffer → Shuffle Files → Read Buffer
+
+```
+EXECUTOR 0 (Map Phase):
+  Input: Row1(key=A), Row2(key=B), Row3(key=A)
+    ↓
+  WRITE BUFFER (in-memory):
+    A: [Row1, Row3]
+    B: [Row2]
+    ↓ (when full or done)
+  WRITE to Disk: shuffle_0_0_0.data
+
+EXECUTOR 1 (Map Phase):
+  Input: Row4(key=B), Row5(key=C)
+    ↓
+  WRITE BUFFER (in-memory):
+    B: [Row4]
+    C: [Row5]
+    ↓ (when full or done)
+  WRITE to Disk: shuffle_1_0_0.data
+
+NETWORK TRANSFER:
+  Shuffle Manager collects:
+    └─ All A records from all executors
+    └─ All B records from all executors
+    └─ All C records from all executors
+
+EXECUTOR 0 (Reduce Phase) - READ BUFFER:
+  Receives all A records (from all executors)
+    A: [Row1, Row3]  ← From Executor 0
+    A: [...]         ← From Executor 2
+    A: [...]         ← From Executor 3
+    ↓
+  READ BUFFER now has ALL A records aggregated
+    ↓
+  Processes: sum/count/etc on all A records
+    ↓
+  Output: A=2 (or whatever aggregation)
+
+EXECUTOR 1 (Reduce Phase) - READ BUFFER:
+  Receives all B records (from all executors)
+    B: [Row2]       ← From Executor 0
+    B: [Row4]       ← From Executor 1
+    B: [...]        ← From other executors
+    ↓
+  READ BUFFER now has ALL B records aggregated
+    ↓
+  Processes: sum/count/etc on all B records
+    ↓
+  Output: B=3 (or whatever aggregation)
+
+EXECUTOR 2 (Reduce Phase) - READ BUFFER:
+  Receives all C records (from all executors)
+    C: [Row5]       ← From Executor 1
+    ↓
+  READ BUFFER now has ALL C records
+    ↓
+  Processes: sum/count/etc on all C records
+    ↓
+  Output: C=1 (or whatever aggregation)
+```
+
+### Memory Pressure & Spill Connection
+
+**Why does spill happen?**
+```
+WRITE BUFFER problem:
+├─ Too much data for WRITE BUFFER
+├─ Buffer: 4GB (executor memory)
+├─ Incoming: 10GB of data per executor
+├─ Solution: Spill WRITE BUFFER to disk
+└─ Result: Slow disk I/O
+
+READ BUFFER problem:
+├─ Too many records from remote executors
+├─ READ BUFFER can't hold all of them
+├─ Solution: Spill READ BUFFER to disk temporarily
+└─ Result: Read from disk instead of memory
+```
+
+**Example: groupBy with spill**
+```
+groupBy("user_id") on 100GB data:
+├─ WRITE phase:
+│  ├─ Executor creates WRITE BUFFER
+│  ├─ Accumulates all user_id groups
+│  ├─ Buffer fills up (4GB full)
+│  └─ SPILLS remaining data to disk → "Memory Spill: 10GB"
+│
+├─ NETWORK phase:
+│  ├─ Shuffle Manager transfers data
+│  └─ Network I/O happens
+│
+└─ READ phase:
+   ├─ Executor reads WRITE BUFFER data for its partition
+   ├─ Buffer fills up (4GB full)
+   └─ SPILLS to disk → "Disk Spill: 8GB"
+
+Result: "Memory Spill: 10GB, Disk Spill: 8GB" (from Spark UI)
 ```
 
 ### Shuffle Strategies in Spark
@@ -452,6 +580,339 @@ df.filter(col("transactions") > 0)  # Reduce to 50GB
    .groupBy("user_id")               # Shuffle smaller data
    .count()
 # Result: Less data to shuffle = faster!
+```
+
+---
+
+## Joins in Spark - Choosing the Right Strategy
+
+### What is a Join?
+
+**Join** = Combining two DataFrames on a common key
+
+```python
+df1 = spark.read.parquet("customers.parquet")    # 10GB, 1M rows
+df2 = spark.read.parquet("orders.parquet")       # 100GB, 50M rows
+
+result = df1.join(df2, "customer_id")            # Combine on customer_id
+```
+
+### Join Types (SQL Standard)
+
+```
+INNER JOIN:   Only matching rows (default)
+LEFT JOIN:    All from left + matching from right
+RIGHT JOIN:   All from right + matching from left
+FULL JOIN:    All rows from both
+CROSS JOIN:   Cartesian product (very expensive!)
+```
+
+### When Do Joins Trigger Shuffle?
+
+```python
+# ❌ SHUFFLES DATA (expensive)
+df1.join(df2, "customer_id")
+# Spark must move data to align by customer_id
+
+# ✅ NO SHUFFLE (if already partitioned)
+df1_partitioned = df1.repartition(200, "customer_id")
+df2_partitioned = df2.repartition(200, "customer_id")
+result = df1_partitioned.join(df2_partitioned, "customer_id")
+# Data already aligned = co-located join
+```
+
+### Join Strategies in Spark
+
+Spark chooses the best strategy automatically, but you should understand each:
+
+#### 1. **Broadcast Hash Join** (Best for small + large)
+
+```
+When Spark uses it:
+├─ Small DF < spark.sql.autoBroadcastJoinThreshold (default 10MB)
+├─ OR you explicitly broadcast: df.join(broadcast(small_df), key)
+└─ User triggers it manually
+
+How it works:
+├─ Small DF is broadcast to all executors (memory)
+├─ Large DF streams through, looks up in broadcast
+├─ NO SHUFFLE needed!
+└─ Very fast!
+
+Performance:
+├─ Time: < 1 second for 10MB * 100GB
+├─ Shuffle: 0 (no network transfer!)
+└─ Best possible join strategy
+
+Config:
+  spark.sql.autoBroadcastJoinThreshold = 10MB (can increase to 100MB)
+
+Example:
+  df_large = spark.read.parquet("100gb_orders.parquet")
+  df_small = spark.read.parquet("10mb_lookup.parquet")
+  result = df_large.join(broadcast(df_small), "key")  # < 1 second!
+```
+
+#### 2. **Sort-Merge Join** (Default for large + large)
+
+```
+When Spark uses it:
+├─ Both DFs > broadcast threshold
+├─ Default strategy for large joins
+└─ Both DFs must be sorted on join key (happens automatically)
+
+How it works:
+Phase 1: SHUFFLE - Partition both DFs by join key
+  ├─ DF1: 100GB → 200 partitions
+  ├─ DF2: 100GB → 200 partitions
+  └─ Network transfer happens here (expensive!)
+
+Phase 2: SORT - Sort each partition locally
+  ├─ Partition 0 (DF1) sorted by key
+  ├─ Partition 0 (DF2) sorted by key
+  └─ Merge-sort pattern (two pointers)
+
+Phase 3: MERGE - Join co-located partitions
+  ├─ Partition 0 (DF1) merged with Partition 0 (DF2)
+  ├─ Both already sorted
+  └─ Merge is O(n) instead of O(n²)
+
+Performance:
+├─ Time: 10-60 seconds for 100GB * 100GB
+├─ Shuffle: ~200GB network transfer
+├─ Best for large-large joins when order needed
+
+Config:
+  spark.sql.join.preferSortMergeJoin = true
+```
+
+#### 3. **Shuffle Hash Join** (Rarely used)
+
+```
+When Spark uses it:
+├─ Both DFs > broadcast threshold
+├─ If sort-merge not preferred
+├─ Memory-heavy but parallelizable
+
+How it works:
+├─ Shuffle both DFs by join key
+├─ Build hash table in memory for left DF
+├─ Probe with right DF rows
+└─ Hash lookup: O(1) per row
+
+Performance:
+├─ Fast lookups but high memory use
+├─ Can cause spill if hash tables too large
+└─ Less common now (sort-merge usually better)
+
+Config:
+  spark.sql.join.preferSortMergeJoin = false
+```
+
+#### 4. **Cartesian Join** (Avoid at all costs!)
+
+```
+When it happens:
+├─ No join condition specified
+├─ OR join condition doesn't use equality
+└─ df1.join(df2)  # No ON clause!
+
+What it does:
+├─ Combines EVERY row from DF1 with EVERY row from DF2
+├─ 1M rows * 50M rows = 50 BILLION rows!
+├─ Result: 50B * 1KB per row = 50 TB!
+└─ CRASH!
+
+Example:
+  # ❌ WRONG - Cartesian product!
+  df1.join(df2)  # Missing join condition
+
+  # ✅ CORRECT - Use equality condition
+  df1.join(df2, "customer_id")
+```
+
+### Join Strategy Selection Rules
+
+```
+Rule 1: Check DF sizes first
+├─ Small (< 100MB): Use broadcast join
+├─ Medium (100MB-10GB): Consider broadcast
+├─ Large (> 10GB): Use sort-merge join
+
+Rule 2: Broadcast when possible
+  if small_df.size < 100MB:
+    result = large_df.join(broadcast(small_df), key)
+    # Best performance: ~1 second
+
+Rule 3: Pre-partition before large joins
+  df1_part = df1.repartition(200, "join_key")
+  df2_part = df2.repartition(200, "join_key")
+  result = df1_part.join(df2_part, "join_key")
+  # Co-located join = no shuffle
+
+Rule 4: Filter before joining
+  df1_filtered = df1.filter(col("active") == True)  # 100GB → 50GB
+  df2_filtered = df2.filter(col("valid") == True)   # 100GB → 70GB
+  result = df1_filtered.join(df2_filtered, "key")
+  # Smaller join = faster
+
+Rule 5: Avoid joins on high-cardinality columns
+  # ❌ BAD: Join on timestamp (millions of unique values)
+  df1.join(df2, "timestamp")  # Creates 200+ partitions each!
+
+  # ✅ GOOD: Join on customer_id (millions but grouped)
+  df1.join(df2, "customer_id")  # Natural grouping
+```
+
+### Join Optimization Examples
+
+#### Before: Unoptimized Join
+
+```python
+# Reading large files
+df_customers = spark.read.parquet("100gb_customers.parquet")  # 100GB
+df_orders = spark.read.parquet("500gb_orders.parquet")       # 500GB
+
+# Join without optimization
+result = df_customers.join(df_orders, "customer_id")
+result.write.parquet("output/")
+
+# What happens:
+├─ Read both: 100GB + 500GB
+├─ Shuffle both: ~600GB network transfer
+├─ Sort both: CPU intensive
+├─ Join: Merge-sort operation
+├─ Write: 600GB output
+└─ Total time: 20-30 minutes, 1.2TB network
+
+Metrics:
+├─ Shuffle spill: 50GB
+├─ GC pauses: 30+ seconds
+└─ Network utilization: 80%
+```
+
+#### After: Optimized Join
+
+```python
+# Pre-optimization
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "100MB")
+
+# Read and filter
+df_customers = spark.read.parquet("100gb_customers.parquet") \
+    .filter(col("active") == True)  # 100GB → 30GB
+
+df_orders = spark.read.parquet("500gb_orders.parquet") \
+    .filter(col("status") == "completed")  # 500GB → 200GB
+
+# Check size - can we broadcast?
+if df_customers.estimatedSize < 100MB:
+    # Broadcast small table
+    result = df_orders.join(broadcast(df_customers), "customer_id")
+else:
+    # Pre-partition on join key
+    df_cust_part = df_customers.repartition(200, "customer_id")
+    df_order_part = df_orders.repartition(200, "customer_id")
+    result = df_cust_part.join(df_order_part, "customer_id")
+
+result.write.parquet("output/")
+
+# What happens:
+├─ Filter first: 100GB + 500GB → 30GB + 200GB
+├─ Broadcast (or pre-partition): Minimal shuffle
+├─ Join: Efficient sort-merge
+├─ Write: 230GB output
+└─ Total time: 2-3 minutes (10x faster!)
+
+Metrics:
+├─ Shuffle spill: 0GB
+├─ GC pauses: < 1 second
+└─ Network utilization: 20%
+```
+
+### Join Anti-Patterns
+
+```python
+# ❌ BAD: Multiple joins in sequence
+result = df1.join(df2, "key1") \
+            .join(df3, "key2") \
+            .join(df4, "key3")
+# Result: 3 shuffles!
+
+# ✅ GOOD: Pre-partition on all join keys
+df1_part = df1.repartition(200, "key1", "key2", "key3")
+df2_part = df2.repartition(200, "key1")
+df3_part = df3.repartition(200, "key2")
+df4_part = df4.repartition(200, "key3")
+result = df1_part.join(df2_part, "key1") \
+                 .join(df3_part, "key2") \
+                 .join(df4_part, "key3")
+# Result: Pre-shuffle once, then join 3 times
+
+# ❌ BAD: Join after distinct/groupBy
+df1.distinct().join(df2, "id")  # Shuffles for distinct, then join
+
+# ✅ GOOD: Join first, then distinct
+df1.join(df2, "id").distinct()  # One shuffle (join), one for distinct
+
+# ❌ BAD: No join condition (Cartesian!)
+df1.join(df2)  # Combines every row!
+
+# ✅ GOOD: Always specify join condition
+df1.join(df2, "customer_id")  # Clear, intentional join
+
+# ❌ BAD: Join large tables without filtering
+df_large1.join(df_large2, "key")  # Both 500GB!
+
+# ✅ GOOD: Filter before joining
+df_large1.filter(col("active") == True) \
+         .join(df_large2.filter(col("valid") == True), "key")
+         # 500GB → 200GB each!
+```
+
+### Join Configuration Reference
+
+```python
+# Broadcast threshold
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "100MB")
+# Default 10MB - increase if you have memory
+
+# Prefer sort-merge
+spark.conf.set("spark.sql.join.preferSortMergeJoin", "true")
+# Default true (recommended)
+
+# Shuffle partitions
+spark.conf.set("spark.sql.shuffle.partitions", "200")
+# Affects join partitions too
+
+# Adaptive join selection (Spark 3.0+)
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
+# Automatically handles skewed joins
+
+# Skew join config
+spark.conf.set("spark.sql.adaptive.skewJoin.skewFactor", "5.0")
+# Flag partitions > 5x average size as skewed
+```
+
+### Join Performance Checklist
+
+```
+Before joining:
+☑️ Check both DF sizes
+☑️ Can I broadcast (< 100MB)?
+☑️ Should I pre-partition on join key?
+☑️ Should I filter before joining?
+☑️ Is join key low-cardinality?
+
+During join:
+☑️ Monitor Spark UI for shuffle metrics
+☑️ Check for data skew (uneven partition sizes)
+☑️ Look for GC pauses (memory pressure)
+
+After join:
+☑️ Verify output data correctness
+☑️ Check if spill occurred (means undersized executors)
+☑️ Compare shuffle metrics to previous run
 ```
 
 ---
