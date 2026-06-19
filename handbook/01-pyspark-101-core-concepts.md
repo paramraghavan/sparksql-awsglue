@@ -350,6 +350,84 @@ result = transactions.join(
 # Without broadcast: Both tables would shuffle (expensive!)
 ```
 
+### Example 4: RDD with Unstructured Data (Apache Logs)
+
+**Scenario:** Process raw Apache web server logs (unstructured text data)
+
+```python
+# Raw log file (unstructured):
+# 192.168.1.1 - - [01/Jan/2024:12:00:01 +0000] "GET /api/users HTTP/1.1" 200 1024
+# 192.168.1.2 - - [01/Jan/2024:12:00:02 +0000] "POST /api/login HTTP/1.1" 401 512
+# 192.168.1.1 - - [01/Jan/2024:12:00:03 +0000] "GET /api/data HTTP/1.1" 500 256
+
+import re
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("LogProcessing").getOrCreate()
+sc = spark.sparkContext
+
+# Read as RDD (text file)
+logs_rdd = sc.textFile("s3://logs/apache_logs/2024-01-01/*.log")
+
+# Custom parsing function (complex logic, not easy with DataFrame)
+def parse_apache_log(line):
+    """Parse Apache log line - returns dict with extracted fields"""
+    try:
+        # Regex pattern for Apache logs
+        pattern = r'(\S+) \S+ \S+ \[(.*?)\] "(\S+) (\S+) (\S+)" (\d+) (\d+)'
+        match = re.match(pattern, line)
+
+        if match:
+            return {
+                "ip": match.group(1),
+                "timestamp": match.group(2),
+                "method": match.group(3),
+                "path": match.group(4),
+                "protocol": match.group(5),
+                "status_code": int(match.group(6)),
+                "response_bytes": int(match.group(7))
+            }
+        return None
+    except:
+        return None
+
+# Transform RDD: Map to parsed records
+parsed_logs = logs_rdd.map(parse_apache_log).filter(lambda x: x is not None)
+
+# Business logic: Find error rate per path
+def extract_key_value(log_dict):
+    """Group by path, create tuple (path, status_code)"""
+    return (log_dict["path"], 1 if log_dict["status_code"] >= 400 else 0)
+
+errors_by_path = parsed_logs.map(extract_key_value)\
+    .reduceByKey(lambda a, b: a + b)  # Sum errors per path
+
+# Top 10 endpoints with most errors
+top_errors = errors_by_path.sortBy(lambda x: x[1], ascending=False).take(10)
+
+for path, error_count in top_errors:
+    print(f"{path}: {error_count} errors")
+
+# RDD advantages here:
+# 1. Custom regex parsing (not easy with DataFrame schema)
+# 2. Flexible record structure (some logs might be malformed)
+# 3. Complex nested transformations
+# 4. No schema assumptions needed
+```
+
+**Why RDD works here:**
+- Apache logs are unstructured text with variable formats
+- Custom parsing logic (regex) works better with RDD.map()
+- Some records might be malformed - RDD.filter() handles this easily
+- No rigid schema required
+
+**Compare with DataFrame approach (won't work well):**
+```python
+# This would fail with malformed logs or complex parsing:
+df = spark.read.csv("logs.txt", header=False)
+# Problem: Can't apply custom regex easily, schema validation fails
+```
+
 ---
 
 ## Interview Questions
