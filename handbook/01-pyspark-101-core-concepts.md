@@ -31,6 +31,8 @@
 5. [Real-World Examples](#real-world-examples)
 6. [Interview Questions](#interview-questions)
 
+**See Also:** [011-transformations-rdd-vs-dataframe.md](011-transformations-rdd-vs-dataframe.md) - Deep dive into all transformation options with side-by-side comparisons
+
 ---
 
 ## RDD vs DataFrame
@@ -52,6 +54,8 @@ rdd2 = rdd.map(lambda x: x.upper())
 
 **Pros:** Maximum flexibility
 **Cons:** Slower (no optimizations), verbose code
+
+**See detailed RDD transformations:** [File 02 - RDD Transformations](./02-transformations-rdd-vs-dataframe.md#rdd-transformations)
 
 ### How RDD Reading & Transformation Works (Task Nodes)
 
@@ -131,6 +135,8 @@ df2 = df.filter(df.age > 25)
 **Pros:** Fast (Catalyst optimizer), clean syntax, SQL support
 **Cons:** Must fit data into structured format
 
+**See detailed DataFrame transformations:** [011-transformations-rdd-vs-dataframe.md](011-transformations-rdd-vs-dataframe.md#dataframe-transformations)
+
 ---
 
 ### Key Difference: The Catalyst Optimizer
@@ -145,7 +151,7 @@ df2 = df.filter(df.age > 25)
 
 ```python
 # Query: Get average salary by dept for age > 25
-df.filter(df.age > 25)\
+result = df.filter(df.age > 25)\
   .select("dept", "salary")\
   .groupBy("dept")\
   .avg("salary")
@@ -166,8 +172,23 @@ df.filter(df.age > 25)\
 result.explain(extended=False)
 
 # Shows: PushedFilters: [IsNotNull(age), GreaterThan(age, 25)]
-#        ↑ Filter applied during FileScan, not after!
+#        ↑ IsNotNull(age) is implicit (null > 25 = null, not true)
+#        ↑ All filters applied during FileScan, not after!
 ```
+
+**Other Implicit Optimizations Catalyst Does:**
+
+1. **IsNotNull checks** - Added automatically for comparisons (null > X = null)
+2. **Constant folding** - `5 + 3` evaluated to `8` before execution
+3. **Dead code elimination** - Unused columns never read from disk
+4. **Join reordering** - Optimizes join order for efficiency
+5. **Boolean simplification** - `true AND x` becomes just `x`
+6. **Null propagation** - `null * anything` = `null` eliminated early
+7. **Type coercion** - Implicit conversions applied intelligently
+8. **Common sub-expression elimination** - Duplicate expressions computed once
+9. **Partition pruning** - Entire partitions skipped if they can't match filters
+
+**For detailed explanations with examples:** [File 0111 - Catalyst Implicit Optimizations](./0111-catalyst-implicit-optimizations.md)
 
 **Bottom line:** DataFrames with Catalyst are 10-100x faster than equivalent RDD code.
 
@@ -698,7 +719,9 @@ df_fixed = df.repartition(50)  # Redistribute evenly (expensive but necessary)
 
 1. **Run the examples** on local Spark (docker or miniconda)
 2. **Check the execution plan** with `.explain()`
-3. **Move to Section 02** - Python optimization for big data
+3. **Study transformations** - See [File 02](./02-transformations-rdd-vs-dataframe.md) for all RDD & DataFrame transformation options
+4. **Explore real-world code** - [File 03 - PySpark Examples](./03-real-world-pyspark-examples.md) with production ETL patterns
+5. **Deep dive into Catalyst** - [File 0111 - Catalyst Optimizations](./0111-catalyst-implicit-optimizations.md)
 
 ---
 
