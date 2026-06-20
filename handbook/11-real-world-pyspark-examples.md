@@ -22,6 +22,7 @@ Production-ready PySpark code for common industry ETL pipelines. Each example is
 10. [S3 Operations with Error Handling](#s3-operations-with-error-handling)
 11. [Performance Optimization Patterns](#performance-optimization-patterns)
 12. [Advanced: Streaming Basics](#advanced-streaming-basics)
+13. [Data Science: Feature Engineering & Model Training](#data-science-feature-engineering--model-training)
 
 ---
 
@@ -987,6 +988,277 @@ class Customer360ETL:
 etl = Customer360ETL(spark)
 df_360 = etl.run()
 ```
+
+---
+
+## Data Science: Feature Engineering & Model Training
+
+### Scenario
+Build features from raw data → Train ML model → Score at scale
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import (
+    col, when, datediff, year, month, dayofweek,
+    lag, sum as spark_sum, avg, stddev,
+    row_number, coalesce, expr
+)
+from pyspark.sql.window import Window
+from pyspark.ml.feature import StandardScaler, VectorAssembler
+from pyspark.ml.regression import LinearRegression
+from pyspark.ml.evaluation import RegressionEvaluator
+import numpy as np
+
+class ChurnPredictionModel:
+    """
+    Real-world ML pipeline: Predict customer churn
+    Data → Features → Train → Evaluate → Score
+    """
+
+    def __init__(self, spark):
+        self.spark = spark
+
+    def create_features(self, df):
+        """
+        Feature engineering: Transform raw data into ML features
+        """
+        # 1. TEMPORAL FEATURES (when customer did something)
+        df = df.withColumn("signup_year", year(col("signup_date"))) \
+               .withColumn("signup_month", month(col("signup_date"))) \
+               .withColumn("days_since_signup", datediff(col("current_date"), col("signup_date"))) \
+               .withColumn("days_active",
+                   when(col("last_purchase_date").isNotNull(),
+                        datediff(col("current_date"), col("last_purchase_date")))
+                   .otherwise(col("days_since_signup")))
+
+        # 2. PURCHASE HISTORY FEATURES (aggregated over time windows)
+        window_all_time = Window.partitionBy("customer_id")
+        window_last_90 = Window.partitionBy("customer_id").orderBy("purchase_date") \
+            .rangeBetween(-90 * 86400, 0)  # Last 90 days
+
+        df = df.withColumn(
+            # Total spending all-time
+            "lifetime_spending", spark_sum("amount").over(window_all_time)
+        ).withColumn(
+            # Purchase frequency (orders/month)
+            "purchase_frequency",
+            col("lifetime_orders") / (col("days_since_signup") + 1)
+        ).withColumn(
+            # Recent activity (spending last 90 days)
+            "spending_90d", spark_sum("amount").over(window_last_90)
+        ).withColumn(
+            # Recency: Days since last purchase
+            "days_since_purchase",
+            when(col("last_purchase_date").isNotNull(),
+                 datediff(col("current_date"), col("last_purchase_date")))
+            .otherwise(999)  # No purchase = 999
+        )
+
+        # 3. BEHAVIORAL FEATURES (what customer does)
+        df = df.withColumn(
+            "has_returned_items", when(col("return_count") > 0, 1).otherwise(0)
+        ).withColumn(
+            "avg_order_value", col("lifetime_spending") / (col("lifetime_orders") + 1)
+        ).withColumn(
+            "payment_method_type",
+            when(col("payment_method") == "credit_card", 1)
+            .when(col("payment_method") == "debit_card", 2)
+            .when(col("payment_method") == "paypal", 3)
+            .otherwise(0)
+        )
+
+        # 4. CATEGORICAL FEATURES (convert to numeric)
+        df = df.withColumn("country_encoded",
+            when(col("country") == "USA", 1)
+            .when(col("country") == "UK", 2)
+            .when(col("country") == "Canada", 3)
+            .otherwise(0)
+        )
+
+        # 5. INTERACTION FEATURES (combinations that matter)
+        df = df.withColumn(
+            # High-value customer who recently purchased = likely active
+            "high_value_active",
+            when((col("lifetime_spending") > 5000) &
+                 (col("days_since_purchase") < 30), 1).otherwise(0)
+        ).withColumn(
+            # Risk feature: High spending but long time inactive
+            "at_risk",
+            when((col("lifetime_spending") > 1000) &
+                 (col("days_since_purchase") > 180), 1).otherwise(0)
+        )
+
+        return df
+
+    def prepare_training_data(self, df, train_ratio=0.8):
+        """
+        Split data into train/test with proper time-based handling
+        (Critical for churn prediction: use historical data to predict future)
+        """
+        # Use historical data to train
+        df_train = df.filter(col("date") < "2024-01-01")
+        df_test = df.filter((col("date") >= "2024-01-01") & (col("date") < "2024-02-01"))
+
+        # Verify split
+        train_count = df_train.count()
+        test_count = df_test.count()
+        print(f"Train: {train_count}, Test: {test_count}")
+
+        return df_train, df_test
+
+    def build_model(self, df_train):
+        """
+        Feature scaling → Train linear regression model
+        """
+        # 1. SELECT features (exclude IDs, dates, target)
+        feature_cols = [
+            "days_since_signup", "days_active", "lifetime_spending",
+            "purchase_frequency", "spending_90d", "days_since_purchase",
+            "has_returned_items", "avg_order_value", "payment_method_type",
+            "country_encoded", "high_value_active", "at_risk"
+        ]
+
+        # 2. VECTOR ASSEMBLER: Combine features into single vector column
+        assembler = VectorAssembler(
+            inputCols=feature_cols,
+            outputCol="features",
+            handleInvalid="skip"
+        )
+        df_assembled = assembler.transform(df_train)
+
+        # 3. STANDARDIZATION: Scale features to mean=0, std=1
+        # Important for linear models, distance-based algorithms
+        scaler = StandardScaler(
+            inputCol="features",
+            outputCol="scaled_features",
+            withMean=True,
+            withStd=True
+        )
+        scaler_model = scaler.fit(df_assembled)
+        df_scaled = scaler_model.transform(df_assembled)
+
+        # 4. TRAIN MODEL
+        # Target: "churned" (1=churned, 0=retained)
+        lr = LinearRegression(
+            featuresCol="scaled_features",
+            labelCol="churned",
+            maxIter=100,
+            regParam=0.01,  # L2 regularization to prevent overfitting
+            elasticNetParam=0.0
+        )
+        model = lr.fit(df_scaled)
+
+        print(f"Model trained with {len(feature_cols)} features")
+        print(f"Coefficients: {model.coefficients}")
+
+        return model, scaler_model, assembler
+
+    def evaluate_model(self, model, scaler_model, assembler, df_test):
+        """
+        Evaluate model performance on test data
+        """
+        # Prepare test data same way as training
+        df_test_assembled = assembler.transform(df_test)
+        df_test_scaled = scaler_model.transform(df_test_assembled)
+
+        # Make predictions
+        predictions = model.transform(df_test_scaled)
+
+        # Evaluate
+        evaluator = RegressionEvaluator(
+            labelCol="churned",
+            predictionCol="prediction",
+            metricName="rmse"
+        )
+        rmse = evaluator.evaluate(predictions)
+        r2 = evaluator.setMetricName("r2").evaluate(predictions)
+
+        print(f"Test RMSE: {rmse:.4f}")
+        print(f"Test R2: {r2:.4f}")
+
+        # Show sample predictions
+        predictions.select(
+            "customer_id", "churned", "prediction", "lifetime_spending"
+        ).limit(10).show()
+
+        return predictions
+
+    def score_new_customers(self, model, scaler_model, assembler, df_new):
+        """
+        Score entire customer base for churn risk
+        """
+        df_new_assembled = assembler.transform(df_new)
+        df_new_scaled = scaler_model.transform(df_new_assembled)
+
+        predictions = model.transform(df_new_scaled) \
+            .select(
+                "customer_id",
+                "email",
+                "lifetime_spending",
+                col("prediction").alias("churn_probability"),
+                when(col("prediction") > 0.5, "HIGH_RISK")
+                .when(col("prediction") > 0.3, "MEDIUM_RISK")
+                .otherwise("LOW_RISK").alias("risk_segment")
+            )
+
+        # Save for campaigns
+        predictions.write.mode("overwrite").parquet("s3://ml-output/churn_scores/")
+
+        return predictions
+
+    def run_pipeline(self):
+        """Execute full ML pipeline"""
+        # 1. Read data
+        df = self.spark.read.parquet("s3://raw-data/customers/")
+
+        # 2. Create features
+        df_features = self.create_features(df)
+
+        # 3. Split train/test
+        df_train, df_test = self.prepare_training_data(df_features)
+
+        # 4. Build and train model
+        model, scaler, assembler = self.build_model(df_train)
+
+        # 5. Evaluate
+        predictions_test = self.evaluate_model(model, scaler, assembler, df_test)
+
+        # 6. Score all customers for production
+        df_prod = self.spark.read.parquet("s3://raw-data/customers_current/")
+        df_prod_features = self.create_features(df_prod)
+        churn_scores = self.score_new_customers(model, scaler, assembler, df_prod_features)
+
+        print("Pipeline complete! Scores saved to S3")
+        return churn_scores
+
+# Usage: Train model once, use for scoring
+if __name__ == "__main__":
+    spark = SparkSession.builder.appName("ChurnPrediction").getOrCreate()
+    ml_pipeline = ChurnPredictionModel(spark)
+    churn_scores = ml_pipeline.run_pipeline()
+
+    # Show high-risk customers (for targeted retention campaigns)
+    churn_scores.filter(col("risk_segment") == "HIGH_RISK") \
+                .orderBy("churn_probability", ascending=False) \
+                .show(100)
+```
+
+**Key ML Concepts in This Example:**
+
+1. **Feature Engineering** - Transform raw data into predictive signals (temporal, behavioral, interaction)
+2. **Train/Test Split** - Use historical data to train, recent data to test (time-based, not random)
+3. **Feature Scaling** - Standardize features for linear models (mean=0, std=1)
+4. **Model Training** - Fit regression model with regularization
+5. **Evaluation** - RMSE, R² metrics on held-out test set
+6. **Scoring at Scale** - Apply trained model to all customers in production
+7. **Risk Segmentation** - Convert probabilities to actionable business segments
+
+**Why This Matters for Data Scientists:**
+- Features drive model quality (80% of effort here)
+- Time-based splits prevent data leakage (critical for time-series like churn)
+- Scaling improves model convergence and interpretability
+- Regularization prevents overfitting (regParam=0.01)
+- Batch scoring lets you run predictions on 100M+ customers efficiently
 
 ---
 
