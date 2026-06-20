@@ -26,6 +26,8 @@ You might think: *"Spark handles the big data, not Python!"*
 
 ### Lists vs Dictionaries vs Sets
 
+🔗 **Also see:** Section 04 - Memory Spill | Section 05 - Shuffle Optimization
+
 ```python
 # SLOW: List lookup is O(n) - searches entire list
 data_list = [1, 2, 3, 4, 5, 100000]

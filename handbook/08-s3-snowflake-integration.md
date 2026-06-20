@@ -20,6 +20,8 @@
 
 ## S3 Best Practices
 
+🔗 **Related:** Section 01 - Partitioning Basics | Section 05 - Shuffle Optimization
+
 ### Partitioning Strategy
 
 **Good partitioning = Faster queries + Lower costs**

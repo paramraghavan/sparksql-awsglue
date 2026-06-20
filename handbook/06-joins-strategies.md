@@ -29,6 +29,8 @@ Spark chooses how to execute this. The **strategy** determines:
 
 ## Join Strategy Overview
 
+🔗 **Related:** Section 04 - Memory Spill | Section 05 - Shuffle Optimization
+
 ### The Four Main Strategies
 
 ```

@@ -21,144 +21,41 @@ This is a comprehensive collection of **40+ real interview questions** asked at 
 
 ### Q1: What's the difference between RDD and DataFrame?
 
-**Answer:**
+**Answer:** RDD = low-level (no optimization), DataFrame = high-level (Catalyst optimizes). Use DataFrame 95% of the time. RDD only for unstructured data or complex custom logic.
 
-| Aspect | RDD | DataFrame |
-|--------|-----|-----------|
-| **Type** | Low-level, untyped | High-level, typed |
-| **Schema** | No schema | Explicit schema |
-| **Optimization** | No (user responsible) | Yes (Catalyst) |
-| **Performance** | Slower (no optimization) | Faster (10-100x) |
-| **SQL Support** | No | Yes |
-| **Preferred** | Rarely used | 95% of cases |
-
-**When to use RDD:**
-- Unstructured data (text, binary)
-- Complex custom transformations
-- Very rare!
-
-**Example:**
-```python
-# RDD (slow, verbose)
-rdd = sc.textFile("data.txt")
-rdd2 = rdd.map(lambda x: x.upper())
-
-# DataFrame (fast, clean)
-df = spark.read.csv("data.csv")
-df2 = df.withColumn("upper_col", upper(col("text")))
-```
+**See:** Section 01 - RDD vs DataFrame for detailed comparison and examples.
 
 ---
 
 ### Q2: Explain lazy evaluation in PySpark
 
-**Answer:**
+**Answer:** Transformations don't execute immediately. Spark builds a plan and only executes on actions (show, collect, write). This allows Catalyst to optimize the entire pipeline before running.
 
-Spark doesn't execute transformations immediately. It builds an execution plan and only runs when an **action** is called.
-
-**Why?** Allows Catalyst optimizer to see the entire pipeline and choose the best execution strategy.
-
-**Example:**
-```python
-# None of these execute
-df.filter(df.age > 25)        # Transformation 1
-df.select("name", "salary")   # Transformation 2
-df.groupBy("dept").sum()      # Transformation 3
-
-# This EXECUTES all transformations
-df.show()  # Action - now it runs!
-
-# Different action, same plan
-df.count()  # Executes same transformations again
-```
-
-**Key insight:** Building optimizations into the plan before execution is crucial for performance at scale.
+**See:** Section 01 - Lazy Evaluation section with timeline and examples.
 
 ---
 
 ### Q3: What is a partition in Spark?
 
-**Answer:**
+**Answer:** A logical data division (default 128MB per partition). More partitions = more parallelism. Calculated as `ceil(file_size / 128MB)`.
 
-A partition is a **logical division of data** that:
-- Lives on ONE executor
-- Can be processed in parallel
-- Is independent of other partitions
-
-**Visualization:**
-```
-500GB file
-    ↓
-Split into 4000 partitions (128MB each)
-    ↓
-Distribute to 50 executors (~80 partitions each)
-    ↓
-Process in parallel
-```
-
-**Default:** 128MB per partition (HDFS block size)
-
-**Importance:**
-- More partitions = More parallelism
-- Fewer partitions = Larger per-partition size
+**See:** Section 01 - Partitioning Basics.
 
 ---
 
 ### Q4: Repartition vs Coalesce - When to use each?
 
-**Answer:**
+**Answer:** Repartition = shuffle (expensive, fixes skew). Coalesce = merge (cheap, reduces partitions). Use coalesce after filtering, repartition for skew/parallelism.
 
-| Operation | Repartition | Coalesce |
-|-----------|-------------|----------|
-| **Shuffle** | YES (expensive) | NO (cheap) |
-| **Use when** | Need to fix skew, increase partitions | Reduce partitions |
-| **Example** | 100→50 with data redistribution | 1000→100 to merge |
-
-**Code:**
-```python
-# Repartition: Forces shuffle
-df_repart = df.repartition(50)
-
-# Coalesce: Merges without shuffle
-df_coalesce = df.coalesce(50)
-
-# Rule of thumb:
-# - Reducing: Use coalesce (cheap)
-# - Increasing: Use repartition (must shuffle anyway)
-# - Fixing skew: Use repartition (need to redistribute)
-```
+**See:** Section 01 - Repartition vs Coalesce.
 
 ---
 
 ### Q5: What is shuffle and why is it expensive?
 
-**Answer:**
+**Answer:** Shuffle = moving data between partitions via network (slow). Occurs in GroupBy, Join, Repartition, Distinct, OrderBy. Minimize with pre-filtering and broadcast joins.
 
-**Shuffle:** Moving data between partitions/executors during operations like:
-- groupBy
-- join
-- repartition
-- distinct
-- orderBy
-
-**Why expensive:**
-1. Write data from write executors to disk (slow!)
-2. Network transfer between executors (slow!)
-3. Read and merge at read executors (slow!)
-
-**Cost impact:**
-- Normal operation: 10 seconds
-- With shuffle: 100+ seconds
-- With spill: 1000+ seconds
-
-**Optimization:**
-```python
-# Minimize shuffle by pre-filtering
-df.filter(...).groupBy().sum()  # Less data shuffles = faster
-
-# Use broadcast for small tables
-df_large.join(broadcast(df_small), "key")  # Only df_large shuffles
-```
+**See:** Section 05 - Shuffle Optimization.
 
 ---
 
@@ -166,213 +63,41 @@ df_large.join(broadcast(df_small), "key")  # Only df_large shuffles
 
 ### Q6: What causes memory spill and how do you prevent it?
 
-**Answer:**
+**Answer:** Spill = data exceeds executor memory, goes to disk (slow). Prevent: pre-filter, increase executor memory, reduce shuffle partitions, use broadcast, repartition for skew.
 
-**Memory spill:** When data exceeds executor memory, excess spilled to disk.
-
-**Causes:**
-1. Executor memory too small
-2. Data not filtered before operation
-3. Too many output partitions (shuffle)
-4. Data skew (some partitions much larger)
-
-**Prevention strategies:**
-
-```python
-# 1. Pre-filter
-df.filter(conditions).groupBy().sum()  # Not groupBy().sum() on all data
-
-# 2. Increase executor memory
---executor-memory 16G  # Instead of 4G
-
-# 3. Reduce shuffle partitions
-spark.conf.set("spark.sql.shuffle.partitions", 50)  # Not 200
-
-# 4. Use broadcast
-df_large.join(broadcast(df_small), "key")
-
-# 5. Repartition to fix skew
-df.repartition(100, "key")  # Evenly distribute skewed keys
-```
+**See:** Section 04 - Memory Spill Optimization.
 
 ---
 
 ### Q7: How would you optimize a slow Spark job?
 
-**Answer:**
+**Answer:** Measure (df.explain, Spark UI) → Identify bottleneck (read/shuffle/computation) → Optimize: Pre-filter, broadcast joins, reduce shuffle partitions, avoid UDFs.
 
-**Systematic approach:**
-
-1. **Measure:** Profile the job
-   ```python
-   # Check execution plan
-   df.explain(extended=True)
-
-   # Monitor Spark UI
-   # http://master:8080/
-   ```
-
-2. **Identify bottleneck:**
-   - Is it reading data? (Too many/large files)
-   - Is it shuffle? (groupBy, join)
-   - Is it computation? (UDF, complex logic)
-
-3. **Optimize based on bottleneck:**
-
-   **If reading:**
-   ```python
-   # Use projection pushdown
-   df.select("col1", "col2")  # Before filter
-
-   # Partition pruning
-   df.filter(col("year") == 2024)  # Spark skips other partitions
-   ```
-
-   **If shuffle:**
-   ```python
-   # Pre-filter to reduce data
-   df.filter(...).groupBy().sum()
-
-   # Broadcast small table
-   df_large.join(broadcast(df_small), "key")
-
-   # Adjust partitions
-   spark.conf.set("spark.sql.shuffle.partitions", 100)
-   ```
-
-   **If computation:**
-   ```python
-   # Avoid UDFs (use Spark functions)
-   # Use vectorized UDFs if must use UDF
-   # Batch operations
-   ```
+**See:** Sections 04-06 for detailed optimization strategies.
 
 ---
 
 ### Q8: Explain the Catalyst Optimizer
 
-**Answer:**
+**Answer:** Catalyst automatically optimizes execution plans via: predicate pushdown (filter early), column pruning (select needed columns), constant folding, join reordering. Trust it to optimize SQL operations.
 
-Catalyst is Spark's **query optimizer** that automatically improves execution plans.
-
-**What it does:**
-
-1. **Logical Plan → Physical Plan**
-   - Optimizes order of operations
-
-2. **Predicate Pushdown**
-   - Moves filters earlier in pipeline
-   ```python
-   # Spark optimizes this:
-   df.join(...).filter(df.age > 25)
-
-   # Into this:
-   df.filter(df.age > 25).join(...)  # Filter first!
-   ```
-
-3. **Column Pruning**
-   - Removes unused columns
-   ```python
-   # Spark only reads "name" and "salary"
-   df.select("name", "salary")
-   # Skips: "id", "email", "address", etc.
-   ```
-
-4. **Constant Folding**
-   - Pre-computes constants
-   ```python
-   # Spark computes 1 + 2 = 3 once, not per row
-   df.withColumn("const", lit(1 + 2))
-   ```
-
-5. **Join Reordering**
-   - Reorders joins for efficiency
-   ```python
-   # Spark reorders to broadcast small table first
-   df1.join(df2, "key").join(df3, "key")
-   ```
-
-**Key takeaway:** Trust Catalyst to optimize SQL operations. Use DataFrames, not RDDs.
+**See:** Section 01 - Catalyst Optimizer for detailed explanation and examples.
 
 ---
 
 ### Q9: What is data skew and how do you handle it?
 
-**Answer:**
+**Answer:** Skew = some partitions 10-100x larger (hot keys, geography). Causes bottleneck. Solutions: separate hot keys, salt keys (add randomness), increase partitions, repartition.
 
-**Data Skew:** Some partitions have 10-100x more data than others.
-
-**Example:**
-```
-Partition 1: 100GB (USA data)
-Partition 2: 1GB (UK data)
-Partition 3: 1GB (DE data)
-
-Executor 1 needs 20GB memory, others only 2GB
-→ Executor 1 is bottleneck
-```
-
-**Causes:**
-- Geographic data (USA heavy)
-- Popular keys (hot users)
-- Uneven source data
-
-**Solutions:**
-
-```python
-# Solution 1: Separate hot keys
-df_hot = df.filter(df.country == "USA").repartition(50)
-df_cold = df.filter(df.country != "USA")
-
-result_hot = df_hot.groupBy("state").agg(...)
-result_cold = df_cold.groupBy("country").agg(...)
-result = result_hot.union(result_cold)
-
-# Solution 2: Salt hot keys
-df_salted = df.withColumn(
-    "key_salted",
-    when(col("country") == "USA", concat(col("state"), lit("_"), (rand() * 50)))
-    .otherwise(col("country"))
-)
-
-# Solution 3: Increase partitions
-spark.conf.set("spark.sql.shuffle.partitions", 500)  # Spread thinner
-```
+**See:** Section 04 - Data Skew handling in memory optimization.
 
 ---
 
 ### Q10: How do you choose the right join strategy?
 
-**Answer:**
+**Answer:** <1GB → broadcast (fastest). Both >1GB & sorted → sort-merge. Default → let Catalyst choose. Use broadcast hint for small tables.
 
-**Decision tree:**
-
-```
-Is one table < 1GB?
-├─ YES → BROADCAST HASH JOIN (fastest)
-│
-└─ NO → Is one table only slightly > 1GB?
-    ├─ YES → Increase broadcast threshold, still broadcast
-    │
-    └─ NO → Use SORT-MERGE JOIN (safe for large tables)
-```
-
-**Code:**
-```python
-# Automatic broadcast (default < 10MB)
-spark.conf.set("spark.sql.autoBroadcastJoinThreshold", 1024*1024*1024)  # 1GB
-
-# Force sort-merge
-spark.conf.set("spark.sql.join.preferSortMergeJoin", True)
-
-# Explicit broadcast
-result = df_large.join(broadcast(df_small), "key")
-```
-
-**Performance:**
-- Broadcast: 2 minutes
-- Sort-merge: 10 minutes
-- Shuffle hash: 15 minutes
+**See:** Section 06 - Join Strategies with decision tree and performance comparison.
 
 ---
 

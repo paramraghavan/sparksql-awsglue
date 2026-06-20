@@ -50,42 +50,22 @@ Data Source
 Data Warehouse / Lake
 ```
 
-### Key Components
+### Structure Pattern
 
 ```python
+# ETL pipelines follow this structure:
 class ETLPipeline:
-    def __init__(self, job_name, config):
-        self.job_name = job_name
-        self.config = config
-        self.logger = setup_logging(job_name)
-
-    def extract(self):
-        """Read source data"""
-        pass
-
-    def transform(self):
-        """Process and clean data"""
-        pass
-
-    def load(self):
-        """Write to target"""
-        pass
+    def extract(self): pass      # Read source data
+    def transform(self, df): pass # Clean, validate, enrich
+    def load(self, df): pass      # Write to target
 
     def run(self):
-        """Execute full pipeline with error handling"""
         try:
-            self.logger.info("Starting extraction")
             data = self.extract()
-
-            self.logger.info("Starting transformation")
             transformed = self.transform(data)
-
-            self.logger.info("Starting load")
             self.load(transformed)
-
-            self.logger.info("Pipeline completed successfully")
         except Exception as e:
-            self.logger.error(f"Pipeline failed: {e}")
+            log_error(f"Pipeline failed: {e}")
             raise
 ```
 
@@ -105,238 +85,100 @@ You work for an e-commerce company. Every day:
 ### Full Implementation
 
 ```python
-# daily_sales_etl.py
-
-from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import (
-    col, from_unixtime, sum as spark_sum, count,
-    avg, row_number, broadcast, when, coalesce
-)
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, sum as spark_sum, count, avg, when, broadcast
+from datetime import datetime
 import logging
-from datetime import datetime, timedelta
-import sys
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 class SalesETL:
-    def __init__(self, config):
-        self.config = config
-        self.spark = SparkSession.builder.appName("DailySalesETL").getOrCreate()
+    def __init__(self):
+        self.spark = SparkSession.builder.appName("SalesETL").getOrCreate()
         self.spark.conf.set("spark.sql.shuffle.partitions", 200)
 
     def extract(self, date_str):
-        """Extract raw sales data from S3"""
-        logger.info(f"Extracting sales data for {date_str}")
-
+        """Read raw sales data, handle corrupted records"""
         try:
-            # Read with error handling for corrupted records
             df = self.spark.read\
-                .option("mode", "PERMISSIVE")\
                 .option("columnNameOfCorruptRecord", "_corrupt_record")\
                 .parquet(f"s3://raw-data/sales/{date_str}/")
 
-            # Check for corrupted records
-            corrupt_count = df.filter(col("_corrupt_record").isNotNull()).count()
-            if corrupt_count > 0:
-                logger.warning(f"Found {corrupt_count} corrupted records, excluding them")
-                df = df.filter(col("_corrupt_record").isNull()).drop("_corrupt_record")
-
-            logger.info(f"Extracted {df.count()} records")
+            # Remove corrupted records
+            df = df.filter(col("_corrupt_record").isNull()).drop("_corrupt_record")
+            logger.info(f"Extracted {df.count()} records from {date_str}")
             return df
-
         except Exception as e:
-            logger.error(f"Failed to extract data: {e}")
+            logger.error(f"Extract failed: {e}")
             raise
 
-    def validate(self, df):
-        """Validate data quality"""
-        logger.info("Validating data...")
+    def transform(self, df):
+        """Clean, enrich, aggregate"""
+        # Validate: check required fields and remove nulls
+        required = ["transaction_id", "customer_id", "amount", "timestamp"]
+        for field in required:
+            if field not in df.columns:
+                raise ValueError(f"Missing required field: {field}")
+        df = df.dropna(subset=required)
 
-        # Check required fields
-        required_fields = ["transaction_id", "customer_id", "product_id", "amount", "timestamp"]
-        missing_fields = [f for f in required_fields if f not in df.columns]
-        if missing_fields:
-            raise ValueError(f"Missing required fields: {missing_fields}")
+        # Parse date, apply business rules
+        df = df\
+            .withColumn("sale_date", col("timestamp").cast("date"))\
+            .filter(col("amount") > 0)\
+            .filter(col("amount") < 1000000)
 
-        # Check for nulls in critical columns
-        null_counts = {}
-        for field in required_fields:
-            null_count = df.filter(col(field).isNull()).count()
-            if null_count > 0:
-                null_counts[field] = null_count
+        # Enrich with dimensions (broadcast small tables)
+        customers = self.spark.read.parquet("s3://dimensions/customers/")
+        products = self.spark.read.parquet("s3://dimensions/products/")
 
-        if null_counts:
-            logger.warning(f"Found null values: {null_counts}")
-            # Option 1: Remove null records
-            df = df.dropna(subset=required_fields)
-
-        logger.info("Validation complete")
-        return df
-
-    def transform(self, sales_df):
-        """Transform and enrich sales data"""
-        logger.info("Starting transformation...")
-
-        # Step 1: Parse timestamps and add date
-        df = sales_df.withColumn(
-            "sale_date",
-            from_unixtime(col("timestamp"), "yyyy-MM-dd")
-        ).withColumn(
-            "sale_hour",
-            from_unixtime(col("timestamp"), "HH")
-        )
-
-        # Step 2: Validate business rules
-        logger.info("Applying business rules...")
-        df = df.filter(col("amount") > 0)  # No negative amounts
-        df = df.filter(col("amount") < 1000000)  # No suspiciously large transactions
-
-        # Step 3: Load dimensions (small tables, broadcast)
-        logger.info("Loading dimension tables...")
-        customers = self.spark.read.parquet("s3://dimensions/customers/latest/")
-        products = self.spark.read.parquet("s3://dimensions/products/latest/")
-
-        # Join with dimensions
         df = df.join(broadcast(customers), "customer_id", "left")\
-            .select(
-                col("transaction_id"),
-                col("customer_id"),
-                col("customer_segment"),
-                col("product_id"),
-                col("product_category"),
-                col("amount"),
-                col("sale_date"),
-                col("sale_hour")
-            )
+               .join(broadcast(products), "product_id", "left")
 
-        df = df.join(broadcast(products), "product_id", "left")\
-            .select(
-                col("transaction_id"),
-                col("customer_id"),
-                col("customer_segment"),
-                col("product_id"),
-                col("product_category"),
-                col("product_name"),
-                col("amount"),
-                col("sale_date"),
-                col("sale_hour")
-            )
+        # Add derived fields
+        df = df\
+            .withColumn("tax", when(col("product_category") == "Food", col("amount") * 0.05)\
+                              .otherwise(col("amount") * 0.10))\
+            .withColumn("total", col("amount") + col("tax"))
 
-        # Step 4: Calculate derived fields
-        logger.info("Calculating derived fields...")
-        df = df.withColumn(
-            "tax_amount",
-            when(col("product_category") == "Food", col("amount") * 0.05)
-            .otherwise(col("amount") * 0.10)
-        ).withColumn(
-            "total_with_tax",
-            col("amount") + col("tax_amount")
-        )
-
-        logger.info(f"Transformation complete. Rows: {df.count()}")
-        return df
-
-    def aggregate(self, df):
-        """Aggregate data by department and date"""
-        logger.info("Aggregating data...")
-
+        # Aggregate by date and category
         result = df.groupBy("sale_date", "product_category").agg(
-            spark_sum("amount").alias("total_revenue"),
-            spark_sum("tax_amount").alias("total_tax"),
-            spark_sum("total_with_tax").alias("total_with_tax"),
-            count("*").alias("transaction_count"),
-            avg("amount").alias("avg_transaction_amount")
-        ).select(
-            col("sale_date"),
-            col("product_category").alias("department"),
-            col("total_revenue"),
-            col("total_tax"),
-            col("total_with_tax"),
-            col("transaction_count"),
-            col("avg_transaction_amount")
+            spark_sum("amount").alias("revenue"),
+            count("*").alias("count"),
+            avg("amount").alias("avg_amount")
         )
 
-        logger.info(f"Aggregation complete. Rows: {result.count()}")
+        logger.info(f"Transform complete: {result.count()} aggregated rows")
         return result
 
     def load(self, df, output_path):
-        """Load results to target destination"""
-        logger.info(f"Loading data to {output_path}...")
-
+        """Write to target with partitioning"""
         try:
-            # Write with partition by date for efficient querying
             df.write\
                 .mode("overwrite")\
                 .partitionBy("sale_date")\
                 .parquet(output_path)
-
-            logger.info("Load complete")
-
-            # Update metadata
-            self.spark.sql(f"""
-                MSCK REPAIR TABLE sales_summary
-            """).collect()
-
-            return True
-
+            logger.info(f"Loaded to {output_path}")
         except Exception as e:
-            logger.error(f"Failed to load data: {e}")
+            logger.error(f"Load failed: {e}")
             raise
 
     def run(self, date_str):
-        """Execute full ETL pipeline"""
-        job_start = datetime.now()
-        logger.info(f"Starting ETL pipeline for {date_str}")
-
+        """Execute full pipeline"""
         try:
-            # Extract
-            raw_data = self.extract(date_str)
-
-            # Validate
-            validated_data = self.validate(raw_data)
-
-            # Transform
-            transformed_data = self.transform(validated_data)
-
-            # Aggregate
-            aggregated_data = self.aggregate(transformed_data)
-
-            # Load
-            self.load(aggregated_data, f"s3://processed-data/sales_summary/")
-
-            # Success
-            duration = (datetime.now() - job_start).total_seconds()
-            logger.info(f"ETL pipeline completed successfully in {duration:.2f} seconds")
-            return True
-
+            data = self.extract(date_str)
+            transformed = self.transform(data)
+            self.load(transformed, "s3://processed-data/sales/")
+            logger.info("Pipeline completed")
         except Exception as e:
-            duration = (datetime.now() - job_start).total_seconds()
-            logger.error(f"ETL pipeline failed after {duration:.2f} seconds: {e}")
+            logger.error(f"Pipeline failed: {e}")
             raise
 
-        finally:
-            self.spark.stop()
-
-# Main execution
 if __name__ == "__main__":
-    config = {
-        "raw_data_path": "s3://raw-data/sales/",
-        "output_path": "s3://processed-data/sales_summary/"
-    }
-
-    etl = SalesETL(config)
-
-    # Get date from command line or use yesterday
-    date_str = sys.argv[1] if len(sys.argv) > 1 else \
+    import sys
+    etl = SalesETL()
+    date = sys.argv[1] if len(sys.argv) > 1 else \
         (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    etl.run(date_str)
+    etl.run(date)
 ```
 
 ### Running the Job

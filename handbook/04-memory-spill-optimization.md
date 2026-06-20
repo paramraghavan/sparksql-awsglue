@@ -21,55 +21,20 @@
 
 ## Memory Architecture
 
-### Executor Memory Breakdown (4GB Example)
+**Executor Memory Breakdown (4GB typical):**
+- **Execution Memory (1.5GB):** Used for shuffle, joins, aggregations. Spill triggered when exceeded.
+- **Storage Memory (1.5GB):** Used for caching and broadcast variables.
+- **Reserved (1GB):** Garbage collection and OS overhead.
 
-```
-Total Executor Memory: 4GB
-│
-├─ Execution Memory (1.5GB): Shuffle, joins, aggregations
-│  └─ Spill threshold: ~1.5GB
-│
-├─ Storage Memory (1.5GB): Caching, broadcast variables
-│
-└─ Reserved for Python/OS (1GB)
-    └─ Garbage collection, OS overhead
-```
+**Visual Analogy:** Think of execution memory like a kitchen cutting board (1.5GB). You're prepping 150 dishes but the board fits 80. You prep 80, move them to storage (disk - slow!), prep 70 more, move those too. Constant movement = SPILL = 100-1000x slower.
 
-### How It Works
-
-```
-DataFrame operation: df.groupBy("id").sum()
-│
-├─ Data flows into executor partition
-│  └─ Using Execution Memory
-│
-├─ If data > 1.5GB
-│  └─ Spill triggered: Excess data → disk
-│
-└─ Result: Partial in-memory, partial on-disk
-   └─ Slower execution!
-```
-
-### Visual: The Cutting Board Analogy
-
-```
-Your kitchen cutting board = 4GB executor memory
-
-Task: Prepare ingredients for 100 dishes
-├─ Each dish needs 50MB of prepared ingredients
-├─ Board can hold: 80 dishes worth (4GB ÷ 50MB)
-│
-└─ What if you need to prep 150 dishes?
-   ├─ Prep 80 dishes on board
-   ├─ Move 80 dishes to storage (slow!)
-   ├─ Continue prepping remaining 70
-   └─ Result: Constant movement to/from storage
-      (This is SPILL - very slow!)
-```
+**When it happens:** If operation (groupBy, join, etc.) tries to hold more data than execution memory, excess data spilled to disk.
 
 ---
 
 ## Understanding Spill
+
+🔗 **Related:** Section 02 - Python Data Structures | Section 05 - Shuffle Optimization
 
 ### When Spill Happens
 
@@ -262,144 +227,44 @@ df = spark.read.orc("data.orc")
 
 ## Real Examples
 
-### Example 1: GroupBy Spill Prevention
+### Example 1: GroupBy + Pre-Filter + Partition Tuning
 
 ```python
-# Scenario: Daily sales aggregation
-# Data: 500GB raw transactions
-# Problem: GroupBy user_id creates 10M partitions, needs 20GB memory
+df = spark.read.parquet("s3://data/transactions/")  # 500GB
 
-df_sales = spark.read.parquet("s3://data/transactions/")
+# Problem: GroupBy on large partition needs 20GB executor memory
+# Solution: Pre-filter + reduce partitions + tune shuffle
 
-# Solution: Pre-filter + repartition + reduce shuffle partitions
-spark.conf.set("spark.sql.shuffle.partitions", 100)
+spark.conf.set("spark.sql.shuffle.partitions", 100)  # Reduce from default 200
 
-df_filtered = df_sales.filter(
-    (df_sales.date >= "2024-01-01") &
-    (df_sales.amount > 0)  # Pre-filter
-).coalesce(200)  # Reduce partitions before groupBy
+result = df\
+    .filter((col("date") >= "2024-01-01") & (col("amount") > 0))\
+    .coalesce(200)\
+    .groupBy("user_id", "date")\
+    .agg(F.sum("amount"), F.count("*"))
 
-result = df_filtered.groupBy("user_id", "date").agg(
-    F.sum("amount").alias("daily_total"),
-    F.count("*").alias("transaction_count")
-)
-
-result.write.mode("overwrite").parquet(
-    "s3://output/daily_summary"
-)
-
-# Memory impact:
-# Before: 20GB needed
-# After: 2GB needed (10x improvement!)
+# Memory: 20GB → 2GB (10x improvement!)
 ```
 
-### Example 2: Join Optimization
+### Example 2: Broadcast Join
 
 ```python
-# Scenario: Join customer data with transactions
-# Problem: Both tables shuffle, need 16GB memory per executor
-
 from pyspark.sql.functions import broadcast
 
 customers = spark.read.parquet("s3://data/customers/")  # 1GB
 transactions = spark.read.parquet("s3://data/transactions/")  # 500GB
 
-# Check sizes
-print(f"Customers: {customers.count()} rows")  # 10M
-print(f"Transactions: {transactions.count()} rows")  # 5B
+# Problem: Normal join shuffles both tables
+# Solution: Broadcast small table to all executors
 
-# Solution: Broadcast customers (it's small)
 result = transactions.join(
-    broadcast(customers),  # Broadcast the 1GB table
+    broadcast(customers),
     "customer_id"
 )
 
-# Memory impact:
-# Before: Both shuffle → 500GB + 1GB in executors
-# After: Only transactions shuffle → 500GB in executors
-#        Customers cached on each executor (1GB)
-# Savings: ~50% memory usage!
-```
-
-### Example 3: Handling Data Skew
-
-```python
-# Scenario: Some users have 100x more data than others
-# Problem: Executor with skewed data needs 16GB, others only use 100MB
-
-df = spark.read.parquet("s3://data/user_events/")
-
-# Before: Uneven distribution
-# User 1: 100GB
-# User 2: 50GB
-# User 3: 1GB
-# User 4: 1GB
-# (Heavy users cause spill, light users idle)
-
-# Solution 1: Salt (add random suffix to heavy keys)
-from pyspark.sql.functions import col, concat, lit, rand
-
-df_salted = df.withColumn(
-    "user_id_salted",
-    when(
-        col("user_id").isin(["heavy_user_1", "heavy_user_2"]),
-        concat(col("user_id"), lit("_"), (rand() * 10).cast("int"))
-    ).otherwise(col("user_id"))
-)
-
-result = df_salted.groupBy("user_id_salted").agg(
-    F.sum("value").alias("total")
-)
-
-# Solution 2: Isolate heavy keys
-df_heavy = df.filter(df.user_id.isin(["heavy_user_1", "heavy_user_2"]))
-df_light = df.filter(~df.user_id.isin(["heavy_user_1", "heavy_user_2"]))
-
-result_heavy = df_heavy.repartition(50, "user_id").groupBy("user_id").agg(F.sum("value"))
-result_light = df_light.groupBy("user_id").agg(F.sum("value"))
-
-result = result_heavy.union(result_light)
-
-# Memory impact:
-# Before: One executor struggles
-# After: Work distributed evenly
-# Result: No spill, 10x faster!
-```
-
-### Example 4: Window Function Optimization
-
-```python
-# Scenario: Calculate running sum per user
-# Problem: Window function needs to sort entire partition
-
-df = spark.read.parquet("s3://data/events/")
-
-# Before: Window function causes spill
-from pyspark.sql.window import Window
-
-result = df.withColumn(
-    "running_sum",
-    F.sum("amount").over(
-        Window.partitionBy("user_id").orderBy("timestamp")
-    )
-)
-
-# After: Pre-sort, reduce shuffle partitions
-spark.conf.set("spark.sql.shuffle.partitions", 50)
-
-df_presorted = df.repartition("user_id").sortWithinPartitions("timestamp")
-
-result = df_presorted.withColumn(
-    "running_sum",
-    F.sum("amount").over(
-        Window.partitionBy("user_id").orderBy("timestamp")
-    )
-)
-
-# Memory impact:
-# Before: Each window calculation needs sorting
-# After: Already sorted within partitions
-# Result: Less memory needed, faster execution!
+# Memory: Customers cached on each executor (1GB)
+#         Transactions NOT shuffled
+# Savings: ~50% memory vs. normal join
 ```
 
 ---

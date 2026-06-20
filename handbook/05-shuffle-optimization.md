@@ -25,6 +25,8 @@ df.distinct()                # Distinct needs to check for duplicates
 
 ## Shuffle Mechanics
 
+🔗 **Related:** Section 01 - Partitioning | Section 04 - Memory Spill | Section 06 - Join Strategies
+
 ### Two-Phase Shuffle
 
 ```
