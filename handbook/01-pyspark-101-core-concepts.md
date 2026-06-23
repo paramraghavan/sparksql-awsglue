@@ -135,7 +135,7 @@ df2 = df.filter(df.age > 25)
 **Pros:** Fast (Catalyst optimizer), clean syntax, SQL support
 **Cons:** Must fit data into structured format
 
-**See detailed DataFrame transformations:** [011-transformations-rdd-vs-dataframe.md](011-transformations-rdd-vs-dataframe.md#dataframe-transformations)
+**See detailed DataFrame transformations:** [011-transformations-rdd-vs-dataframe.md](011-transformations-rdd-vs-dataframe.md)
 
 ---
 
@@ -188,7 +188,7 @@ result.explain(extended=False)
 8. **Common sub-expression elimination** - Duplicate expressions computed once
 9. **Partition pruning** - Entire partitions skipped if they can't match filters
 
-**For detailed explanations with examples:** [File 0111 - Catalyst Implicit Optimizations](./0111-catalyst-implicit-optimizations.md)
+**For detailed explanations with examples:** [0111-catalyst-implicit-optimizations.md](0111-catalyst-implicit-optimizations.md)
 
 **Bottom line:** DataFrames with Catalyst are 10-100x faster than equivalent RDD code.
 
@@ -719,10 +719,7 @@ df_fixed = df.repartition(50)  # Redistribute evenly (expensive but necessary)
 
 1. **Run the examples** on local Spark (docker or miniconda)
 2. **Check the execution plan** with `.explain()`
-3. **Study transformations** - See [File 02](./02-transformations-rdd-vs-dataframe.md) for all RDD & DataFrame transformation options
-4. **Explore real-world code** - [File 03 - PySpark Examples](./03-real-world-pyspark-examples.md) with production ETL patterns
-5. **Deep dive into Catalyst** - [File 0111 - Catalyst Optimizations](./0111-catalyst-implicit-optimizations.md)
+3. **Study transformations** - See [011-transformations-rdd-vs-dataframe.md](011-transformations-rdd-vs-dataframe.md) for all RDD & DataFrame transformation options
+4. **Explore real-world code** -  [11-real-world-pyspark-examples.md](11-real-world-pyspark-examples.md)with production ETL patterns
+5. **Deep dive into Catalyst** - [0111-catalyst-implicit-optimizations.md](0111-catalyst-implicit-optimizations.md)
 
----
-
-**Remember:** Master these fundamentals before moving to advanced topics. They explain 80% of PySpark issues in production!
