@@ -21,14 +21,241 @@
 
 ## Memory Architecture
 
-**Executor Memory Breakdown (4GB typical):**
-- **Execution Memory (1.5GB):** Used for shuffle, joins, aggregations. Spill triggered when exceeded.
-- **Storage Memory (1.5GB):** Used for caching and broadcast variables.
-- **Reserved (1GB):** Garbage collection and OS overhead.
+### Executor Memory Breakdown (4GB typical)
 
-**Visual Analogy:** Think of execution memory like a kitchen cutting board (1.5GB). You're prepping 150 dishes but the board fits 80. You prep 80, move them to storage (disk - slow!), prep 70 more, move those too. Constant movement = SPILL = 100-1000x slower.
+```
+┌─────────────────────────────────────────────────────┐
+│           Executor Memory: 4GB Total               │
+├─────────────────────────────────────────────────────┤
+│ Execution Memory:    1.5GB  ← Used during transforms │
+│ Storage Memory:      1.5GB  ← Used for caching       │
+│ Reserved:            1.0GB  ← GC, OS, overhead       │
+└─────────────────────────────────────────────────────┘
 
-**When it happens:** If operation (groupBy, join, etc.) tries to hold more data than execution memory, excess data spilled to disk.
+EXECUTION MEMORY (1.5GB) - Critical for Spill!
+Used by operations that temporarily hold data:
+├─ GroupBy aggregations (building hash tables)
+├─ Joins (shuffling data between executors)
+├─ OrderBy/Sort (sorting partitions)
+└─ Window functions (buffering for ranking)
+
+STORAGE MEMORY (1.5GB)
+Used for data you explicitly cache:
+├─ df.cache() or df.persist()
+└─ Broadcast variables
+
+RESERVED (1.0GB)
+├─ Garbage collection
+├─ OS memory
+└─ Python/JVM overhead
+```
+
+### Real Example: GroupBy with DataFrame
+
+**Scenario:** You have a 1GB Parquet file with sales data, and you want to aggregate by customer_id.
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, sum as spark_sum, count
+
+spark = SparkSession.builder \
+    .config("spark.executor.memory", "4g") \
+    .appName("MemoryExample") \
+    .getOrCreate()
+
+# Step 1: Read 1GB file
+df = spark.read.parquet("s3://data/sales/2024/")
+# File: 1GB on disk
+# In memory (Execution Memory): ~1GB (structured data, not loaded fully yet)
+
+# Step 2: GroupBy aggregate (this is where spill happens!)
+result = df.groupBy("customer_id").agg(
+    spark_sum("amount").alias("total_sales"),
+    count("*").alias("order_count")
+)
+
+# What happens in memory:
+result.show()  # Action! Now execution starts
+```
+
+**What Happens Step-by-Step (The Accurate Timeline):**
+
+**IMPORTANT:** Hash table building is **INCREMENTAL** - each partition is processed as it arrives, not waiting for all partitions.
+
+```
+TIME 0: Read file (Lazy evaluation)
+├─ File: 1GB on S3, split into 10 partitions × 100MB
+├─ Execution Memory: Empty (nothing loaded yet)
+└─ Plan created, not executed
+
+TIME 1: Partition 1 arrives & local aggregation starts
+├─ Read partition 1 from S3: 100MB
+├─ Create LOCAL hash table from partition 1 data:
+│  └─ {customer_id → (total_sales, order_count)}
+├─ Local hash table: ~50MB (aggregated/compressed)
+├─ Execution Memory used: 100MB (partition) + 50MB (hash table) = 150MB ✓
+└─ Keep hash table in memory (will merge with next partition)
+
+TIME 2: Partition 2 arrives & merge
+├─ Read partition 2: 100MB
+├─ Merge partition 2 into existing hash table:
+│  ├─ For each customer in partition 2:
+│  │  └─ Look up in hash table, update total & count
+│  └─ Hash table grows slightly (new customers from P2)
+├─ Execution Memory: 100MB (partition) + 60MB (hash table) = 160MB ✓
+└─ Discard partition 1 data, keep merged hash table
+
+TIME 3-9: More partitions arrive & keep merging
+├─ Partition 3: 100MB → merge → hash table 70MB
+├─ Partition 4: 100MB → merge → hash table 80MB
+├─ Partition 5: 100MB → merge → hash table 90MB
+├─ Partition 6: 100MB → merge → hash table 100MB
+├─ Partition 7: 100MB → merge → hash table 110MB
+├─ Partition 8: 100MB → merge → hash table 120MB
+├─ Partition 9: 100MB → merge → hash table 130MB
+└─ Execution Memory: ~130MB + 100MB partition = 230MB ✓
+
+TIME 10: Still within memory
+├─ Partition 10: 100MB arrives
+├─ Hash table now: 150MB (aggregated data accumulating)
+├─ Execution Memory: 100MB + 150MB = 250MB ✓
+├─ Still under 1.5GB limit!
+└─ Continue...
+
+TIME 15: Hash table growing too large!
+├─ More partitions processed (P11-P15)
+├─ Hash table accumulated: 800MB (many unique customers!)
+├─ Partition 15: 100MB arrives
+├─ Execution Memory: 100MB + 800MB = 900MB ✓
+└─ Still safe...
+
+TIME 18: Memory pressure increases
+├─ Partitions P16-P18 being processed
+├─ Hash table accumulated: 1.2GB (very large!)
+├─ Partition 18: 100MB arrives
+├─ Execution Memory: 100MB + 1.2GB = 1.3GB (approaching limit!)
+└─ Getting close to 1.5GB!
+
+TIME 19: MEMORY FULL! SPILL TRIGGERS!
+├─ Partition 19: 100MB arrives
+├─ Hash table size: 1.3GB
+├─ New partition data: 100MB
+├─ Total needed: 1.4GB + overhead
+├─ Execution Memory available: 1.5GB (ALMOST FULL!)
+├─ System triggers SPILL to make room
+└─ ACTION: Write hash table to disk!
+
+SPILL SEQUENCE:
+├─ Write 1.3GB hash table to disk: 2 seconds (slow!)
+├─ Free 1.3GB execution memory
+├─ Continue processing remaining partitions (P19-P20)
+├─ Merge partition data into new (smaller) hash table
+├─ Keep repeating: when hash table gets big, spill to disk
+└─ Multiple spills may occur for large datasets!
+
+TIME 21: Spill complete, continue
+├─ Continue merging remaining partitions (P20+)
+├─ Partition data gets added to hash table
+├─ Process continues until all partitions done
+└─ All intermediate results on disk need to be merged
+
+TIME 25: Final merge phase
+├─ All partitions processed
+├─ Intermediate results scattered on disk
+├─ Read all spilled data from disk: 2-3 seconds
+├─ Merge all intermediate results: 1 second
+├─ Return final result
+└─ Total time: 25 seconds (5x slower than without spill!)
+
+COMPARISON:
+├─ WITHOUT SPILL: 5 seconds (all in memory)
+├─ WITH SPILL: 25 seconds (disk writes/reads)
+└─ Slowdown: 5x (or worse for massive spills!)
+```
+
+**Key Insight:** The problem isn't loading all partitions at once - it's the **ACCUMULATED hash table growing too large** as you merge partition after partition. Each new partition adds new unique keys to the hash table, making it bigger and bigger!
+
+### Comparison: With vs Without Spill
+
+**WITHOUT Spill (Enough Execution Memory):**
+```
+Execution Memory Available: 2GB (increased)
+├─ Read all partitions into hash table: 1GB
+├─ Hash table fits in memory completely
+├─ No disk writes during aggregation
+├─ Speed: 5 seconds ✓
+```
+
+**WITH Spill (Not Enough Memory):**
+```
+Execution Memory Available: 1.5GB (default)
+├─ Read partitions, fill memory: 1.5GB
+├─ Can't fit more! SPILL TO DISK
+├─ Write 1GB to disk: 1 second
+├─ Read more partitions: 2 seconds
+├─ Write another 500MB: 0.5 seconds
+├─ Read from disk for final merge: 3 seconds
+├─ Speed: 20 seconds ✗ (4x slower!)
+```
+
+### Why This Matters: Real Numbers
+
+```
+Parquet file: 1GB
+Unique customers: 100,000
+
+Memory per customer (hash table entry):
+├─ customer_id: 8 bytes
+├─ total_sales: 8 bytes (double)
+├─ order_count: 8 bytes (long)
+└─ Overhead: ~16 bytes
+   Total: ~40 bytes per customer
+
+Total hash table size:
+├─ 100,000 customers × 40 bytes = 4MB (metadata only)
+├─ BUT: Spark buffers intermediate data
+├─ Actual memory used: ~500MB-800MB for 1GB input
+└─ Fits in 1.5GB execution memory? USUALLY YES
+
+Problem case: 10M unique customers
+├─ Hash table size: 10M × 40 bytes = 400MB
+├─ Plus buffered data: 800MB
+├─ Total: 1.2GB (still fits in 1.5GB)
+
+Critical case: 50M unique customers
+├─ Hash table size: 50M × 40 bytes = 2GB
+├─ Plus buffered data: 3GB+
+├─ Total: 5GB+ (EXCEEDS 1.5GB!)
+├─ Result: MASSIVE SPILL (3.5GB written to disk!)
+└─ Speed: 5 minutes → 45 minutes (9x slower!)
+```
+
+### Simple Rule of Thumb
+
+```python
+# Estimate memory needed for groupBy:
+#
+# Memory = (input_size / num_partitions) × buffering_factor
+#          + (unique_keys × key_overhead)
+#
+# buffering_factor ≈ 2-3x (Spark buffers intermediate data)
+# key_overhead ≈ 40-100 bytes per unique key
+
+# Example:
+# Input: 100GB file
+# Partitions: 100
+# Unique keys: 1M
+
+memory_needed = (100 * 1024 / 100) * 2.5 + (1000000 * 50 / 1024 / 1024)
+#             = (1024) * 2.5 + 48
+#             = 2560 + 48
+#             = 2.6GB
+
+# If executor memory is 4GB:
+# Execution memory available: 1.5GB
+# Memory needed: 2.6GB
+# SPILL EXPECTED! (2.6 - 1.5 = 1.1GB will spill)
+```
 
 ---
 
@@ -40,17 +267,42 @@
 
 ```python
 # Scenario 1: GroupBy (high cardinality)
+# Problem: Many unique keys = large hash table
 df.groupBy("user_id").sum()  # If 1M unique users, lots of memory needed
+# Memory needed: millions of hash entries × overhead
+# Risk: HIGH if >1M unique keys
 
 # Scenario 2: Join without broadcast
+# Problem: Both tables shuffle to executors simultaneously
 df_large.join(df_medium, "key")  # Both tables shuffle
+# Memory needed: combined size of both tables in partition
+# Risk: HIGH if both tables are large
 
 # Scenario 3: OrderBy / Sort
+# Problem: Must hold entire partition to sort
 df.orderBy("timestamp")  # Sorts entire partition
+# Memory needed: size of one full partition
+# Risk: MEDIUM (depends on partition size)
 
 # Scenario 4: Window Functions
+# Problem: Must buffer all rows in partition for ranking
+from pyspark.sql.window import Window
 df.withColumn("rank", row_number().over(Window.orderBy("date")))
+# Memory needed: full partition buffered in memory
+# Risk: MEDIUM-HIGH (depends on partition size)
 ```
+
+### Key Insights: When Spill is Most Likely
+
+| Operation | Memory Pattern | Risk | Why |
+|-----------|---|---|---|
+| **GroupBy** | Linear with unique keys | 🔴 HIGH | Hash table grows with each unique key |
+| **Join** | Linear with both table sizes | 🔴 HIGH | Both tables shuffled to same executor |
+| **OrderBy** | Linear with partition size | 🟡 MEDIUM | Single partition must fit in memory |
+| **Window** | Linear with partition size | 🟡 MEDIUM | Full partition buffered |
+| **Broadcast** | Fixed (small table only) | 🟢 LOW | No shuffle needed |
+
+---
 
 ### Spill Types
 
