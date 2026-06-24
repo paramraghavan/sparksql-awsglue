@@ -432,19 +432,13 @@ df_repart = df.repartition(100)  # Redistribute to 100 partitions
 # Much safer!
 ```
 
+**See Section 01** for detailed explanation of coalesce vs repartition (the key distinction and when to use each).
+
 ### Strategy 4: Use Broadcast for Small Tables
 
-```python
-# BAD: Normal join (both shuffle)
-result = df_large.join(df_medium, "key")
+For joins with small tables (< 1GB), use broadcast to avoid shuffling the large table.
 
-# GOOD: Broadcast small table
-from pyspark.sql.functions import broadcast
-
-result = df_large.join(broadcast(df_medium), "key")
-# df_medium cached on each executor (no shuffle!)
-# Only df_large shuffles → 50% memory usage
-```
+**See Section 06 - Broadcast Hash Join** for complete strategy, memory requirements, and when to use.
 
 ### Strategy 5: Reduce Shuffle Partitions
 

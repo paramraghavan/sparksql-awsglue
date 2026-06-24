@@ -30,7 +30,7 @@ You might think: *"Spark handles the big data, not Python!"*
 
 ### Lists vs Dictionaries vs Sets
 
-🔗 **Also see:** Section 04 - Memory Spill | Section 05 - Shuffle Optimization
+**Key Takeaway:** Choose the right data structure - O(1) lookups beat O(n) when processing large datasets in PySpark
 
 ```python
 # SLOW: List lookup is O(n) - searches entire list
@@ -721,6 +721,104 @@ def batch_processing(s: pd.Series) -> pd.Series:
 - Vectorized UDF: ~1,000 Python calls for 1M rows (batch size ~1000)
 - Speed improvement: 100-1000x faster!
 
+### Execution Flow: Partition-by-Partition, Batch-by-Batch
+
+**Important:** Understanding where pandas_udf runs is critical for debugging and optimization.
+
+```
+DataFrame with 100 partitions (distributed across cluster)
+↓
+Spark distributes partitions to executors (could be on CORE or TASK nodes)
+↓
+Each executor processes its assigned partitions SEQUENTIALLY:
+  ┌─ Partition 1 (assigned to Executor 1 on some node)
+  │  ├─ Batch 1: rows 0-10,000 (default batch size)
+  │  │  └─ Call pandas_udf → process in Python → return results
+  │  ├─ Batch 2: rows 10,001-20,000
+  │  │  └─ Call pandas_udf → process in Python → return results
+  │  ├─ Batch 3: rows 20,001-30,000
+  │  │  └─ Call pandas_udf → process in Python → return results
+  │  └─ ... continue batches until partition exhausted
+  │
+  ├─ Partition 2 (assigned to same executor)
+  │  ├─ Batch 1: rows 0-10,000
+  │  │  └─ Call pandas_udf → process → return
+  │  ├─ Batch 2: rows 10,001-20,000
+  │  │  └─ Call pandas_udf → process → return
+  │  └─ ... more batches
+  │
+  └─ ... more partitions for this executor
+```
+
+**KEY POINTS:**
+
+1. **Where it runs:** On EXECUTORS (which run on core OR task nodes)
+   - Not specifically "task nodes" - Spark decides node placement
+   - Executors are running on whatever nodes Spark provisioned
+   - Core nodes (have HDFS) or Task nodes (compute-only) both run executors
+
+2. **Partition processing:** PARTITION-BY-PARTITION
+   - Each partition handled by ONE executor at a time
+   - Executor handles ALL batches in a partition before moving to next
+
+3. **Batch processing:** BATCH-BY-BATCH within each partition
+   - Default batch size: 10,000 rows (configurable)
+   - Each batch → separate pandas_udf call
+   - Batches accumulated until partition complete
+
+### Automatic Batch Conversion (No Manual Work!)
+
+**Critical Understanding: Spark handles batch conversion automatically**
+
+```python
+from pyspark.sql.functions import pandas_udf, col
+import pandas as pd
+
+df = spark.read.parquet("1TB_file.parquet")  # 1TB = 1M rows
+
+@pandas_udf("double")
+def apply_discount(salary: pd.Series) -> pd.Series:
+    """
+    Input: pd.Series (batch of ~10,000 rows, NOT all 1M rows)
+    Output: pd.Series (same length, same type)
+    """
+    return salary * 0.9  # Apply 10% discount
+
+result = df.withColumn("discounted", apply_discount(col("salary")))
+
+# What happens under the hood:
+# 1. DataFrame split into 100 partitions (10MB each)
+# 2. Each partition processed by executor:
+#    - Partition 1 (10MB = ~1000 rows)
+#      └─ 1 batch: 1000 rows → pandas_udf → results
+#    - Partition 2 (10MB = ~1000 rows)
+#      └─ 1 batch: 1000 rows → pandas_udf → results
+#    - ... 100 partitions total
+
+# Spark handles ALL conversion automatically:
+# ✓ No manual df.toPandas() (would load entire 1TB into memory!)
+# ✓ Automatic batching (10,000 rows at a time)
+# ✓ Automatic serialization/deserialization
+# ✓ Memory safe (only batch in memory, not entire DataFrame)
+```
+
+### Why This Is Better Than Simple UDFs
+
+```
+SIMPLE UDF (Row-by-row):
+├─ 1M rows → 1M Python function calls
+├─ Each call: serialize row → call Python → deserialize result
+├─ Python/JVM boundary crossed 1,000,000 times!
+└─ Result: Very slow (10-100x slower than built-in)
+
+PANDAS UDF (Batch-by-batch):
+├─ 1M rows → ~100 batches (10,000 rows each)
+├─ Each batch: serialize batch → call Python → deserialize results
+├─ Python/JVM boundary crossed ~100 times!
+├─ Within pandas_udf: Vectorized NumPy operations (FAST)
+└─ Result: 10-100x faster than simple UDF (but slower than built-in)
+```
+
 ### Important: What Can Be Passed to Vectorized UDFs?
 
 ```python
@@ -734,18 +832,19 @@ def wrong_function(df: pd.DataFrame) -> pd.Series:  # ❌ WRONG!
 @pandas_udf(DoubleType())
 def correct_function(s: pd.Series) -> pd.Series:  # ✅ CORRECT!
     # s is a batch of values from ONE column
-    # e.g., batch of 1000 salary values
+    # e.g., batch of 10,000 salary values (NOT all 1M!)
     return s * 1.1
 
 # ✅ CAN pass: Multiple columns (become multiple pd.Series)
 @pandas_udf(DoubleType())
 def multi_column(salary: pd.Series, tax_rate: pd.Series) -> pd.Series:
-    # salary: batch of 1000 salary values
-    # tax_rate: batch of 1000 tax_rate values (same length)
+    # salary: batch of 10,000 salary values
+    # tax_rate: batch of 10,000 tax_rate values (same length)
+    # Both from SAME partition, SAME batch
     return salary * tax_rate
 
 # Usage:
-df.withColumn("doubled_salary", batch_processing(col("salary")))
+df.withColumn("doubled_salary", correct_function(col("salary")))
 df.withColumn("tax", multi_column(col("salary"), col("tax_rate")))
 ```
 

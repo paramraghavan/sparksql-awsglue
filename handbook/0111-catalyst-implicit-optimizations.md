@@ -10,7 +10,7 @@ Catalyst is Spark's query optimizer that automatically applies sophisticated opt
 
 1. [IsNotNull Checks](#isnotnull-checks)
 2. [Constant Folding](#constant-folding)
-3. [Dead Code Elimination](#dead-code-elimination)
+3. [Column Pruning](#column-pruning-dead-code-elimination)
 4. [Join Reordering](#join-reordering)
 5. [Boolean Simplification](#boolean-simplification)
 6. [Null Propagation](#null-propagation)
@@ -109,11 +109,11 @@ df.filter(
 
 ---
 
-## Dead Code Elimination
+## Column Pruning (Dead Code Elimination)
 
 ### What It Does
 
-Catalyst removes columns that are never used, so only needed columns are read from disk (Column Pruning).
+Catalyst removes columns that are never used, so only needed columns are read from disk. This is also called "Dead Code Elimination" because unused columns are eliminated.
 
 ### Example
 

@@ -96,15 +96,23 @@ Result: Join complete!
 ### Memory Requirement
 
 ```
-Per executor:
-├─ Small table (broadcast): 500MB
-├─ Execution memory: 200MB (for hashing)
+Per executor (for broadcast hash join):
+├─ Small table in memory: 500MB (the broadcasted table)
+├─ Execution memory: 200MB (buffer for incoming records from large table)
 ├─ Other overhead: 100MB
 └─ Total: ~800MB (safe with 4GB executor)
 
-With 10 executors:
-├─ Broadcast copies: 10 × 500MB = 5GB total (but same data on each)
-└─ Network: Broadcast efficient
+Network cost:
+├─ Broadcast copies: 10 executors × 500MB = 5GB TOTAL network transferred
+│  └─ (Each executor gets same 500MB copy, but only sent once to each)
+├─ Cost: One-time broadcast (~5GB network cost)
+└─ Benefit: Avoids shuffling 100GB large table (saves 100GB+ network!)
+
+Memory across cluster:
+├─ Master broadcasts 500MB small table
+├─ Each of 10 executors receives and caches 500MB
+├─ Large table partitions stay in place (no replication)
+└─ Total memory: 10 executors × 500MB = 5GB (small!)
 ```
 
 ### Code
@@ -127,21 +135,39 @@ result = large_table.join(
 # 4. Result assembled
 ```
 
-### Spark Automatic Detection
+### Spark Automatic Detection (autoBroadcastJoinThreshold)
 
 ```python
-# Spark AUTOMATICALLY uses broadcast if small table detected
-spark.conf.set("spark.sql.autoBroadcastJoinThreshold", 10 * 1024 * 1024)  # 10MB
+# Spark AUTOMATICALLY uses broadcast if small table is under threshold
+spark.conf.get("spark.sql.autoBroadcastJoinThreshold")  # Default: 10MB
 
 result = large_table.join(small_table, "key")
-# If small_table < 10MB: Automatic broadcast
-# If >= 10MB: Uses different strategy
+# If small_table < 10MB: Spark auto-broadcasts ✓
+# If small_table >= 10MB: Spark uses sort-merge join instead ✗
 
-# You can increase threshold
-spark.conf.set("spark.sql.autoBroadcastJoinThreshold", 1024 * 1024 * 1024)  # 1GB
+# PROBLEM: 10MB threshold is too conservative!
+# Many real tables are 100MB-1GB but still broadcast-able
+# Broadcast 500MB vs Shuffle 100GB = huge difference!
 
-# Or disable automatic broadcast
-spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
+# SOLUTION: Increase threshold based on cluster memory
+# Rule: Set to ~20% of executor memory
+
+# Example 1: 4GB executor memory
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", 800 * 1024 * 1024)  # 800MB
+
+# Example 2: 16GB executor memory
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", 3 * 1024 * 1024 * 1024)  # 3GB
+
+# AFTER setting threshold, joins automatically benefit:
+result = large_table.join(small_table, "key")
+# If small_table < threshold: Auto-broadcast (no code change needed!)
+
+# You can still explicitly broadcast larger tables:
+from pyspark.sql.functions import broadcast
+result = large_table.join(broadcast(medium_table), "key")  # Force broadcast
+
+# Or disable automatic broadcast completely
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)  # Only explicit broadcasts
 ```
 
 ### Advantages & Disadvantages
@@ -188,13 +214,21 @@ Merge join:
 ### Memory Requirement
 
 ```
-Per executor during merge:
-├─ Execution memory for merge: Minimal (2 pointers)
+Per executor during merge (KEY ADVANTAGE of sort-merge!):
+├─ Execution memory for merge: Minimal (~10MB)
+│  └─ Why: Merging uses 2 pointers (1 in table1, 1 in table2)
+│  └─ Only compares next records, doesn't load entire tables
 ├─ Storage for current partition: ~200MB
-├─ Buffers: ~50MB
-└─ Total: ~300MB (safe with 4GB executor)
+│  └─ One partition from each table being merged
+├─ Sort buffers: ~50MB
+│  └─ For sorting records within each partition
+└─ Total: ~260MB per executor (safe with 4GB executor!)
 
-Key: No need to hold entire table in memory!
+CRITICAL ADVANTAGE:
+├─ No hash table = no memory spill
+├─ Streaming merge = partition-by-partition (not all data at once)
+├─ Can handle 1TB joins on 4GB executor
+└─ Unlike shuffle hash join, scales linearly, not exponentially
 ```
 
 ### Code
@@ -216,6 +250,41 @@ table2_presorted = table2.sortWithinPartitions("key")
 result = table1_presorted.join(table2_presorted, "key")
 ```
 
+### Co-Located (Pre-Partitioned) Optimization
+
+**Critical Concept:** If both tables are already partitioned the same way, SKIP THE SHUFFLE!
+
+```
+WITHOUT co-location:
+Table 1 (100GB, 100 partitions)
+    ↓
+SHUFFLE to 200 partitions (redistribute all data)
+    ↓
+SORT each partition
+    ↓
+Merge
+    ↓
+Result
+
+WITH co-location (both pre-partitioned to same count + key):
+Table 1 (100GB, already in 200 partitions by key)
+    ↓
+SORT each partition (already organized correctly!)
+    ↓
+Table 2 (50GB, already in 200 partitions by same key)
+    ↓
+SORT each partition
+    ↓
+Merge (partition 1 from table1 + partition 1 from table2, etc.)
+    ↓
+Result (NO SHUFFLE, same partitions used!)
+
+TIME IMPACT:
+├─ Normal sort-merge: Shuffle (expensive) + Sort + Merge
+├─ Co-located sort-merge: SKIP shuffle, just Sort + Merge
+└─ Speedup: 5-10x faster! (shuffle is typically slowest part)
+```
+
 ### Advantages & Disadvantages
 
 | Aspect | Details |
@@ -225,7 +294,7 @@ result = table1_presorted.join(table2_presorted, "key")
 | **Network** | Both tables shuffle (one-time cost) |
 | **Best for** | Large + large joins |
 | **Benefit** | Scales to 1TB+ joins |
-| **If pre-sorted** | Avoid sort cost (much faster!) |
+| **If pre-sorted + co-located** | SKIP shuffle entirely (5-10x faster!) |
 
 ---
 
@@ -237,35 +306,50 @@ result = table1_presorted.join(table2_presorted, "key")
 - **No broadcast viable** (both too large)
 - **Not pre-sorted** (no benefit to sort-merge)
 
-### How It Works
+### How It Works (BUILD and PROBE phases)
 
 ```
-Table 1 (100GB)
+PHASE 1: BUILD (smaller table)
+Table 2 (50GB) ← Smaller table
     ↓
-SHUFFLE to 200 partitions
+SHUFFLE to 200 partitions (same as larger table)
     ↓
-BUILD hash table in memory
+For each partition:
+├─ Read all records from Table2 partition
+├─ Build hash table: {key → record}
+├─ Memory: Must fit entire partition in hash table
+└─ If partition > executor memory: SPILL to disk (very slow!)
+
+PHASE 2: PROBE (larger table)
+Table 1 (100GB) ← Larger table
     ↓
-                    Table 2 (50GB)
-                        ↓
-                    SHUFFLE to 200 partitions
-                        ↓
-Probe:
-├─ For each record in Table2, lookup in hash table
-└─ If found, emit joined record
+SHUFFLE to 200 partitions (same as build table)
+    ↓
+For each partition:
+├─ Read each record from Table1 partition
+├─ Lookup key in hash table from Table2
+├─ If found: emit joined row
+└─ If not found: discard (or outer join logic)
 ```
 
 ### Memory Requirement
 
 ```
-Per executor:
-├─ Hash table (from smaller table): ~250MB
+Per executor during shuffle hash join:
+├─ Hash table (from build table): ~250MB
+│  └─ Memory to store smaller table's partition
 ├─ Probe buffer: ~50MB
-└─ Total: ~300MB
+│  └─ Buffer for reading larger table's partition
+└─ Total: ~300MB per executor
 
-Per partition:
-├─ Must fit build table partition in hash table
-└─ If partition too large, spill occurs
+CRITICAL CONSTRAINT:
+├─ Build table partition MUST fit in memory
+│  └─ If 50GB data → 200 partitions = 250MB per partition ✓ OK
+│  └─ If 50GB data → 100 partitions = 500MB per partition ✓ Still OK
+│  └─ If 50GB data → 50 partitions = 1GB per partition ✗ SPILL!
+└─ Spill = write to disk = 100-1000x slower!
+
+This is why partition count matters for shuffle hash join!
 ```
 
 ### Code
@@ -314,7 +398,17 @@ df2: 100,000 rows
 
 Result: 1,000,000 × 100,000 = 100 BILLION rows!
 
-If 50MB per row: 5 Exabytes!
+Memory/storage cost:
+├─ If 1KB per row: 100B rows × 1KB = 100 TERABYTES!
+├─ If 100 bytes per row: 100B rows × 100B = 10 TERABYTES!
+└─ Either way: Unmanageable!
+
+Execution impact:
+├─ Time to generate: Hours or days
+├─ Network: Saturated completely
+├─ Memory: All executors OOM (out of memory)
+├─ Cluster: Becomes unresponsive
+└─ Result: Job crashes or hangs indefinitely
 ```
 
 ### When It's Needed (Rare)
@@ -352,6 +446,37 @@ result = df1.crossJoin(df2)  # Clear intent
 
 ---
 
+## Join Strategy Relationship to Shuffle Partitions
+
+**Key Insight:** Different join strategies have different sensitivity to partition count
+
+```
+BROADCAST HASH JOIN:
+├─ Shuffle partitions: DOESN'T MATTER (no shuffle!)
+├─ Network: Only small table broadcast (fixed cost)
+└─ Memory: Fixed per executor
+
+SORT-MERGE JOIN:
+├─ Shuffle partitions: Moderate impact
+│  └─ More partitions = smaller per-partition sort (less memory per task)
+│  └─ Default 200 usually OK for large tables
+├─ Network: Both tables shuffle (expensive)
+└─ Memory: Streaming merge (not sensitive to partition size)
+
+SHUFFLE HASH JOIN:
+├─ Shuffle partitions: CRITICAL!
+│  └─ Too few: Build table partition > executor memory = SPILL
+│  └─ Too many: More tasks = more overhead
+│  └─ Must size to: partition_size = table_size / num_partitions < executor_memory
+├─ Network: Both tables shuffle
+└─ Memory: VERY sensitive - build table partition must fit!
+
+EXAMPLE - 50GB small table with 4GB executor:
+├─ 100 partitions → 500MB per partition → Fits in memory ✓
+├─ 50 partitions → 1GB per partition → Spills to disk ✗ (slow!)
+└─ 200 partitions → 250MB per partition → Very safe ✓
+```
+
 ## Choosing the Right Strategy
 
 ### Decision Tree
@@ -359,30 +484,50 @@ result = df1.crossJoin(df2)  # Clear intent
 ```
 Start: You need to join two tables
 
-1. Is one table < 1GB?
-   YES → Use BROADCAST HASH JOIN
-         ├─ Fastest
-         ├─ Lowest memory
-         └─ Best option!
+1. Is one table < autoBroadcastJoinThreshold?
+   (Default 10MB, recommend increasing to 800MB-3GB)
+
+   YES → BROADCAST HASH JOIN ✓ BEST CHOICE
+         ├─ No shuffle (only broadcast)
+         ├─ Fastest (hash lookup is O(1))
+         ├─ Lowest network cost
+         └─ Example: Dimension table < 1GB
 
    NO → Continue to 2
 
-2. Are both tables already sorted by join key?
-   YES → Use SORT-MERGE JOIN (skip the sort!)
-         ├─ Very fast
-         ├─ Safe for huge tables
-         └─ Ideal for repeated joins
+2. Are both tables ALREADY partitioned and sorted by join key?
+   (Check metadata or previous sort operations)
+
+   YES → CO-LOCATED SORT-MERGE JOIN ✓ EXCELLENT
+         ├─ No shuffle (skip redistribute)
+         ├─ Just sort + merge
+         ├─ 5-10x faster than regular sort-merge
+         └─ Example: Fact tables pre-partitioned by date
 
    NO → Continue to 3
 
-3. Is one table only slightly larger than broadcast threshold?
-   YES → Still use BROADCAST if possible
-         └─ Increase autoBroadcastJoinThreshold
+3. Is one table < 20GB and the other < 200GB?
+   (Within reasonable limits for sort-merge)
 
-   NO → Use SORT-MERGE JOIN (Spark default)
-        ├─ Safe, predictable
-        ├─ Works for any size
-        └─ Recommended for large tables
+   YES → SORT-MERGE JOIN ✓ GOOD CHOICE
+         ├─ Default Spark choice
+         ├─ Safe, scales well
+         ├─ Works up to 1TB+ per table
+         └─ Configure: spark.sql.join.preferSortMergeJoin=true
+
+   NO → Continue to 4
+
+4. Are you running on a high-memory cluster?
+   (>= 16GB per executor)
+
+   YES → Still use SORT-MERGE JOIN
+         ├─ Increase shuffle.partitions for safety
+         └─ Example: 500 partitions for 500GB data
+
+   NO → SORT-MERGE JOIN with tight monitoring
+        ├─ Reduce table sizes with pre-filtering
+        ├─ Increase executor memory if possible
+        └─ Last resort: Split join into smaller chunks
 ```
 
 ### Configuration Summary

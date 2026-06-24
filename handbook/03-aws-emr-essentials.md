@@ -39,11 +39,55 @@ Task Nodes (optional, can scale up/down)
 
 ### Master vs Core vs Task Nodes
 
-| Node Type | Purpose | Cost | Scalability |
-|-----------|---------|------|-------------|
-| **Master** | Driver, scheduler, monitoring | On-Demand only | 1 node (fixed) |
-| **Core** | Executors + HDFS storage | On-Demand or Spot | 1-10 nodes (fixed during job) |
-| **Task** | Additional executors only | Spot usually | Scale up/down dynamically |
+| Node Type | Purpose | Storage | Cost | Scalability |
+|-----------|---------|---------|------|-------------|
+| **Master** | Driver, scheduler, monitoring | EBS (HDFS NameNode) | On-Demand only | 1 node (fixed) |
+| **Core** | Executors + HDFS storage | EBS (HDFS DataNode) | On-Demand or Spot | 1-10 nodes (fixed during job) |
+| **Task** | Additional executors + temp storage | EBS (ephemeral, not persistent) | Spot usually | Scale up/down dynamically |
+
+### Storage & EBS Volumes Details
+
+```
+Master Node
+├─ EBS Volume: Stores HDFS metadata (NameNode)
+├─ Size: Usually 50GB-100GB
+└─ Role: File system directory, not data storage
+
+Core Nodes
+├─ EBS Volume: Can store persistent data (HDFS DataNode role)
+├─ Size: 500GB-2TB per node
+├─ IMPORTANT: In modern EMR, don't use for persistent data
+├─ Used for: Temporary shuffle/spill data during job execution
+└─ Strategy: Keep On-Demand (more stable) or mix On-Demand + Spot
+
+Task Nodes  ⭐ KEY POINT
+├─ EBS Volume: Temporary storage for processing/shuffle
+├─ Size: Often smaller than Core (200GB-500GB)
+├─ Role: Additional executors only (NO HDFS DataNode)
+├─ Ephemeral: Data lost when node terminates (not a problem)
+└─ Strategy: Use Spot instances (temporary compute scale-out)
+```
+
+**Critical distinction:**
+- **Core nodes** = Have HDFS DataNode role (can persist data, but don't)
+- **Task nodes** = Executor-only (cannot participate in HDFS replication)
+- **Both write temp data to EBS** during shuffle/groupBy/spill
+- **Neither should store final results** → Use S3 instead
+
+**Why task nodes still need EBS:**
+- Shuffle operations write intermediate data to disk
+- If you have a large groupBy or join, Spark spills to EBS
+- Task nodes are scaled for CPU power + temporary storage during processing
+
+**Example:** Processing 1TB file with groupBy
+```
+Read from S3 → Distributed to all executors (core + task)
+All executors build hash tables in memory
+When memory fills: Spill to EBS (core or task node)
+Job completes → Results written to S3
+Task nodes terminated → Temp EBS data deleted (OK, temporary)
+Core nodes persist → But data should be in S3, not HDFS
+```
 
 ### Key Components
 
@@ -248,13 +292,15 @@ aws emr describe-cluster --cluster-id j-1K2H3L4M5N6 \
 # Output: RUNNING (or WAITING)
 ```
 
-### Submitting a Job
+### Submitting a Job: Two Methods
+
+#### Method 1: AWS EMR add-steps (Recommended for Production)
 
 ```bash
 # Step 1: Copy script to S3
 aws s3 cp my_script.py s3://my-bucket/scripts/
 
-# Step 2: Submit job to cluster
+# Step 2: Submit job to cluster (from your local machine)
 aws emr add-steps \
   --cluster-id j-1K2H3L4M5N6 \
   --steps Type=spark,Name="MyJob",ActionOnFailure=CONTINUE,Args=[s3://my-bucket/scripts/my_script.py]
@@ -265,6 +311,75 @@ aws emr describe-step \
   --step-id s-1K2H3L4M5N6
 
 # Status: PENDING → RUNNING → COMPLETED (or FAILED)
+```
+
+#### Method 2: spark-submit (SSH into cluster)
+
+```bash
+# Step 1: SSH into master node
+aws emr ssh --cluster-id j-1K2H3L4M5N6 -i my-key.pem
+
+# Step 2: Copy script to master node
+aws s3 cp s3://my-bucket/scripts/my_script.py ~/my_script.py
+
+# Step 3: Submit job (from master node terminal)
+spark-submit \
+  --master yarn \
+  --deploy-mode cluster \
+  --num-executors 10 \
+  --executor-cores 5 \
+  --executor-memory 20G \
+  ~/my_script.py
+
+# Output: Logs printed to terminal in real-time
+```
+
+### Comparison: add-steps vs spark-submit
+
+| Aspect | `aws emr add-steps` | `spark-submit` via SSH |
+|--------|-------------------|----------------------|
+| **Where to run** | Local machine / CI/CD | Must SSH into master node |
+| **Output/Logs** | Queued, logs saved to S3 | Real-time output in terminal |
+| **Multiple jobs** | Queue multiple steps easily | One job at a time |
+| **Wait for result** | Non-blocking (can exit) | Blocking (must keep terminal open) |
+| **Best for** | Production, scheduling, automation | Testing, debugging, interactive |
+| **Monitoring** | Check with `describe-step` | Watch logs live |
+| **Failed job handling** | Can set ActionOnFailure policy | Manual intervention needed |
+| **Use case** | Airflow, Lambda, scheduled jobs | Quick testing, debugging |
+
+### When to Use Each
+
+**Use `aws emr add-steps` when:**
+- ✅ Running production jobs
+- ✅ Submitting from CI/CD pipeline (Jenkins, GitHub Actions)
+- ✅ Scheduling multiple jobs with Airflow/cron
+- ✅ You don't want to keep a terminal open
+- ✅ You need to submit jobs from your laptop while cluster runs
+
+**Use `spark-submit` via SSH when:**
+- ✅ Testing and debugging locally
+- ✅ Want real-time log output
+- ✅ Running one-off exploratory jobs
+- ✅ Need immediate feedback
+- ✅ Iterating on code quickly
+
+### Real Example: Which Method?
+
+**Scenario 1: Daily ETL Job**
+```bash
+# Use add-steps (scheduled via Airflow/cron)
+aws emr add-steps \
+  --cluster-id j-xxx \
+  --steps Type=spark,Name="DailyETL",Args=[s3://bucket/daily_etl.py]
+# Exit immediately, job runs on cluster, logs to S3
+```
+
+**Scenario 2: Quick Data Exploration**
+```bash
+# Use spark-submit via SSH
+aws emr ssh --cluster-id j-xxx -i key.pem
+spark-submit my_analysis.py
+# See results immediately in terminal
 ```
 
 ### Terminating the Cluster
