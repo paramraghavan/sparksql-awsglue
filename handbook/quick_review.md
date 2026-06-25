@@ -26,9 +26,19 @@
 ### "Should I use Broadcast Join?"
 
 ```
-Is one table < 1GB?
-├─ YES → BROADCAST JOIN (no shuffle, 10-100x faster) ✅
-└─ NO → SORT-MERGE JOIN (default, both shuffled)
+Is one table < spark.sql.autoBroadcastJoinThreshold?
+├─ Default threshold: 10MB
+├─ Can increase: spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")
+│
+├─ If < 10MB → ALWAYS broadcast (automatic or explicit)
+├─ If 10MB-500MB → Broadcast if memory allows
+├─ If 500MB-2GB → Consider broadcast if enough executor memory (test first!)
+└─ If > 2GB → Use SORT-MERGE JOIN (both shuffled)
+
+EXAMPLE:
+├─ small table: 5MB → Use broadcast (< 10MB default)
+├─ medium table: 200MB → Increase threshold to 500MB, then broadcast
+└─ large table: 2GB → Shuffle only (can't broadcast)
 ```
 
 ### "Why is my job slow?"
@@ -218,13 +228,22 @@ Catalyst sees full pipeline:
 
 ### Decision Matrix
 
-| Table Size | Join Type | Strategy | Speed | Why |
-|-----------|-----------|----------|-------|-----|
-| < 10MB | Any | **Broadcast** | ⚡⚡⚡ 10-100x faster | No shuffle, small table cached on all executors |
-| 10MB-1GB | Any | Broadcast if memory allows | ⚡⚡ 5-50x faster | Still fits in memory, but slower broadcast |
-| 1GB-100GB | Large ⊕ Small | **Broadcast small** | ⚡⚡ 10x faster | Broadcast small, shuffle large only |
-| 1GB-100GB | Large ⊕ Large | **Sort-Merge** | ⚡ 1x baseline | Both tables shuffled, but efficient sort |
-| > 100GB | Any | Careful! | ⚠️ 0.1x | Massive shuffle, potential spill |
+| Table Size | Default Behavior | Strategy | Speed | Memory Cost |
+|-----------|-----------------|----------|-------|-------------|
+| < 10MB | Auto-broadcast | Broadcast | ⚡⚡⚡ 10-100x faster | Safe (small table cached) |
+| 10MB-100MB | No auto-broadcast | Explicit broadcast if memory allows | ⚡⚡ 5-50x faster | Check memory (100MB × num executors) |
+| 100MB-500MB | No auto-broadcast | Consider increasing threshold, then broadcast | ⚡⚡ 5-50x faster | **IMPORTANT:** Test first! |
+| 500MB-2GB | No auto-broadcast | Maybe (if executor memory > 8GB) | ⚡ 2-10x faster | Risky: can cause memory issues |
+| 2GB-100GB | Never broadcast | Sort-Merge Join | ⚡ 1x baseline | Both tables shuffled (unavoidable) |
+| > 100GB | Never broadcast | Sort-Merge Join | ⚠️ 0.1x | Massive shuffle, watch for spill |
+
+**Tuning Tip:** If you have medium tables (100MB-500MB), increase the threshold:
+```python
+# Default: 10MB
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")  # More aggressive
+
+# Then Catalyst auto-broadcasts tables < 500MB
+```
 
 ### Implementation: Know This Code
 
@@ -273,28 +292,58 @@ result = df_medium_1.join(df_medium_2, on="key")
 Spark's decision tree (in order):
 
 1. Can I broadcast one table?
-   ├─ Table size < spark.sql.autoBroadcastJoinThreshold (10MB default)
-   ├─ AND enough memory to broadcast
-   └─ YES → Use Broadcast Hash Join
+   ├─ Check: spark.sql.autoBroadcastJoinThreshold
+   ├─ DEFAULT: 10MB (can be increased!)
+   ├─ If table_size < threshold → YES, broadcast!
+   ├─ AND enough executor memory available
+   └─ Result: Broadcast Hash Join (no shuffle!)
+
+   💡 CONFIG TIP: Increase for medium tables
+   spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")
+
+   ⚠️ WARNING: Don't go too high!
+   ├─ Broadcast (500MB) × 10 executors = 5GB memory used
+   ├─ If executor memory = 2GB, you'll get OOM errors
+   └─ Test size first: df.rdd.map(len).sum() / (1024**3)
 
 2. Should I use Sort-Merge?
-   ├─ Both tables > 10MB
-   ├─ AND spark.sql.join.preferSortMergeJoin = true (default)
-   └─ YES → Use Sort-Merge Join
+   ├─ Both tables > spark.sql.autoBroadcastJoinThreshold
+   ├─ AND spark.sql.join.preferSortMergeJoin = true (DEFAULT)
+   └─ YES → Use Sort-Merge Join (both shuffled, but efficient)
 
 3. Fallback to Shuffle Hash Join
-   ├─ Both tables shuffled by join key
-   ├─ Hash tables built on each executor
-   └─ Slowest but always works
+   ├─ Both tables > threshold
+   ├─ AND spark.sql.join.preferSortMergeJoin = false
+   └─ Slowest (both shuffled, no sort)
+
+CONFIG TUNING EXAMPLES:
+
+# More aggressive broadcasting (medium tables)
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")
+
+# Force sort-merge join (handles skew better)
+spark.conf.set("spark.sql.join.preferSortMergeJoin", "true")
+
+# Disable broadcast completely (for debugging)
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1")
 ```
 
 ### Memory Cost of Joins
 
 ```
-Broadcast Join (small table 1GB):
-├─ Driver memory: 1GB (to collect small table)
-├─ Executor memory per executor: 1GB (cached broadcast)
-└─ Total: 1GB + (10 executors × 1GB) = 11GB
+Broadcast Join (small table 100MB):
+├─ DEFAULT threshold: 10MB
+├─ Table 100MB > 10MB, so NOT auto-broadcast
+├─ Must set: spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "200mb")
+├─ Driver memory: 100MB (to collect small table)
+├─ Executor memory per executor: 100MB (cached broadcast)
+└─ Total: 100MB + (10 executors × 100MB) = 1.1GB (safe!)
+
+Broadcast Join (medium table 500MB):
+├─ If you increase threshold to 500MB
+├─ Driver memory: 500MB (to collect table)
+├─ Executor memory per executor: 500MB (cached broadcast)
+└─ Total: 500MB + (10 executors × 500MB) = 5.5GB ⚠️ (watch memory!)
 
 Sort-Merge Join (both tables 100GB):
 ├─ Shuffle write: 100GB + 100GB = 200GB to disk
@@ -302,7 +351,15 @@ Sort-Merge Join (both tables 100GB):
 ├─ Execution memory per executor: ~2GB (for sorting)
 └─ Total: 200GB data movement + memory for sorting
 
-Lesson: Broadcast when possible to save data movement!
+KEY INSIGHT:
+Broadcast (100MB) = 1.1GB memory usage
+Sort-Merge (100GB) = 200GB network I/O + 2GB memory
+→ Broadcast is 180x faster (network bound)!
+
+TUNING STRATEGY:
+├─ If executor memory ≥ 8GB: Increase threshold to 500mb
+├─ If executor memory = 4GB: Keep threshold at 10-100mb
+├─ If executor memory = 2GB: Keep threshold at 10mb, use explicit broadcast()
 ```
 
 ---
@@ -522,8 +579,11 @@ large_100gb.join(medium_50gb).join(small_1gb)
 # 4. Reduces intermediate result before second join
 # Result: Less total data shuffled
 
-# Even better: Catalyst broadcasts small_1gb automatically!
-# If small_1gb < 10MB, uses broadcast join (no shuffle)
+# Even better: Catalyst broadcasts small tables automatically!
+# Default threshold: spark.sql.autoBroadcastJoinThreshold = 10MB
+# If table < 10MB: Catalyst broadcasts automatically (no shuffle!)
+# If table 10MB-500MB: Increase threshold to broadcast:
+#   spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")
 ```
 
 #### 4. Constant Folding
@@ -805,18 +865,31 @@ if __name__ == "__main__":
 ```python
 from pyspark.sql.functions import broadcast
 
-def smart_join(df_large, df_dimension):
-    """Join large table with dimension, using broadcast when possible"""
+def smart_join(df_large, df_dimension, broadcast_threshold_mb=100):
+    """Join large table with dimension, using broadcast when possible
+
+    Args:
+        df_large: Large table to join
+        df_dimension: Small dimension table
+        broadcast_threshold_mb: Size limit for broadcasting (default: 100MB)
+                               Adjust based on executor memory:
+                               - 2GB executor → 10MB
+                               - 4GB executor → 100MB
+                               - 8GB executor → 500MB
+    """
 
     dim_size_mb = df_dimension.rdd\
         .map(lambda x: len(str(x)))\
         .sum() / (1024 * 1024)
 
-    if dim_size_mb < 100:  # Less than 100MB
+    if dim_size_mb < broadcast_threshold_mb:
         logger.info(f"Broadcasting dimension table ({dim_size_mb:.1f}MB)")
+        # For medium tables (100MB-500MB), you can increase threshold:
+        # spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")
         return df_large.join(broadcast(df_dimension), "id")
     else:
-        logger.warning(f"Dimension too large ({dim_size_mb:.1f}MB), regular join")
+        logger.warning(f"Dimension too large ({dim_size_mb:.1f}MB), using sort-merge join")
+        logger.warning(f"  Tip: Increase threshold to {dim_size_mb*1.2:.0f}MB if executor memory allows")
         return df_large.join(df_dimension, "id")
 
 # Usage
@@ -1031,21 +1104,39 @@ df.coalesce(10).write\
 ```
 Data movement:
 
-Regular Join (100GB table + 1GB table):
+Regular Join (100GB table + 500MB table):
 ├─ 100GB shuffled across network
-├─ 1GB shuffled across network
-└─ Total: 101GB data movement
+├─ 500MB shuffled across network
+└─ Total: 100.5GB data movement ❌
 
-Broadcast Join (100GB table + 1GB table):
+Broadcast Join (100GB table + 500MB table):
 ├─ 100GB NOT shuffled
-├─ 1GB copied to all executors (fits in memory)
+├─ 500MB copied to all executors (10 executors = 5GB memory use)
 ├─ Join happens locally
-└─ Total: 1GB data movement (100x less!)
+└─ Total: 500MB data movement (200x less!) ✅
+
+Speed comparison:
+├─ Network I/O: 100.5GB ÷ 1Gbps = ~1600 seconds (regular join)
+├─ Memory cost: 500MB × 10 = 5GB (broadcast join)
+├─ Result: Broadcast is 200x faster! (network bottleneck)
+
+IMPORTANT: Spark's Broadcast Threshold
+├─ Default threshold: spark.sql.autoBroadcastJoinThreshold = 10MB
+├─ Auto-broadcast if table < 10MB (automatic!)
+├─ For 500MB table, must either:
+│  1. Explicitly call broadcast(df_small)
+│  2. OR increase threshold:
+│     spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")
+│
+├─ ⚠️ WARNING: Don't set threshold too high!
+│  └─ If threshold = 1GB, broadcast uses 1GB × 10 executors = 10GB memory
+│  └─ If executor memory = 2GB, you'll get OOM errors
+│  └─ Safe rule: threshold should be < executor_memory / 2
 
 When to use Broadcast:
-├─ Small table < 10MB: Always broadcast
-├─ Small table 10MB-1GB: Broadcast if memory available
-├─ Large table > 1GB: Use regular join or sort-merge
+├─ Small table < 10MB: Catalyst broadcasts automatically ✅
+├─ Medium table 10MB-500MB: Increase threshold if memory allows
+├─ Large table > 1GB: Never broadcast (use sort-merge join)
 ```
 
 ---
@@ -1314,9 +1405,33 @@ START: Job is slow
 ## Quick Configuration Reference
 
 ```python
-# Performance tuning configs
+# BROADCAST TUNING (CRITICAL!)
+# Default: 10MB (auto-broadcasts tables < 10MB)
+# Problem: Medium tables (100MB-500MB) not auto-broadcast, require shuffle
+# Solution: Increase threshold based on executor memory
+
+# If executor memory = 2GB:
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "10mb")  # Keep default
+
+# If executor memory = 4GB (common):
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "100mb")  # Broadcast up to 100MB
+
+# If executor memory = 8GB (large):
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")  # Broadcast up to 500MB
+
+# If executor memory = 16GB (very large):
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "1gb")  # Broadcast up to 1GB
+
+# ⚠️ Safety rule: threshold < executor_memory / 2
+# Example: 4GB executor → max threshold = 2GB (but use 500mb for safety)
+
+# JOIN STRATEGY TUNING
+spark.conf.set("spark.sql.join.preferSortMergeJoin", "true")  # Default true
+# true = prefer sort-merge (efficient, handles large tables)
+# false = use shuffle hash join (less stable)
+
+# OTHER PERFORMANCE TUNING
 spark.conf.set("spark.sql.shuffle.partitions", "100")  # Default 200
-spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "10mb")  # Default 10MB
 spark.conf.set("spark.sql.files.maxPartitionBytes", "128mb")  # Parquet read size
 spark.conf.set("spark.executor.memory", "16g")  # Default 4g
 spark.conf.set("spark.executor.cores", "4")  # Default 1
@@ -1344,7 +1459,11 @@ spark.conf.set("spark.hadoop.fs.s3a.connection.maximum", "100")
 
 ✅ **Execution memory (1.5GB) processes data stream-by-stream, not all-at-once.**
 
-✅ **Broadcast join when small table < 10MB (no shuffle = 10-100x faster).**
+✅ **Broadcast join when small table < autoBroadcastJoinThreshold (default: 10MB, can increase to 500MB).**
+   - Default 10MB for safety
+   - Increase to 100-500MB if executor memory allows
+   - Memory cost: table_size × num_executors (e.g., 500MB × 10 = 5GB)
+   - 10-100x faster than shuffle!
 
 ✅ **Pre-filter BEFORE expensive operations (reduce data early).**
 
