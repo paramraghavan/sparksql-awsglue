@@ -477,6 +477,137 @@ EXAMPLE - 50GB small table with 4GB executor:
 └─ 200 partitions → 250MB per partition → Very safe ✓
 ```
 
+## How Spark Decides: The Join Strategy Algorithm
+
+### Internal Decision Flow (What Spark Does Automatically)
+
+Spark's Catalyst optimizer follows this logic **every time you write a join**:
+
+```
+1. CAN WE USE BROADCAST HASH JOIN?
+   ├─ Is one table < autoBroadcastJoinThreshold (default 10MB)?
+   ├─ Check table statistics from metadata
+   ├─ If YES → Use BroadcastHashJoin ✓
+   └─ If NO → Continue to step 2
+
+2. DO WE HAVE ENOUGH STATISTICS?
+   ├─ Does Spark have table size statistics?
+   ├─ Are tables analyzed (ANALYZE TABLE...)?
+   ├─ If NO → Use preferSortMergeJoin setting
+   └─ If YES → Continue to step 3
+
+3. SHOULD WE SORT-MERGE OR SHUFFLE HASH?
+   ├─ Check: spark.sql.join.preferSortMergeJoin (default = true)
+   ├─ If true → Use SortMergeJoin ✓
+   └─ If false → Use ShuffledHashJoin ✓
+```
+
+**Key insight:** Spark prefers sort-merge by default because:
+- More stable memory usage (streaming merge)
+- Scales to 1TB+ without memory spill risk
+- Works predictably on any cluster size
+
+### What Happens Inside Spark
+
+```
+BROADCAST DECISION (Earliest, fastest)
+├─ Catalyst reads table statistics from metadata
+├─ If smaller table < threshold:
+│  ├─ Mark for BroadcastHashJoin
+│  ├─ Set broadcast to execute in driver
+│  └─ Done! (no shuffle needed)
+└─ Statistics not available? → Use fall-back logic
+
+SORT-MERGE vs SHUFFLE HASH (Only if broadcast isn't possible)
+├─ Configuration: spark.sql.join.preferSortMergeJoin
+├─ If true:
+│  ├─ Plan both shuffle + sort for both tables
+│  ├─ Memory requirement: LOW (streaming merge)
+│  └─ Pick SortMergeJoin ✓
+└─ If false:
+   ├─ Plan shuffle + hash table for smaller table
+   ├─ Memory requirement: MEDIUM (hash table must fit)
+   └─ Pick ShuffledHashJoin ✓
+```
+
+### Why Default is Sort-Merge?
+
+```
+SORT-MERGE (Default, preferSortMergeJoin=true)
+├─ Pros:
+│  ├─ Works for ANY size tables (1GB to 1TB+)
+│  ├─ Memory safe (streaming merge, not hash table)
+│  ├─ No memory spill unless partition > executor memory
+│  └─ Predictable on all cluster sizes
+└─ Cons:
+   └─ Slightly slower (sort overhead)
+
+SHUFFLE HASH (Alternative, preferSortMergeJoin=false)
+├─ Pros:
+│  ├─ Faster if both tables fit comfortably (O(1) lookups)
+│  └─ Good for medium-sized tables (10GB-100GB)
+└─ Cons:
+   ├─ Risk: build table partition > executor memory = SPILL
+   ├─ Only safe if you KNOW partition fits in memory
+   └─ Unpredictable on different cluster sizes
+```
+
+### Example: How Spark Analyzes Your Join
+
+```python
+# Scenario 1: With automatic statistics (recommended)
+transactions = spark.read.parquet("transactions/")  # 100GB
+customers = spark.read.parquet("customers/")  # 200MB
+
+# Analyze tables (Spark learns sizes)
+customers.analyze()  # Computes statistics
+
+result = transactions.join(customers, "customer_id")
+
+# Spark's decision process:
+# 1. Read metadata → customers = 200MB
+# 2. Check threshold → 200MB < 1GB (default autoBroadcastJoinThreshold)
+# 3. Automatically choose BroadcastHashJoin ✓ (no shuffle!)
+
+# Result: customers broadcast to all executors,
+# only transactions processed locally
+```
+
+```python
+# Scenario 2: Large + Large (can't broadcast)
+table1 = spark.read.parquet("large_table_1/")  # 100GB
+table2 = spark.read.parquet("large_table_2/")  # 100GB
+
+result = table1.join(table2, "key")
+
+# Spark's decision process:
+# 1. Both tables > 1GB → Can't broadcast
+# 2. Check spark.sql.join.preferSortMergeJoin → true (default)
+# 3. Choose SortMergeJoin ✓
+#    ├─ Shuffle both to same partitions
+#    ├─ Sort each partition
+#    └─ Merge locally
+
+# Why sort-merge? Because:
+# - Memory safe (no hash table that might not fit)
+# - Scales to 100GB + 100GB = 200GB total
+# - Streaming merge uses only partition memory, not total memory
+```
+
+```python
+# Scenario 3: Override default (advanced tuning)
+spark.conf.set("spark.sql.join.preferSortMergeJoin", False)
+
+result = table1.join(table2, "key")
+
+# Spark now chooses ShuffledHashJoin
+# Risk: Must ensure build table partition < executor memory
+# Benefit: Faster if it works (O(1) hash lookups)
+# Only do this if you KNOW partition sizes will fit!
+```
+
+---
+
 ## Choosing the Right Strategy
 
 ### Decision Tree

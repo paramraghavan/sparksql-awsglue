@@ -175,6 +175,71 @@ COMPARISON:
 
 **Key Insight:** The problem isn't loading all partitions at once - it's the **ACCUMULATED hash table growing too large** as you merge partition after partition. Each new partition adds new unique keys to the hash table, making it bigger and bigger!
 
+### Critical Clarification: How Partitions, Cores, and Memory Share
+
+**IMPORTANT:** The timeline above shows **sequential processing within ONE executor**. Here's how it actually works:
+
+```
+EXECUTOR with 8 cores, 1.5GB execution memory:
+
+Scenario: GroupBy on 10 partitions (all belong to SAME executor)
+
+Option A: Sequential (each partition processes fully before next)
+├─ Task 1 (Core 1): Process P1 → create hash table → store in execution memory
+├─ Task 2 (Core 2): Wait - execution memory occupied by Task 1's hash table!
+└─ When Task 1 done: Task 2 processes P2, reuses/merges with same hash table
+
+Option B: Parallel (multiple cores process different partitions at same time)
+├─ Task 1 (Core 1): Process P1 → create hash table (50MB) → 150MB total execution memory
+├─ Task 2 (Core 2): Process P2 → merge into SAME hash table (60MB) → 200MB total execution memory
+├─ Task 3 (Core 3): Process P3 → merge into SAME hash table (70MB) → 270MB total execution memory
+└─ All tasks share the SAME execution memory pool (1.5GB for entire executor)
+   NOT divided per core!
+```
+
+**The key point: The hash table is NOT duplicated per core.**
+
+```
+WRONG understanding:
+├─ Core 1 has its own hash table (50MB)
+├─ Core 2 has its own hash table (50MB)
+├─ Core 3 has its own hash table (50MB)
+└─ Total: 150MB (WRONG - not how it works!)
+
+CORRECT understanding:
+├─ All cores on the executor
+├─ Share ONE execution memory pool (1.5GB total)
+├─ The hash table is stored ONCE in execution memory
+├─ All tasks access/update the SAME hash table
+├─ Synchronization ensures no conflicts
+└─ Total memory: Just one hash table (50-150MB)
+```
+
+**Why this matters for spill:**
+```
+If executor has 8 cores all processing partitions from same groupBy:
+├─ Each core is a separate task
+├─ Each task reads a partition (100MB)
+├─ Each task merges into the SHARED hash table
+├─ Execution memory fills up: 100MB (partition) + hash table size
+├─ If 8 tasks × 100MB = 800MB
+│  Plus hash table = 1.2GB
+│  Total: Within 1.5GB limit - no spill!
+
+But if hash table grows to 1GB (many unique keys):
+├─ 1 task reading partition: 100MB
+├─ Hash table: 1GB
+├─ Total: 1.1GB (fits)
+├─ BUT: If another task starts simultaneously
+│  Task 1: 100MB + 1GB hash table (reads/updates)
+│  Task 2: 100MB + 1GB hash table (reads/updates)
+│  Combined: Uses same 1.1GB pool (shared), not 2.2GB
+└─ UNLESS synchronization requires temporary copies
+   Then spill can happen!
+```
+
+**Bottom line:** All partitions processed by an executor for the same operation share ONE execution memory pool. The hash table is built incrementally and shared, not duplicated per core.
+
 ### Comparison: With vs Without Spill
 
 **WITHOUT Spill (Enough Execution Memory):**
