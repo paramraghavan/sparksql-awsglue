@@ -48,12 +48,34 @@ EXAMPLE:
 Check Spark UI Stages tab
 ├─ High "Shuffle Write" bytes?
 │  └─ YES → Shuffle is the problem → [See "Avoiding Shuffle Hell"](#avoiding-shuffle-hell)
-├─ Task taking >30sec each?
-│  └─ YES → Data skew or memory spill → [See "Troubleshooting"](#troubleshooting-checklist)
+├─ Task duration variance is HIGH?
+│  ├─ Most tasks: 10 seconds
+│  ├─ Some tasks: 300 seconds (30x slower!)
+│  └─ YES → DATA SKEW! → [See "Troubleshooting"](#troubleshooting-checklist)
+├─ ALL tasks taking long (similar duration)?
+│  ├─ All tasks: 30+ seconds
+│  ├─ Variance: low (all similar)
+│  └─ YES → Memory spill or network → Pre-filter or increase memory
 ├─ Lots of small output files?
 │  └─ YES → Coalesce before write → `df.coalesce(10).write.parquet(...)`
 └─ Join operation slow?
    └─ YES → [See "Join Strategies"](#join-strategies-choose-wisely)
+```
+
+**Key Difference:**
+```
+DATA SKEW (BAD):
+├─ Task 1: 10 seconds ✓
+├─ Task 2: 10 seconds ✓
+├─ Task 3: 300 seconds ❌ (30x slower!)
+├─ Task 4: 10 seconds ✓
+└─ Cause: Uneven key distribution (some keys have 90% of data)
+
+UNIFORM SLOW (Different problem):
+├─ Task 1: 40 seconds
+├─ Task 2: 42 seconds
+├─ Task 3: 41 seconds
+└─ Cause: Memory spill, network, or GC pressure (affects all tasks equally)
 ```
 
 ### "Should I use a UDF?"
@@ -1337,32 +1359,65 @@ spark.conf.set("spark.sql.shuffle.partitions", "50")  # Default 200 is too much
 
 ---
 
-### Problem: "Data skew" (some partitions much slower than others)
+### Problem: "Data skew" (VARIANCE in task duration = some tasks 10-30x slower)
 
-**Diagnosis:**
+**Diagnosis (Critical Difference):**
 ```
-Spark UI → Stages → Look at task duration
+DATA SKEW (HIGH VARIANCE):
+├─ Check Spark UI → Stages → Task Duration
 ├─ Most tasks: 10 seconds
-├─ Few tasks: 200 seconds (20x slower!)
-└─ YES → Data skew
+├─ Some tasks: 200+ seconds (20x slower!)
+├─ Median: 10s, Max: 200s, Variance: HIGH ← SKEW!
+│
+└─ Cause: Uneven key distribution
+   ├─ Some keys have 90% of the data
+   ├─ Other keys have 10% of the data
+   └─ Some tasks process 1GB, others process 100MB
+
+UNIFORM SLOWNESS (LOW VARIANCE):
+├─ Check Spark UI → Stages → Task Duration
+├─ All tasks: 40-45 seconds (similar)
+├─ Median: 42s, Max: 45s, Variance: LOW ← NOT SKEW!
+│
+└─ Causes: Not data skew, but...
+   ├─ Memory spill (all tasks affected equally)
+   ├─ Network bottleneck
+   ├─ GC pressure (all tasks pause together)
+   └─ Slow computation (all tasks slow)
+```
+
+**To Confirm Skew:**
+```python
+# Look at Spark UI:
+# 1. Stages tab → Select the slow stage
+# 2. Click "Show Additional Metrics" → Task Size
+# 3. If max task size >> min task size = SKEW!
+#    Example: max 1000MB, min 10MB = 100x skew!
+
+# Programmatic check:
+df.groupBy("join_key").count() \
+    .agg(max(col("count")), min(col("count")), avg(col("count"))) \
+    .show()
+# If max >> avg = skew!
+# Example: max 100M, min 100K, avg 1M = SKEW!
 ```
 
 **Solutions:**
 
 ```python
-# 1. Find skewed column
-df.groupBy("category").count().show()
-# If one category has 90% of data = skew!
+# 1. IDENTIFY the skewed key
+df.groupBy("category").count().orderBy(col("count").desc()).show()
+# If one category has >> 90% of data = FOUND IT!
 
-# 2. Pre-filter to remove skewed data
+# 2. PRE-FILTER to remove skewed data
 df = df.filter(col("category") != "UNKNOWN")
 
-# 3. Or separate processing for skewed group
+# 3. OR SEPARATE PROCESSING for skewed group
 normal = df.filter(col("category") != "UNKNOWN")\
     .groupBy("category").sum()
 
 skewed = df.filter(col("category") == "UNKNOWN")\
-    .groupBy("sub_category").sum()
+    .groupBy("sub_category").sum()  # More granular grouping
 
 result = normal.union(skewed)
 
@@ -1822,6 +1877,11 @@ spark.conf.set("spark.hadoop.fs.s3a.connection.maximum", "100")
 ✅ **Coalesce output files before write (10 large files > 1000 small files).**
 
 ✅ **Check explain() to see what Catalyst is doing.**
+
+✅ **DATA SKEW = High variance in task duration (max task >> min task), not all tasks slow.**
+   - Skew: Task 1 = 10s, Task 2 = 200s (20x variance!) = SKEW ❌
+   - Normal: Task 1 = 42s, Task 2 = 44s (low variance) = Not skew ✅
+   - Fix: Pre-filter skewed keys or process separately by key group
 
 ---
 
