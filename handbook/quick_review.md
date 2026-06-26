@@ -22,95 +22,217 @@
 
 ---
 
-## Decision Trees (5-Second Answers)
+## Decision Trees (Clear 5-Second Answers)
 
-### "Should I use Broadcast Join?"
+### 1️⃣ "Should I use Broadcast Join?"
 
-```
-Is one table < spark.sql.autoBroadcastJoinThreshold?
-├─ Default threshold: 10MB
-├─ Can increase: spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")
-│
-├─ If < 10MB → ALWAYS broadcast (automatic or explicit)
-├─ If 10MB-500MB → Broadcast if memory allows
-├─ If 500MB-2GB → Consider broadcast if enough executor memory (test first!)
-└─ If > 2GB → Use SORT-MERGE JOIN (both shuffled)
+**Simple Answer:**
+- **Table < 10MB?** → YES, always broadcast ✅
+- **Table 10MB-500MB?** → Maybe (test if memory allows)
+- **Table > 500MB?** → NO, use regular join ❌
 
-EXAMPLE:
-├─ small table: 5MB → Use broadcast (< 10MB default)
-├─ medium table: 200MB → Increase threshold to 500MB, then broadcast
-└─ large table: 2GB → Shuffle only (can't broadcast)
-```
+**For Advanced Users (What to Check):**
 
-### "Why is my job slow?"
+| Table Size | Default? | Action | Memory Cost | Speed | Notes |
+|-----------|----------|--------|------------|-------|-------|
+| < 10MB | Auto-broadcast | Use it ✅ | Safe | 100x faster | No config needed |
+| 10-100MB | No | Explicit broadcast() | Check executor memory | 50x faster | Increase threshold if memory allows |
+| 100-500MB | No | Test first! | Risky (~500MB × 10 exec = 5GB) | 20x faster | Only if executor_memory > 8GB |
+| > 500MB | Never | Regular join | No extra cost | 1x baseline | Use sort-merge (default) |
 
-```
-Check Spark UI Stages tab
-├─ High "Shuffle Write" bytes?
-│  └─ YES → Shuffle is the problem → [See "Avoiding Shuffle Hell"](#avoiding-shuffle-hell)
-├─ Task duration variance is HIGH?
-│  ├─ Most tasks: 10 seconds
-│  ├─ Some tasks: 300 seconds (30x slower!)
-│  └─ YES → DATA SKEW! → [See "Troubleshooting"](#troubleshooting-checklist)
-├─ ALL tasks taking long (similar duration)?
-│  ├─ All tasks: 30+ seconds
-│  ├─ Variance: low (all similar)
-│  └─ YES → Memory spill or network → Pre-filter or increase memory
-├─ Lots of small output files?
-│  └─ YES → Coalesce before write → `df.coalesce(10).write.parquet(...)`
-└─ Join operation slow?
-   └─ YES → [See "Join Strategies"](#join-strategies-choose-wisely)
+**Code Examples:**
+```python
+# Beginner: Simple broadcast
+result = large_df.join(broadcast(small_df), "id")
+
+# Advanced: Tune threshold for your cluster
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "100mb")  # 4GB executor
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "500mb")  # 8GB executor
 ```
 
-**Key Difference:**
-```
-DATA SKEW (BAD):
-├─ Task 1: 10 seconds ✓
-├─ Task 2: 10 seconds ✓
-├─ Task 3: 300 seconds ❌ (30x slower!)
-├─ Task 4: 10 seconds ✓
-└─ Cause: Uneven key distribution (some keys have 90% of data)
+---
 
-UNIFORM SLOW (Different problem):
-├─ Task 1: 40 seconds
-├─ Task 2: 42 seconds
-├─ Task 3: 41 seconds
-└─ Cause: Memory spill, network, or GC pressure (affects all tasks equally)
-```
+### 2️⃣ "Why is my job slow?"
 
-### "Should I use a UDF?"
+**Quick Checklist (Check in this order):**
 
-```
-Do built-in Spark functions exist for this?
-├─ YES → Use them! (100-1000x faster) ✅
-└─ NO → Complex business logic only?
-   ├─ YES → Use Pandas UDF (vectorized, 10-100x faster than row UDF)
-   └─ NO → Row-at-a-time UDF (slowest, but simplest)
-```
+1. **Is data being SHUFFLED and dominating execution time?**
+   - Check: Spark UI → Stages → Look at the shuffle stage
+   - Metric 1: "Shuffle Write" size
+   - Metric 2: Shuffle stage duration vs total job duration
+   - **Shuffle is a problem IF:**
+     - Shuffle stage takes > 50% of total job time, OR
+     - Shuffle stage takes > 30 seconds, OR
+     - "Shuffle Write" >> "Shuffle Read" (indicates spill/recomputation)
+   - FIX: Pre-filter data or use broadcast join
 
-### "Is my job memory-constrained?"
+2. **Is there DATA SKEW?**
+   - Check: Spark UI → Stages → Task Duration (look at the numbers!)
+   - If some tasks 10x slower than others → FIX: Pre-filter skewed keys
+   - Example: Most tasks 10s, one task 300s = DATA SKEW
 
-```
-Spark UI → Executor Memory
-├─ Using > 1.5GB execution memory?
-│  └─ YES → Spill happening → Pre-filter or increase executor memory
-├─ Using < 500MB?
-│  └─ YES → You have room → Can coalesce to fewer partitions
-└─ Between 500MB-1.5GB?
-   └─ YES → Optimized. Watch for spill warnings in logs.
-```
+3. **Are ALL tasks slow (evenly)?**
+   - Check: Task 1: 40s, Task 2: 42s, Task 3: 41s (all similar)
+   - If all tasks slow → FIX: Memory spill or network issue
+   - FIX: Pre-filter before operations or increase memory
 
-### "Should I increase executor memory or cores?"
+4. **Are there TOO MANY output files?**
+   - Check: S3 folder with 1000+ small files
+   - If yes → FIX: `df.coalesce(10).write.parquet(...)`
+
+5. **Is it a JOIN operation?**
+   - Check: Execution time breakdown shows JOIN stage dominating
+   - If yes → See [Join Strategies](#join-strategies-choose-wisely)
+
+**Advanced Users - How to Detect Shuffle Problem (Context Matters!):**
 
 ```
-Current bottleneck: (check Spark UI)
-├─ Task duration > 30 seconds
-│  └─ → Increase CORES (more parallelism)
-├─ GC warnings or spill messages
-│  └─ → Increase MEMORY (more execution space)
-└─ Both slow
-   └─ → Increase both + pre-filter data
+The "Shuffle Problem" depends on YOUR cluster:
+
+SMALL CLUSTER (2-5 executors):
+├─ Shuffle > 5GB = Problem (network bottleneck)
+├─ Shuffle 10GB = Definitely problem (10+ minutes)
+└─ Example: 5GB shuffle × 1Gbps network = ~40 seconds = acceptable
+             10GB shuffle × 1Gbps network = ~80 seconds = slow
+
+MEDIUM CLUSTER (10-20 executors):
+├─ Shuffle > 50GB = Problem (network bottleneck)
+├─ Shuffle 10-50GB = Acceptable (parallel shuffle helps)
+└─ Example: 50GB shuffle ÷ 20 executors = 2.5GB per executor = OK
+
+LARGE CLUSTER (50+ executors):
+├─ Shuffle > 200GB = Problem (disk I/O bottleneck)
+├─ Shuffle 50-200GB = Acceptable (parallel network + disk)
+└─ Example: 200GB shuffle ÷ 50 executors = 4GB per executor = OK
+
+REAL INDICATOR (Ignore size, check these instead):
+├─ Shuffle Write >> Shuffle Read: YES = Spill happening (PROBLEM!)
+│  └─ Example: Write=100GB, Read=40GB = 60GB spilled to disk
+├─ Shuffle stage duration: > 30 seconds = PROBLEM!
+├─ Shuffle stage % of total time: > 50% = PROBLEM!
+└─ FIX: Pre-filter, reduce partitions, or use broadcast
 ```
+
+**How to Check Spill (Most Important!):**
+
+```
+Spark UI → Stages → Select shuffle stage:
+├─ Look at: "Shuffle Write Size" and "Shuffle Read Size"
+├─ If Write >> Read: SPILL HAPPENING!
+│  └─ Example: Write=100GB but Read=40GB = 60GB went to disk
+│  └─ FIX: Pre-filter data before shuffle or increase memory
+├─ If Write ≈ Read: Normal (no spill)
+└─ If Write < Read: Replication or multiple reads (check logs)
+```
+
+**Other Metrics:**
+
+```
+Data Skew Problem:
+├─ Task Duration variance high (max/min > 10x): Yes = Skew
+├─ Example: max_task_duration=300s, min=10s, variance=30x = SKEW
+└─ FIX: Separate processing for skewed keys or repartition with salt
+
+Uniform Slowness (All tasks slow, similar duration):
+├─ All tasks 40-45 seconds (variance low): Yes = Uniform
+├─ GC time > 10% in logs: Memory spill happening
+├─ Task size varying but all small: Too many partitions
+└─ FIX: Reduce shuffle partitions or pre-filter
+```
+
+---
+
+### 3️⃣ "Should I use a UDF?"
+
+**Quick Decision:**
+
+| Question | Answer | Next Step |
+|----------|--------|-----------|
+| Does Spark have a built-in function? | YES ✅ | Use Spark's function (100-1000x faster!) |
+| | NO | Continue... |
+| Do you need complex custom logic? | YES | Use Pandas UDF (vectorized, 100x faster) |
+| | NO | Just use Spark SQL expression |
+
+**Examples:**
+```python
+# ❌ DON'T: Custom UDF for simple math
+@udf(DoubleType())
+def multiply_by_1_1(x):
+    return x * 1.1
+
+# ✅ DO: Use Spark function instead
+df.withColumn("result", col("salary") * 1.1)  # 1000x faster!
+
+# ✅ OK: Pandas UDF for complex logic (if needed)
+@pandas_udf(DoubleType())
+def complex_calc(batch):
+    return batch.apply(lambda x: expensive_calculation(x))
+```
+
+**Performance Numbers:**
+- Built-in function: 0.001ms per operation
+- Pandas UDF: 0.1ms per operation (100x slower than built-in)
+- Row UDF: 1ms per operation (1000x slower than built-in)
+
+---
+
+### 4️⃣ "Is my job memory-constrained?"
+
+**Check Spark UI → Executors tab:**
+
+| Metric | Check | Issue? | Fix |
+|--------|-------|--------|-----|
+| Execution Memory Used | > 1.5GB | YES = Spill happening ❌ | Pre-filter data or increase memory |
+| | < 500MB | NO = Fine ✅ | You have extra capacity |
+| | 500MB-1.5GB | MAYBE = Optimized ✓ | Monitor for spill warnings |
+| GC Time | > 10% | YES = Memory pressure | Pre-filter or increase memory |
+
+**Advanced Check - Spill Warnings in Logs:**
+```
+Look for: "Spilling" or "GC overhead limit exceeded"
+If found: → Data spilling to disk (10-100x slower)
+Fix: Pre-filter before groupBy/join operations
+```
+
+---
+
+### 5️⃣ "Should I increase executor memory or cores?"
+
+**Diagnose the bottleneck first:**
+
+| What You See | Root Cause | Solution | Cost |
+|--------------|-----------|----------|------|
+| **All tasks > 30s, variance LOW** | Computation slow or memory spill | Increase MEMORY (4GB → 8GB or 16GB) | Higher AWS bill |
+| **Some tasks 10x slower (HIGH variance)** | Data skew | Pre-filter data or repartition | No AWS cost |
+| **Task takes 30s with only 1 core busy** | Not enough parallelism | Increase CORES (1 → 4 → 8) | Higher AWS bill |
+| **GC warnings in logs** | Memory pressure | Increase MEMORY | Higher AWS bill |
+| **Tasks fast but job takes forever** | Too few executors | Increase num_executors | Higher AWS bill |
+
+**Example Config Tuning:**
+```python
+# Slow individual tasks → increase memory
+spark-submit --executor-memory 8g --num-executors 10 ...
+
+# Many tasks but job slow → increase cores
+spark-submit --executor-cores 4 --num-executors 10 ...
+
+# Both problems? Both slow AND some tasks slower
+spark-submit --executor-memory 8g --executor-cores 4 --num-executors 10 ...
+
+# Data skew (some tasks 10x slower)? Don't increase resources!
+# Instead: Pre-filter data or repartition with salt
+df.filter(col("category") != "UNKNOWN").groupBy(...).sum()
+```
+
+---
+
+## **🎯 The Real Secret: Check These 3 Things FIRST (Before Tuning)**
+
+1. **Are you reading too much data?** → Filter early
+2. **Are you shuffling too much data?** → Use broadcast join
+3. **Do you have data skew?** → Pre-filter or separate processing
+
+Most slow jobs fix with these 3. Only add memory/cores if these don't work!
 
 ---
 
@@ -541,6 +663,108 @@ df.coalesce(10).write.mode("overwrite").parquet("s3://output/")
 # 10 files × large filesize = fast reads
 # Trade-off: Coalesce costs 1 more shuffle stage (worth it!)
 ```
+
+---
+
+## How to Resolve Shuffle Spill (Memory)
+
+### What is Shuffle Spill?
+
+When Spark aggregates data in a shuffle operation, it builds a hash table in executor memory. If the hash table doesn't fit → it spills to disk (very slow).
+
+**Check in Spark UI:**
+- Go to **Stages tab** → find your shuffle stage
+- Look for **"Shuffle Spill (Memory)"** metric
+- If > 0 → you have a spill problem
+
+### Simple Example: Why More Partitions Help
+
+**Setup:**
+- 100GB of data
+- Executor memory: 2GB
+- Operation: `groupBy("customer_id").sum()`
+
+#### With Few Partitions (2 partitions):
+```
+100GB ÷ 2 = 50GB per partition
+
+Executor tries to aggregate partition 1:
+├─ Load 50GB into memory
+├─ Build hash table
+├─ Memory available: 2GB
+├─ Needed: 50GB > 2GB
+└─ Result: SPILL (write to disk, slow) ❌
+```
+
+#### With Many Partitions (100 partitions):
+```
+100GB ÷ 100 = 1GB per partition
+
+Executor aggregates partition 1:
+├─ Load 1GB into memory
+├─ Build hash table
+├─ Memory available: 2GB
+├─ Needed: 1GB < 2GB
+└─ Result: NO SPILL (stays in memory, fast) ✅
+
+Then executor moves to partition 2:
+├─ Load 1GB (discard previous hash table)
+├─ Memory available: 2GB
+├─ Needed: 1GB < 2GB
+└─ Result: NO SPILL ✅
+```
+
+**The Rule: More partitions = smaller chunks = each chunk fits in memory**
+
+### Quick Fixes (Ranked by Effort)
+
+#### 1. Increase Executor Memory (Easiest)
+```python
+# Before (spill):
+spark-submit --executor-memory 2g script.py
+
+# After (no spill):
+spark-submit --executor-memory 4g script.py
+```
+**Why it works:** Hash table now has more room. **Cost:** Fewer executors per node.
+
+#### 2. Increase Number of Executors (Divides the Load)
+```python
+# Before: 10 executors, 100GB ÷ 10 = 10GB per executor (spill!)
+spark-submit --num-executors 10 --executor-memory 4g script.py
+
+# After: 25 executors, 100GB ÷ 25 = 4GB per executor (no spill!)
+spark-submit --num-executors 25 --executor-memory 4g script.py
+```
+**Why it works:** Same total memory, spread across more executors. **Cost:** More executor overhead.
+
+#### 3. Increase Shuffle Partitions (Splits Data Into Smaller Pieces)
+```python
+# Before: 200 partitions, 500MB per partition
+spark.conf.set("spark.sql.shuffle.partitions", 200)
+df.groupBy("customer_id").sum()
+
+# After: 500 partitions, 200MB per partition
+spark.conf.set("spark.sql.shuffle.partitions", 500)
+df.groupBy("customer_id").sum()
+```
+**Why it works:** Each partition's hash table is smaller, less memory pressure. **Cost:** More network overhead.
+
+#### 4. Pre-Aggregate Before Shuffle (Advanced)
+```python
+# Aggregate locally first, THEN shuffle (reduces shuffle data)
+df.rdd.mapPartitions(local_aggregate).toDF().groupBy("key").sum()
+# Reduces shuffle volume by 50-80%
+```
+
+### Decision Matrix
+
+| Symptom | Quick Check | Best Fix |
+|---------|------------|----------|
+| Shuffle Spill > 5GB | Check executor memory | Increase memory or executors |
+| Spill is 20% of shuffle write | Data is skewed | Add more shuffle partitions |
+| One executor has huge spill | Data hotspot on specific key | Use salt + repartition |
+| All executors have small spill | Balanced but tight | Increase executor memory |
 
 ---
 
