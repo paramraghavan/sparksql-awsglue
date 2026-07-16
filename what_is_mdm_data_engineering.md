@@ -45,13 +45,13 @@ Applications  BI      Other Systems
 
 A typical pipeline might:
 
-1.  Read data from source systems.
-2.  Validate schemas.
-3.  Standardize names and addresses.
-4.  Remove duplicates.
-5.  Match existing records.
-6.  Create or update the golden record.
-7.  Publish the mastered data.
+1. Read data from source systems.
+2. Validate schemas.
+3. Standardize names and addresses.
+4. Remove duplicates.
+5. Match existing records.
+6. Create or update the golden record.
+7. Publish the mastered data.
 
 Example (PySpark):
 
@@ -76,25 +76,25 @@ the same entity.
 
 Example:
 
-  System        Vendor Name
+System Vendor Name
   ------------- -----------------
-  Finance       Amazon LLC
-  Procurement   Amazon.com Inc.
-  Shipping      Amazon
+Finance Amazon LLC
+Procurement Amazon.com Inc.
+Shipping Amazon
 
 Without MDM, every system may maintain its own version, resulting in
 inconsistent reporting, payment errors, or shipping mistakes.
 
 The MDM platform creates a **Golden Record**.
 
-  Attribute       Value
+Attribute Value
   --------------- -----------------
-  Vendor_ID       5001
-  Legal Name      Amazon.com Inc.
-  Address         Seattle, WA
-  Tax ID          12-3456789
-  Payment Terms   Net 30
-  Status          Active
+Vendor_ID 5001
+Legal Name Amazon.com Inc.
+Address Seattle, WA
+Tax ID 12-3456789
+Payment Terms Net 30
+Status Active
 
 Every downstream application references this single authoritative
 record.
@@ -195,13 +195,13 @@ ERP Import
 
 ## Customer Master
 
--   Customer ID
--   Name
--   Address
--   Email
--   Phone
--   Customer Type
--   Status
+- Customer ID
+- Name
+- Address
+- Email
+- Phone
+- Customer Type
+- Status
 
 Used by CRM, Sales, Marketing, Billing, and Customer Support.
 
@@ -209,14 +209,14 @@ Used by CRM, Sales, Marketing, Billing, and Customer Support.
 
 ## Vendor Master
 
--   Vendor ID
--   Vendor Name
--   Tax ID
--   Payment Terms
--   Address
--   Currency
--   Contact Information
--   Approval Status
+- Vendor ID
+- Vendor Name
+- Tax ID
+- Payment Terms
+- Address
+- Currency
+- Contact Information
+- Approval Status
 
 Used by Procurement, Finance, and Accounts Payable.
 
@@ -224,15 +224,15 @@ Used by Procurement, Finance, and Accounts Payable.
 
 ## Product Master
 
--   Product ID
--   SKU
--   UPC
--   Product Name
--   Brand
--   Category
--   Manufacturer
--   Unit of Measure
--   Status
+- Product ID
+- SKU
+- UPC
+- Product Name
+- Brand
+- Category
+- Manufacturer
+- Unit of Measure
+- Status
 
 Used by Inventory, POS, Ecommerce, and Warehousing.
 
@@ -240,34 +240,34 @@ Used by Inventory, POS, Ecommerce, and Warehousing.
 
 ## Employee Master
 
--   Employee ID
--   Name
--   Department
--   Manager
--   Job Title
--   Cost Center
--   Status
+- Employee ID
+- Name
+- Department
+- Manager
+- Job Title
+- Cost Center
+- Status
 
 ------------------------------------------------------------------------
 
 ## Location Master
 
--   Store ID
--   Warehouse ID
--   Address
--   Region
--   Time Zone
--   Manager
+- Store ID
+- Warehouse ID
+- Address
+- Region
+- Time Zone
+- Manager
 
 ------------------------------------------------------------------------
 
 ## Other Common Master Data
 
--   Material Master
--   Asset Master
--   Chart of Accounts
--   Organizational Hierarchies
--   Reference Data (Countries, Currencies, Payment Terms)
+- Material Master
+- Asset Master
+- Chart of Accounts
+- Organizational Hierarchies
+- Reference Data (Countries, Currencies, Payment Terms)
 
 ------------------------------------------------------------------------
 
@@ -275,69 +275,77 @@ Used by Inventory, POS, Ecommerce, and Warehousing.
 
 MDM is **not** designed for transactional data such as:
 
--   Orders
--   Sales transactions
--   Invoices
--   Inventory movements
--   Sensor readings
+- Orders
+- Sales transactions
+- Invoices
+- Inventory movements
+- Sensor readings
 
 Those remain in operational systems, while MDM manages the relatively
 stable definitions of the business entities involved.
 
 ------------------------------------------------------------------------
 
-# Compass Group Example
+# Running Use Case: Compass Group
 
-Compass Group operates food services for hospitals, schools, airports,
-corporate offices, and sports venues.
+To better understand the concepts discussed in here, let's use **Compass Group** as a running use case.
+
+Compass Group is a global food service company that manages cafeterias and dining operations for hospitals,
+universities, schools, airports, corporate offices, and sports venues. Its business depends on accurate information
+about customers, vendors, products, employees, and locations.
+
+As we explore Master Data Management (MDM), cloud data engineering, AWS data pipelines, APIs, fact tables, and dimension
+tables, we'll see how each concept applies to Compass Group's day-to-day operations and how an MDM Data Engineer would
+design and build these solutions in a real enterprise environment.
+
 
 Its MDM platform might manage:
 
 ### Vendor Master
 
--   Sysco
--   US Foods
--   PepsiCo
--   Coca-Cola
+- Sysco
+- US Foods
+- PepsiCo
+- Coca-Cola
 
 ### Product Master
 
--   Chicken Breast
--   Coffee Beans
--   Milk
--   Lettuce
--   Disposable Cups
+- Chicken Breast
+- Coffee Beans
+- Milk
+- Lettuce
+- Disposable Cups
 
 ### Location Master
 
--   University Cafeteria
--   Hospital Cafeteria
--   Airport Food Court
--   Corporate Dining Center
+- University Cafeteria
+- Hospital Cafeteria
+- Airport Food Court
+- Corporate Dining Center
 
 ### Customer Master
 
--   Universities
--   Hospitals
--   Corporate Clients
+- Universities
+- Hospitals
+- Corporate Clients
 
 ### Employee Master
 
--   Chefs
--   Cashiers
--   Managers
--   Dietitians
+- Chefs
+- Cashiers
+- Managers
+- Dietitians
 
 Suppose Sysco changes its payment terms from **Net 30** to **Net 45**.
 
 The MDM system updates the golden record once.
 
--   Procurement uses the updated vendor status when creating purchase
-    orders.
--   Finance automatically receives the new payment terms.
--   Shipping uses the updated address.
--   Power BI and Tableau continue to report consistently because every
-    department references the same Vendor ID.
+- Procurement uses the updated vendor status when creating purchase
+  orders.
+- Finance automatically receives the new payment terms.
+- Shipping uses the updated address.
+- Power BI and Tableau continue to report consistently because every
+  department references the same Vendor ID.
 
 ------------------------------------------------------------------------
 
@@ -345,16 +353,16 @@ The MDM system updates the golden record once.
 
 Typical responsibilities include:
 
--   Designing AWS-based cloud data architectures.
--   Building ingestion pipelines.
--   Developing Spark and Python ETL jobs.
--   Matching and merging duplicate records.
--   Implementing data quality and validation rules.
--   Maintaining golden records.
--   Publishing master data through APIs, SQL views, and event streams.
--   Building analytics-ready datasets.
--   Monitoring data quality, lineage, and pipeline health.
--   Supporting CI/CD and Infrastructure as Code.
+- Designing AWS-based cloud data architectures.
+- Building ingestion pipelines.
+- Developing Spark and Python ETL jobs.
+- Matching and merging duplicate records.
+- Implementing data quality and validation rules.
+- Maintaining golden records.
+- Publishing master data through APIs, SQL views, and event streams.
+- Building analytics-ready datasets.
+- Monitoring data quality, lineage, and pipeline health.
+- Supporting CI/CD and Infrastructure as Code.
 
 The ultimate objective is to provide a reliable, scalable, and governed
 **single source of truth** that every application and business function
