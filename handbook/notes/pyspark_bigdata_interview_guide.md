@@ -53,6 +53,10 @@ Callouts:
 31. [Final Study Checklist](#31-final-study-checklist)
 32. [Transactional Parquet with Delta Lake, Apache Hudi, and Apache Iceberg](#32-transactional-parquet-with-delta-lake-apache-hudi-and-apache-iceberg)
 33. [Medallion Architecture](#33-medallion-architecture)
+34. [Spark UI and Production Troubleshooting](#34-spark-ui-and-production-troubleshooting)
+35. [Explain Plan Practice](#35-explain-plan-practice)
+36. [Common Coding Interview Exercises](#36-common-coding-interview-exercises)
+37. [General Performance Anti-Patterns](#37-general-performance-anti-patterns)
 
 ## 1. Big Data Fundamentals
 
@@ -1841,3 +1845,308 @@ Silver clean data
 Gold serving data
   -> optimized tables for BI, ML, APIs, or reporting
 ```
+
+## 34. Spark UI and Production Troubleshooting
+
+Spark UI is the fastest way to move from guessing to evidence. In interviews, do not say only "I tune Spark." Say which UI tab you inspect and what signal you expect to find.
+
+### Spark UI Tabs
+
+| Tab | What to inspect | What it tells you |
+|---|---|---|
+| Jobs | Which action triggered execution and how long it took. | A `count`, `show`, `collect`, or write may be more expensive than expected. |
+| Stages | Slow stages, task skew, shuffle read/write, spills, and retries. | One slow stage usually points to shuffle, skew, or data volume. |
+| SQL | Logical/physical plans, `Exchange`, join type, scan filters, AQE changes. | Shows whether Spark is broadcasting, sorting, shuffling, or pruning. |
+| Storage | Cached DataFrames/RDDs and memory usage. | Confirms whether caching helped or wasted memory. |
+| Executors | Executor memory, failed tasks, GC time, input size, spill, and lost executors. | Helps diagnose OOM, skew, executor loss, and GC pressure. |
+| Environment | Spark configs actually applied at runtime. | Confirms shuffle partitions, AQE, memory, serialization, and broadcast settings. |
+
+### Troubleshooting Checklist
+
+1. Which action triggered the job?
+2. Which stage is slow?
+3. Are all tasks slow, or only a few tasks?
+4. Is shuffle read/write large?
+5. Is there memory spill or disk spill?
+6. Is GC time high?
+7. Are executors failing or being lost?
+8. Does the SQL plan show unexpected `Exchange`?
+9. Is the join `BroadcastHashJoin`, `SortMergeJoin`, or something unexpected?
+10. Are input and output file counts reasonable?
+11. Are partition filters and pushed filters visible in the plan?
+12. Is the job doing repeated actions such as repeated `count()`?
+
+### Common Production Issues
+
+| Issue | Diagnosis | Common fix |
+|---|---|---|
+| Executor OOM | Executors tab, container killed logs, spill metrics. | Reduce partition size, handle skew, increase memory overhead, reduce executor cores. |
+| Driver OOM | Driver logs, `collect`, `toPandas`, large Python lists. | Avoid collecting large data; write results to storage; cap samples. |
+| Container killed | YARN/Glue/cluster logs. | Increase memory overhead, reduce task memory pressure, reduce concurrency. |
+| Lost executors | Executors tab and cluster manager logs. | Check spot loss, OOM, disk pressure, network, and shuffle pressure. |
+| Task retries | Stages tab and failed task logs. | Inspect exception, input split, skew, and dependency failures. |
+| Fetch failures | Shuffle read errors. | Stabilize executors, reduce shuffle size, increase retry tolerance, fix executor loss. |
+| Serialization errors | Python/JVM stack traces. | Avoid non-serializable closures and large driver-side objects. |
+| Schema mismatch | `AnalysisException` or read errors. | Enforce schema and validate input before processing. |
+| Corrupt records | Read errors or unexpected nulls. | Use permissive mode, bad-record paths, and quarantine logic. |
+| Duplicate records | Business key count greater than one. | Deduplicate with deterministic window logic. |
+| Join explosion | Output much larger than expected. | Check duplicate keys on both sides before joining. |
+| Data skew | A few tasks much slower than the rest. | Use AQE skew join, salting, heavy-hitter isolation, or repartitioning. |
+| Small files | Many tiny output files in S3/HDFS. | Compact, coalesce/repartition before write, choose better partition columns. |
+| Slow S3 scans | High file listing/scanning time. | Use Parquet, partition pruning, fewer small files, and column pruning. |
+| Permission errors | `AccessDenied`, KMS, S3, or catalog failures. | Check IAM role, bucket policy, Lake Formation, KMS, and catalog permissions. |
+| Missing catalog table/partition | Table lookup fails or query returns no data. | Create/update catalog metadata and partitions. |
+| Dependency errors | `ModuleNotFoundError` or jar errors. | Package dependencies with the job and verify runtime versions. |
+| Timeout | Job exceeds configured runtime. | Tune workers/executors, reduce scan size, fix skew, checkpoint long plans. |
+
+## 35. Explain Plan Practice
+
+Use `explain` when a job is slow, when a join behaves unexpectedly, or when you want to prove that Spark is pruning data.
+
+### Basic Usage
+
+```python
+df.explain()
+df.explain("formatted")
+df.explain(True)
+```
+
+### Recognizing Shuffle
+
+`Exchange` usually means Spark is redistributing data across partitions.
+
+```python
+df.groupBy("customer_id").count().explain("formatted")
+```
+
+Look for:
+
+```text
+Exchange hashpartitioning(customer_id, ...)
+```
+
+This often appears for `groupBy`, `distinct`, `orderBy`, joins, and `repartition`.
+
+### Recognizing Join Strategy
+
+| Plan text | Meaning | Typical use |
+|---|---|---|
+| `BroadcastHashJoin` | Small side is broadcast to executors. | Fast for small dimension tables. |
+| `BroadcastExchange` | Spark is preparing broadcast data. | Confirm broadcast is actually happening. |
+| `SortMergeJoin` | Both sides are shuffled and sorted. | Common for large equi-joins. |
+| `Exchange` before join | Data is being shuffled before the join. | Normal for large joins, expensive if avoidable. |
+
+Example:
+
+```python
+joined = fact.join(F.broadcast(dim), "id", "left")
+joined.explain("formatted")
+```
+
+### Recognizing Full Scans
+
+If filters are not pushed down, Spark may scan more data than needed.
+
+Check for:
+
+```text
+PushedFilters
+PartitionFilters
+ReadSchema
+```
+
+Good signs:
+
+- only needed columns appear in `ReadSchema`
+- partition filters are visible
+- pushed filters are visible for Parquet/ORC sources
+
+### Interview Answer Template
+
+```text
+I inspect the formatted physical plan. I look for Exchange nodes, join strategy,
+partition filters, pushed filters, read schema, and AQE changes. If I see a
+large sort-merge join or full scan, I reduce columns, filter earlier, broadcast
+small dimensions, improve partition pruning, or tune shuffle partitions.
+```
+
+## 36. Common Coding Interview Exercises
+
+These are common PySpark interview tasks. Keep the answer simple: state the key, apply the transformation, and explain shuffle/cost when relevant.
+
+### Remove Duplicates Keeping Latest
+
+```python
+from pyspark.sql import Window, functions as F
+
+w = Window.partitionBy("id").orderBy(F.col("updated_at").desc())
+
+result = (
+    df.withColumn("rn", F.row_number().over(w))
+      .filter(F.col("rn") == 1)
+      .drop("rn")
+)
+```
+
+### Find Records In One DataFrame But Not Another
+
+```python
+right_ids = right.select("id").distinct()
+missing = left.join(right_ids, "id", "left_anti")
+```
+
+### Join On Multiple Columns
+
+```python
+joined = left.join(right, ["id", "business_date"], "inner")
+```
+
+### Top N Per Group
+
+```python
+from pyspark.sql import Window, functions as F
+
+w = Window.partitionBy("category").orderBy(F.col("amount").desc())
+
+top_n = (
+    df.withColumn("rn", F.row_number().over(w))
+      .filter(F.col("rn") <= 3)
+      .drop("rn")
+)
+```
+
+### Running Total
+
+```python
+from pyspark.sql import Window, functions as F
+
+w = Window.partitionBy("account_id").orderBy("txn_ts")
+result = df.withColumn("running_total", F.sum("amount").over(w))
+```
+
+### Compare Two DataFrames By Key
+
+```python
+keys = ["id"]
+
+left_keys = left.select(keys).distinct()
+right_keys = right.select(keys).distinct()
+
+only_left = left_keys.join(right_keys, keys, "left_anti")
+only_right = right_keys.join(left_keys, keys, "left_anti")
+common = left.join(right, keys, "inner")
+```
+
+### Flatten Nested JSON
+
+```python
+flat = df.select(
+    "id",
+    F.col("payload.customer.name").alias("customer_name"),
+    F.col("payload.customer.region").alias("customer_region"),
+)
+```
+
+### Handle Null Values
+
+```python
+clean = (
+    df.fillna({"status": "UNKNOWN"})
+      .withColumn("amount", F.coalesce(F.col("amount"), F.lit(0.0)))
+)
+```
+
+### Rolling Average
+
+```python
+from pyspark.sql import Window, functions as F
+
+w = Window.partitionBy("id").orderBy("event_ts").rowsBetween(-6, 0)
+result = df.withColumn("rolling_avg_7", F.avg("amount").over(w))
+```
+
+### Identify Duplicate Business Keys
+
+```python
+duplicates = (
+    df.groupBy("business_key")
+      .count()
+      .filter(F.col("count") > 1)
+)
+```
+
+### Detect Data Skew
+
+```python
+skew = (
+    df.groupBy("join_key")
+      .count()
+      .orderBy(F.desc("count"))
+)
+```
+
+### Process Incremental Records
+
+```python
+incremental = df.filter(F.col("updated_at") > F.lit(last_watermark))
+```
+
+### Write Partitioned Data
+
+```python
+(
+    df.repartition("business_date")
+      .write
+      .mode("overwrite")
+      .partitionBy("business_date")
+      .parquet(output_path)
+)
+```
+
+### Optimize A Slow Join
+
+```python
+small_dim = (
+    dim.select("id", "segment")
+       .dropDuplicates(["id"])
+)
+
+result = (
+    fact.select("id", "amount")
+        .join(F.broadcast(small_dim), "id", "left")
+)
+```
+
+## 37. General Performance Anti-Patterns
+
+These are common review findings in Spark and Glue code. They apply broadly to production data pipelines.
+
+| Anti-pattern | Why it hurts | Better pattern |
+|---|---|---|
+| Collecting partition keys to the driver | Driver memory risk and serial metadata calls. | Use batch APIs, partition projection, controlled repair, or bounded collection. |
+| Reading credentials from local files | Unsafe and hard to deploy. | Use IAM roles, profiles for local testing, and environment-based configuration. |
+| Using gzip for frequently queried Parquet | Smaller files but slower CPU-heavy analytics. | Prefer Snappy for balanced Spark read/write performance. |
+| Repeated `count()` actions | Each count can trigger a full job. | Persist reused intermediates and make metrics intentional. |
+| Large `toPandas()` calls | Moves data to driver memory. | Limit strictly, select only report columns, or write sample output to storage. |
+| Very long SQL/DataFrame chains | Large logical plans and expensive retries. | Checkpoint or materialize at safe boundaries. |
+| Python UDFs for simple logic | Blocks optimization and adds serialization overhead. | Use built-in functions or SQL expressions. |
+| Repeated `withColumn` chains | Can create large plans when generated dynamically. | Use one `select` for many derived columns. |
+| Partitioning by high-cardinality columns | Creates too many directories/files. | Partition by date or low/medium-cardinality query columns. |
+| Ignoring small files | Slow listing and scheduling overhead. | Compact files and target healthy file sizes. |
+| Joining without checking key uniqueness | Can multiply rows unexpectedly. | Count duplicate keys before joining. |
+| Repartitioning blindly | Causes unnecessary shuffle or bad parallelism. | Repartition based on data size, keys, and downstream operation. |
+
+### Practical Review Checklist
+
+1. Are inputs filtered and columns selected early?
+2. Are schemas explicit?
+3. Are joins using the right keys and join type?
+4. Are duplicate keys checked before joins?
+5. Is the small side broadcast when appropriate?
+6. Are high-volume actions such as `count()` intentional?
+7. Is anything collected to the driver?
+8. Are UDFs avoidable?
+9. Are output file sizes reasonable?
+10. Are partition columns aligned to common filters?
+11. Is the job idempotent for retries?
+12. Are logs, metrics, and data quality checks sufficient?
