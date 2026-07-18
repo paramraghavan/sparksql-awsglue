@@ -1016,7 +1016,7 @@ Delta provides:
 
 On AWS, Delta Lake is commonly used with Databricks on AWS, Amazon EMR, AWS Glue Spark jobs with Delta packages, and S3 storage.
 
-Write a partitioned Delta table:
+Append new rows to a partitioned Delta table:
 
 ```python
 orders_path = "s3://my-bucket/lake/silver/orders_delta"
@@ -1031,6 +1031,16 @@ orders_path = "s3://my-bucket/lake/silver/orders_delta"
 
 orders = spark.read.format("delta").load(orders_path)
 ```
+
+`mode("append")` is not used for every Delta operation. It is only for writing additional rows. For updates and deletes, use Delta table operations.
+
+| Goal | Use |
+|---|---|
+| Add new rows | `df.write.format("delta").mode("append").save(path)` |
+| Create or fully replace table data | `mode("overwrite")`, used carefully |
+| Update existing rows | `DeltaTable.update(...)` or SQL `UPDATE` |
+| Delete existing rows | `DeltaTable.delete(...)` or SQL `DELETE` |
+| Upsert rows | `DeltaTable.merge(...)` or SQL `MERGE` |
 
 The physical layout still has partition folders:
 
@@ -1079,10 +1089,22 @@ How to read this:
 Delta keeps the partition folder structure. For the Spark user, Delta feels like a database-style update:
 
 ```python
+from delta.tables import DeltaTable
+
+orders_path = "s3://my-bucket/lake/silver/orders_delta"
+orders = DeltaTable.forPath(spark, orders_path)
+
 orders.update(
     condition="order_date = '2026-07-15' AND order_id = 'O-100'",
     set={"status": "'CANCELLED'"}
 )
+```
+
+Use `DeltaTable.forPath(...)` when you want to run Delta table operations such as `update`, `delete`, or `merge`. Use `spark.read.format("delta").load(...)` when you want a normal DataFrame for querying.
+
+```python
+orders_df = spark.read.format("delta").load(orders_path)
+orders_df.filter(F.col("order_date") == "2026-07-15").show()
 ```
 
 Internally, Delta still works with immutable Parquet files. It does not edit one row inside an existing Parquet file. It rewrites affected files and records the change in `_delta_log`.
@@ -1129,13 +1151,92 @@ Update example:
 ```python
 from delta.tables import DeltaTable
 
-orders = DeltaTable.forPath(spark, "s3://my-bucket/lake/silver/orders_delta")
+orders_path = "s3://my-bucket/lake/silver/orders_delta"
+orders = DeltaTable.forPath(spark, orders_path)
 
 orders.update(
     condition="order_date = '2026-07-15' AND order_id = 'O-100'",
     set={"status": "'CANCELLED'"}
 )
 ```
+
+Delete example:
+
+```python
+from delta.tables import DeltaTable
+
+orders_path = "s3://my-bucket/lake/silver/orders_delta"
+orders = DeltaTable.forPath(spark, orders_path)
+
+orders.delete(
+    condition="order_date = '2026-07-15' AND order_id = 'O-101'"
+)
+```
+
+With this delete, Delta does not use `mode("append")`. It finds affected files, writes replacement files without `O-101`, marks old files as removed in `_delta_log`, and commits a new table version.
+
+Add new rows example:
+
+```python
+new_orders_df = spark.createDataFrame(
+    [("O-300", "NEW", "2026-07-17")],
+    ["order_id", "status", "order_date"]
+).withColumn("order_date", F.to_date("order_date"))
+
+(
+    new_orders_df.write
+    .format("delta")
+    .mode("append")
+    .partitionBy("order_date")
+    .save(orders_path)
+)
+```
+
+For new rows, use `mode("append")`. Delta writes new Parquet files and records `add` actions in `_delta_log`.
+
+SQL delete example:
+
+```sql
+DELETE FROM analytics.orders_delta
+WHERE order_date = DATE '2026-07-15'
+  AND order_id = 'O-101'
+```
+
+### Note: Joining Delta Tables Creates a Normal DataFrame
+
+Joining Delta tables works like normal Spark. Delta controls how each source table is read consistently from `_delta_log`; the join itself is a regular Spark DataFrame transformation.
+
+```python
+orders_df = spark.read.format("delta").load("s3://my-bucket/lake/silver/orders_delta")
+customers_df = spark.read.format("delta").load("s3://my-bucket/lake/silver/customers_delta")
+
+joined_df = (
+    orders_df
+    .join(customers_df, "customer_id", "left")
+    .select(
+        "order_id",
+        "customer_id",
+        "customer_name",
+        "status",
+        "order_date",
+        "amount"
+    )
+)
+```
+
+At this point, `joined_df` is just a lazy Spark DataFrame plan. It has not modified either Delta table. To persist the joined result, write it to a target table:
+
+```python
+(
+    joined_df.write
+    .format("delta")
+    .mode("overwrite")
+    .partitionBy("order_date")
+    .save("s3://my-bucket/lake/gold/order_customer_delta")
+)
+```
+
+To use one DataFrame to update an existing Delta table, use `MERGE`, not a normal join followed by manual overwrite.
 
 ### How Delta Helps Spark Users
 
@@ -1151,6 +1252,46 @@ Delta does not make Parquet files mutable. Spark still reads candidate data and 
 | Folder listing decides what is read | Transaction log decides active files |
 
 Delta does not always scan the full table. With a partition predicate such as `order_date = '2026-07-15'`, Delta can prune unrelated partitions. It then rewrites only affected candidate files, not every partition.
+
+### Concurrent Updates: Not Last Writer Wins
+
+Delta Lake uses optimistic concurrency control. Two writers can start from the same table version, but only valid non-conflicting commits are accepted. A conflicting later commit fails instead of silently overwriting the earlier commit.
+
+Example:
+
+```text
+Table starts at version 10
+
+Thread 1 reads version 10
+Thread 2 reads version 10
+
+Thread 1 updates order_date=2026-07-15 and writes replacement file part-100.parquet
+Thread 2 updates order_date=2026-07-15 and writes replacement file part-200.parquet
+
+Thread 1 commits _delta_log version 11 successfully
+Thread 2 tries to commit based on version 10
+Delta detects that conflicting files changed
+Thread 2 fails and must retry on the latest table version
+```
+
+So the rule is not "whichever thread finishes last wins." It is closer to:
+
+```text
+first valid commit wins
+conflicting later commit fails or must retry
+non-conflicting later commit can succeed as the next version
+```
+
+Two concurrent writes may both succeed when they touch different files or different partitions:
+
+```text
+Thread 1 updates order_date=2026-07-15 -> commits version 11
+Thread 2 updates order_date=2026-07-16 -> commits version 12
+```
+
+Two updates to the same partition may still both succeed if they touch different underlying Parquet files and Delta can validate that there is no conflict. They may fail if they read or rewrite the same files.
+
+**Interview Tip**: "Delta Lake does not use last-writer-wins for concurrent updates. Writers work on a snapshot, then atomically commit a new log version. If another writer changed conflicting files or table metadata, the later writer gets a conflict instead of corrupting the table."
 
 ### Using Delta Lake on AWS EMR
 
