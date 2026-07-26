@@ -1042,6 +1042,68 @@ orders = spark.read.format("delta").load(orders_path)
 | Delete existing rows | `DeltaTable.delete(...)` or SQL `DELETE` |
 | Upsert rows | `DeltaTable.merge(...)` or SQL `MERGE` |
 
+### Bronze to Silver Upserts with Delta MERGE
+
+Use `DeltaTable.merge(...)` when bronze data can contain a mix of:
+
+- New records that do not exist in silver yet.
+- Existing records with changed values.
+- Late-arriving corrections for old business keys.
+
+Do not use `MERGE` for every load. If the input is guaranteed to be append-only, append is simpler and cheaper. Use `MERGE` when silver must behave like an upsert table.
+
+| Bronze input pattern | Silver write pattern |
+|---|---|
+| Only new rows | Append |
+| New rows plus updates to existing keys | Deduplicate, then `MERGE` |
+| CDC inserts, updates, and deletes | Deduplicate, then `MERGE` with update/insert/delete logic |
+| Full replacement for one date or partition | Partition overwrite, used carefully |
+
+Example: deduplicate incoming bronze rows, then upsert into silver.
+
+```python
+from delta.tables import DeltaTable
+from pyspark.sql import Window
+from pyspark.sql import functions as F
+
+bronze_updates = spark.read.format("delta").load(
+    "s3://my-bucket/lake/bronze/customers_delta"
+)
+
+window_spec = Window.partitionBy("customer_id").orderBy(
+    F.col("updated_at").desc()
+)
+
+bronze_latest = (
+    bronze_updates
+    .withColumn("row_number", F.row_number().over(window_spec))
+    .filter(F.col("row_number") == 1)
+    .drop("row_number")
+)
+
+silver_table = DeltaTable.forPath(
+    spark,
+    "s3://my-bucket/lake/silver/customers_delta",
+)
+
+(
+    silver_table.alias("silver")
+    .merge(
+        bronze_latest.alias("bronze"),
+        "silver.customer_id = bronze.customer_id",
+    )
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .execute()
+)
+```
+
+Why deduplicate first: Delta `MERGE` expects one clear source row for each target business key. If the same `customer_id` appears multiple times in the bronze batch, pick the latest version before merging.
+
+Interview answer:
+
+> If bronze can contain both new rows and updates to existing rows, I use Delta Lake `MERGE` for silver. I deduplicate the incoming batch by business key first, usually keeping the latest `updated_at`, then merge using the business key. For pure append-only data, append is simpler and more efficient.
+
 The physical layout still has partition folders:
 
 ```text
@@ -1872,7 +1934,7 @@ silver = (
 )
 ```
 
-Silver write with a transactional table format:
+Silver append write with a transactional table format:
 
 ```python
 (
@@ -1881,6 +1943,16 @@ Silver write with a transactional table format:
     .mode("append")
     .saveAsTable("glue_catalog.silver.orders")
 )
+```
+
+If silver must update existing business keys, use a table format upsert instead of append. With Delta Lake, that usually means `DeltaTable.merge(...)` after deduplicating the bronze batch.
+
+```text
+bronze batch has new and changed records
+  -> deduplicate by business key
+  -> merge into silver
+  -> update matched rows
+  -> insert unmatched rows
 ```
 
 **Performance Tip**: Silver tables are frequently joined and reused, so table layout matters. Choose partitioning, file size, clustering, and compaction based on actual query patterns.
