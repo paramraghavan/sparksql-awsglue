@@ -1,4 +1,4 @@
-It is completely understandable that you are looking into this. Snowflake is an incredibly powerful engine, but
+Snowflake is an incredibly powerful engine, but
 performing heavy, continuous CRUD operations (like massive MERGE statements and full table reloads) can burn through
 compute credits fast, and the storage markup adds up.
 
