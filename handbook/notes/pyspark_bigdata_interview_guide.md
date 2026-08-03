@@ -51,6 +51,7 @@ Callouts:
 29. [Frequently Used PySpark Code Snippets](#29-frequently-used-pyspark-code-snippets)
 30. [Quick Revision Sheets](#30-quick-revision-sheets)
 31. [Final Study Checklist](#31-final-study-checklist)
+31.5. [Lakehouse Architecture Fundamentals](#315-lakehouse-architecture-fundamentals)
 32. [Transactional Parquet with Delta Lake, Apache Hudi, and Apache Iceberg](#32-transactional-parquet-with-delta-lake-apache-hudi-and-apache-iceberg)
 33. [Medallion Architecture](#33-medallion-architecture)
 34. [Spark UI and Production Troubleshooting](#34-spark-ui-and-production-troubleshooting)
@@ -939,6 +940,287 @@ Glue is managed Spark plus Catalog. Use IAM roles, CloudWatch logs, job paramete
 - Explain bronze, silver, and gold layers in medallion architecture.
 - Practice common PySpark snippets.
 - Practice scenario-based answers.
+
+## 31.5. Lakehouse Architecture Fundamentals
+
+### What Is a Lakehouse?
+
+A lakehouse combines the scalability and low cost of data lakes with the ACID transactions, schema enforcement, and query performance of data warehouses. It achieves this by layering table formats and metadata on top of cloud object storage like S3, Azure Data Lake, or GCS.
+
+```text
+Data Lake + Data Warehouse Features = Lakehouse
+
+Object Storage (S3, ADLS, GCS)
+  ↓
+Metadata Layer (Delta, Hudi, Iceberg)
+  ↓
+ACID Transactions, Schema, Governance
+  ↓
+Spark, Trino, Athena, Flink, etc.
+```
+
+**Interview Tip**: "A lakehouse is cloud object storage plus a table format that adds transactions, schema enforcement, and metadata. This gives you the economics of a lake and the reliability of a warehouse."
+
+### The Evolution: Lake → Warehouse → Lakehouse
+
+| Aspect | Data Lake | Data Warehouse | Lakehouse |
+|---|---|---|---|
+| Storage | Object storage (cheap, scalable) | Proprietary (expensive per GB) | Object storage |
+| Format | Any (files, blobs) | Optimized binary (propietary) | Standardized (Parquet, ORC) |
+| Transactions | None or limited | Full ACID | Full ACID via metadata layer |
+| Schema | Flexible, often inferred | Strict enforcement | Enforced and evolvable |
+| Query engines | Limited, often one vendor | SQL, but locked-in | SQL, Python, R; multiple engines |
+| Update capability | Batch rewrites | Row-level updates | Row-level updates via table format |
+| Time travel | Manual or custom | Limited | Built-in via metadata snapshots |
+| Typical cost | ~$23/TB/year (S3) | $1000+/TB/year | ~$23/TB/year + compute |
+
+### Core Lakehouse Concepts
+
+#### Storage and Compute Separation
+
+Lakehouse separates storage from compute. Data lives in object storage; compute engines attach on demand.
+
+Benefits:
+
+- Scale storage and compute independently.
+- Multiple engines can read/write the same table.
+- Cost-effective for bursty workloads.
+- Easier disaster recovery and multi-region.
+
+```text
+S3 bucket with Delta/Hudi/Iceberg tables
+  ↓ (data format + metadata)
+  ├── Spark (ETL, transformations)
+  ├── Trino (interactive SQL)
+  ├── Athena (serverless SQL)
+  ├── Flink (streaming)
+  └── Python/Jupyter (ML, analytics)
+```
+
+#### Metadata Layer
+
+The metadata layer defines which files are active, which are deleted, schema, partitions, and transaction history. It is the "database" part of the lakehouse.
+
+Examples:
+
+- Delta Lake: `_delta_log` directory with JSON transaction log.
+- Hudi: `.hoodie` directory with commit timeline.
+- Iceberg: manifest files and metadata snapshots in a metadata folder.
+
+Importance: Readers trust metadata, not folder listing. If you list S3 directly, you see all files, including old versions. A metadata reader sees only active files.
+
+#### Partitioning in Lakehouse
+
+Partitioning is still important, but the table format handles partitioning consistently.
+
+```python
+# Explicit partitioning at write time
+df.write.format("delta").partitionBy("year", "month").save(path)
+
+# Readers see partitioning through metadata
+spark.read.format("delta").load(path)  # partition info in metadata
+```
+
+Benefits:
+
+- Query engines can skip unrelated partitions (partition pruning).
+- Concurrent writers can safely write to different partitions.
+- Partitions remain under the table format's metadata control.
+
+#### Schema and Evolution
+
+Lakehouse enforces schema and allows controlled evolution.
+
+```python
+# Schema is enforced; this fails if schema mismatches
+df.write.format("delta").mode("append").save(path)
+
+# Schema evolution: add new columns
+new_df.write.format("delta").mode("append").option("mergeSchema", True).save(path)
+```
+
+#### Transactions and Isolation
+
+Lakehouse provides ACID transactions, which ensure isolation between readers and writers.
+
+| Scenario | Data Lake (plain Parquet) | Lakehouse |
+|---|---|---|
+| Writer A and B write to same partition | Both may corrupt output | B detects conflict and retries |
+| Reader reads while writer updates | May see partial data | Reads consistent version |
+| Job crashes mid-write | Table left in inconsistent state | Rollback is atomic |
+| Need to undo recent changes | Manual recovery | Time travel or rollback |
+
+### Lakehouse Architecture on AWS
+
+On AWS, common lakehouse architectures use:
+
+| Component | Role |
+|---|---|
+| S3 | Object storage for data files |
+| AWS Glue Data Catalog | Metadata and partition management |
+| Spark (on EMR, Glue, Databricks) | Compute engine for ETL, SQL |
+| Delta Lake, Hudi, or Iceberg | Table format and metadata layer |
+| Athena (optional) | Serverless SQL on Iceberg/Delta |
+| Lake Formation (optional) | Centralized governance and access control |
+
+Example architecture:
+
+```text
+Source systems (databases, APIs, Kafka)
+  ↓ (ingest)
+S3 Bronze (raw data)
+  ↓ (transform with Spark on Glue/EMR)
+S3 Silver (Delta/Iceberg, clean data)
+  ↓ (aggregate with Spark)
+S3 Gold (Delta/Iceberg, business-ready)
+  ↓
+Athena, QuickSight, ML models, APIs
+```
+
+### Lakehouse vs Traditional Warehouse
+
+| Feature | Traditional DW | Lakehouse |
+|---|---|---|
+| Ingestion speed | Constrained by ETL tool limits | Fast Spark ingestion to bronze |
+| Data freshness | Hours to days | Minutes to seconds with streaming |
+| Ad hoc queries | Limited; schemas must be pre-built | Flexible; analysts query any layer |
+| Schema changes | Costly; requires downtime | Evolutionary; backward compatible |
+| Storage cost | High (proprietary hardware/licensing) | Low (cloud object storage) |
+| Scaling | Vertical (add CPUs/memory to one box) | Horizontal (add more nodes) |
+| Data governance | Centralized, sometimes rigid | Decentralized but policy-driven via Catalog |
+| Time travel | Not common | Native via metadata snapshots |
+| Third-party tool support | Mature | Growing (Trino, Athena, Flink, etc.) |
+
+### Lakehouse Design Principles
+
+#### 1. Separate Raw and Curated Layers
+
+Keep raw bronze data immutable and replayable. Clean data in silver, curate in gold.
+
+```python
+# Bronze: raw, append-only
+spark.read.json("source_api/events/").write.format("delta").mode("append").save("s3://.../bronze/events/")
+
+# Silver: cleaned, deduplicated, validated
+(bronze
+    .filter(F.col("event_id").isNotNull())
+    .withColumn("event_ts", F.to_timestamp("event_ts"))
+    .write.format("delta").mode("append").save("s3://.../silver/events/")
+)
+```
+
+#### 2. Use Immutable Inserts, Controlled Updates
+
+Append-only writes are cheaper and safer. Use MERGE for upserts only when necessary.
+
+```python
+# Good: append-only
+incremental.write.format("delta").mode("append").save(silver_path)
+
+# When needed: upsert with MERGE
+DeltaTable.forPath(spark, silver_path).merge(...).whenMatched(...).execute()
+```
+
+#### 3. Partition by Common Filters
+
+Partition by columns frequently used in WHERE clauses, not by unique identifiers.
+
+```python
+# Good: date-based partition
+.write.partitionBy("order_date").save(path)
+
+# Bad: cardinality explosion
+.write.partitionBy("user_id").save(path)  # millions of directories
+```
+
+#### 4. Optimize File Sizes
+
+Target Parquet files around 50-200 MB for balanced I/O and metadata overhead.
+
+```python
+# If many small files, repartition before writing
+df.repartition(100).write.format("delta").mode("overwrite").save(path)
+```
+
+#### 5. Govern Access Through Metadata
+
+Use Catalog (Glue, Unity, Hive) and Lake Formation policies to control who sees what.
+
+```python
+# Define table in catalog pointing to lakehouse data
+spark.sql("""
+    CREATE TABLE IF NOT EXISTS analytics.orders
+    USING delta
+    LOCATION 's3://my-bucket/lake/silver/orders/'
+""")
+```
+
+### Key Differences Between Lakehouse Formats
+
+All three formats solve the same problem (Parquet + transactions + metadata) but with different focuses:
+
+| Aspect | Delta Lake | Apache Hudi | Apache Iceberg |
+|---|---|---|---|
+| Transaction log | JSON files in `_delta_log` | Timeline in `.hoodie` | Snapshots + manifests |
+| Upsert strategy | MERGE after dedup | Native record-level upsert | INSERT, UPDATE, DELETE via MERGE |
+| Incremental reads | Version numbers | Commit instants | Snapshot IDs |
+| Engine support | Spark, Databricks | Spark, Flink | Spark, Trino, Athena, Flink |
+| Best for | Spark-centric, simple upserts | CDC, streaming ingestion | Multi-engine, analytical queries |
+| Production maturity | Very mature (Databricks) | Mature (Netflix, Uber) | Rapidly growing (AWS, Tabular) |
+
+### Lakehouse Governance and Metadata
+
+A lakehouse catalog (Glue, Hive, Unity Catalog, etc.) is critical for:
+
+- Discoverability: find tables and understand schemas.
+- Lineage: track where data comes from and where it goes.
+- Access control: who can read/write which tables.
+- Quality metrics: row counts, schema versions, update frequency.
+- Classification: mark sensitive data (PII, PHI, confidential).
+
+Example Glue integration:
+
+```python
+spark = (
+    SparkSession.builder
+    .config("spark.sql.catalog.glue_catalog", "org.apache.spark.sql.catalyst.catalog.ExternalCatalog")
+    .getOrCreate()
+)
+
+# Register Delta table in Glue Catalog
+spark.sql("""
+    CREATE TABLE glue_catalog.analytics.orders
+    USING delta
+    LOCATION 's3://bucket/lake/silver/orders/'
+""")
+
+# Now other users can discover and query it
+spark.sql("SELECT * FROM glue_catalog.analytics.orders")
+```
+
+### Common Lakehouse Mistakes
+
+- **Mixing formats**: Do not write plain Parquet, Delta, and Hudi to the same path.
+- **Ignoring metadata**: Assuming folder listing equals table contents.
+- **High-cardinality partitions**: Partitioning by user_id or order_id creates millions of small directories.
+- **Forgetting to vacuum/compact**: Old files accumulate; run cleanup regularly.
+- **Over-complicating bronze**: Bronze should be simple and replayable.
+- **Not testing concurrent writes**: Verify that multiple jobs can safely write to the same table.
+- **Ignoring schema evolution**: Schema changes break downstream jobs; plan and test evolution.
+
+### Interview Answer Template
+
+When asked "What is a lakehouse and why would you use one?":
+
+```text
+A lakehouse combines cloud object storage with a table format (Delta, Hudi, or Iceberg)
+to provide ACID transactions, schema enforcement, time travel, and multi-engine access—
+all at the economics of a data lake. Compared to a traditional data warehouse, a lakehouse
+is cheaper, scales horizontally, supports streaming and batch, and allows multiple query
+engines on the same data. I use a medallion architecture with bronze (raw), silver (cleaned),
+and gold (curated) layers. For silver and gold, I use Delta or Iceberg for upserts and
+consistency. The metadata layer (Glue Catalog on AWS) provides governance and discoverability.
+```
 
 ## 32. Transactional Parquet with Delta Lake, Apache Hudi, and Apache Iceberg
 
