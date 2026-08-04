@@ -10,6 +10,9 @@ This is a standalone tutorial and desk reference for PySpark, Spark SQL, AWS Glu
 - For AWS Glue: sections 10, 11, 13, and 25.
 - For lakehouse architecture and transactional data lakes: sections 32 and 33.
 - For interviews: sections 26, 27, 28, and 29.
+- For streaming and real-time: sections 38 and 39.
+- For data quality and operations: sections 40, 41, and 42.
+- For ML at scale and architecture: sections 43 and 44.
 
 Callouts:
 
@@ -17,6 +20,59 @@ Callouts:
 - **Performance Tip**: optimization guidance.
 - **Warning**: common trap or production risk.
 - **Production Practice**: recommended real-world approach.
+
+## Scope & Coverage: What This Guide Covers
+
+### IN SCOPE (Big Data Engineering)
+
+This guide focuses on **big data engineering** at scale:
+
+✅ **Spark Fundamentals** - Core concepts, architecture, execution model
+✅ **PySpark & Spark SQL** - DataFrame API, SQL, transformations, actions
+✅ **Batch ETL Pipelines** - Large-scale data processing (100GB to petabytes)
+✅ **Real-Time Streaming** - Kafka, Kinesis, watermarks, stateful processing
+✅ **Lakehouse Architecture** - Delta Lake, Hudi, Iceberg, medallion patterns
+✅ **AWS Big Data Services** - Glue, Kinesis, EMR, Athena, S3, EventBridge
+✅ **Production Operations** - Troubleshooting, performance tuning, observability
+✅ **Data Platform Architecture** - Data mesh, pipeline design, governance
+✅ **Data Quality & Observability** - Validation, SLAs, monitoring
+✅ **Security & Compliance** - Encryption, access control, audit logging
+✅ **Cost Optimization** - Right-sizing, query optimization, resource management
+✅ **Distributed Machine Learning** - Spark MLlib, feature engineering at scale
+
+### OUT OF SCOPE (Different Specializations)
+
+These are important but beyond this guide's focus:
+
+❌ **Deep Learning & AI** - PyTorch, TensorFlow, CUDA, neural networks
+❌ **Vector Databases & RAG** - Pinecone, Weaviate, retrieval-augmented generation
+❌ **LLM Fine-Tuning** - Language model training, prompt engineering
+❌ **dbt & SQL Transformations** - dbt is SQL-focused (not Spark-based)
+❌ **Reverse ETL & Sync** - Syncing data back to operational systems
+❌ **BI & Visualization Tools** - Tableau, Power BI, QuickSight (covered briefly)
+❌ **Graph Databases** - Neo4j, graph-specific storage (GraphFrames included)
+❌ **Specialized Topics** - Computer vision, NLP models, recommendation systems
+
+### WHO SHOULD USE THIS GUIDE
+
+✅ **Data Engineers** - Building and maintaining data pipelines
+✅ **Apache Spark Developers** - Writing PySpark applications
+✅ **AWS Glue Users** - Building ETL jobs on AWS
+✅ **Platform Engineers** - Designing data platform architecture
+✅ **Interview Candidates** - Preparing for data engineering roles
+✅ **DevOps/SRE** - Operating data systems at scale
+✅ **Analytics Engineers** - Building data models with Spark
+
+### LEARNING PATHS BY ROLE
+
+**Beginner Data Engineer:**
+→ Sections 1-3 (fundamentals) → 4-6 (PySpark basics) → 11-13 (Glue) → 22 (incremental patterns)
+
+**Intermediate Spark Developer:**
+→ Sections 7-10 (optimization) → 16-17 (performance) → 31-33 (lakehouse) → 38-39 (streaming)
+
+**Advanced Big Data Architect:**
+→ Sections 34-37 (debugging) → 40-44 (operations, architecture) → 45-51 (patterns, challenges)
 
 ## Table of Contents
 
@@ -58,6 +114,21 @@ Callouts:
 35. [Explain Plan Practice](#35-explain-plan-practice)
 36. [Common Coding Interview Exercises](#36-common-coding-interview-exercises)
 37. [General Performance Anti-Patterns](#37-general-performance-anti-patterns)
+38. [Spark Structured Streaming](#38-spark-structured-streaming)
+39. [Real-Time AWS Data Pipelines](#39-real-time-aws-data-pipelines)
+40. [Data Quality, Observability, and SLAs](#40-data-quality-observability-and-slas)
+41. [Data Security and Compliance](#41-data-security-and-compliance)
+42. [Cost Optimization for Data Pipelines](#42-cost-optimization-for-data-pipelines)
+52. [Lakehouse Implementation & Operations Guide](#52-lakehouse-implementation--operations-guide)
+43. [Spark MLlib and Distributed Feature Engineering](#43-spark-mllib-and-distributed-feature-engineering)
+44. [Data Mesh Architecture for Big Data Platforms](#44-data-mesh-architecture-for-big-data-platforms)
+45. [Data APIs and Real-Time Serving](#45-data-apis-and-real-time-serving)
+46. [Advanced AWS Glue Patterns](#46-advanced-aws-glue-patterns)
+47. [Graph Processing and Network Analysis](#47-graph-processing-and-network-analysis)
+48. [Production Debugging and Deep Optimization](#48-production-debugging-and-deep-optimization)
+49. [Common Big Data Architecture Patterns](#49-common-big-data-architecture-patterns)
+50. [Handling Scale, Skew, and Performance Challenges](#50-handling-scale-skew-and-performance-challenges)
+51. [Modern Big Data Stack Integration](#51-modern-big-data-stack-integration)
 
 ## 1. Big Data Fundamentals
 
@@ -2645,3 +2716,3179 @@ These are common review findings in Spark and Glue code. They apply broadly to p
 10. Are partition columns aligned to common filters?
 11. Is the job idempotent for retries?
 12. Are logs, metrics, and data quality checks sufficient?
+
+## 38. Spark Structured Streaming
+
+### What Is Structured Streaming?
+
+Spark Structured Streaming treats unbounded data streams as infinite DataFrames. Instead of writing separate streaming code, you use the same DataFrame API and SQL queries. Spark handles micro-batches, checkpointing, and stateful operations internally.
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+
+spark = SparkSession.builder.appName("streaming").getOrCreate()
+
+# Read from Kafka stream
+df = (
+    spark.readStream
+    .format("kafka")
+    .option("kafka.bootstrap.servers", "localhost:9092")
+    .option("subscribe", "events_topic")
+    .option("startingOffsets", "earliest")
+    .load()
+)
+
+# Transform using standard DataFrame API
+processed = (
+    df.select(F.from_json(F.col("value").cast("string"), schema).alias("data"))
+      .select("data.*")
+      .filter(F.col("amount") > 0)
+)
+
+# Write to target with checkpointing
+query = (
+    processed.writeStream
+    .format("delta")
+    .option("checkpointLocation", "s3://bucket/checkpoint/events")
+    .option("path", "s3://bucket/lake/bronze/events")
+    .option("mergeSchema", True)
+    .start()
+)
+
+query.awaitTermination()
+```
+
+**Key Difference from Batch:**
+
+```python
+# Batch: read → transform → write (once)
+batch_df = spark.read.parquet("s3://bucket/data/")
+result = batch_df.filter(...)
+result.write.mode("overwrite").parquet("s3://bucket/output/")
+
+# Streaming: read → transform → write (continuous)
+stream_df = spark.readStream.kafka(...)
+result = stream_df.filter(...)
+query = result.writeStream.start()  # Runs forever
+```
+
+### Micro-Batch Architecture
+
+Spark Structured Streaming processes streams in small batches by default. Each batch is a discrete trigger.
+
+```text
+Incoming stream of events
+  ↓
+Batch 1 (100ms of data)
+  ↓
+Apply transformations
+  ↓
+Write to sink (Delta, S3, etc.)
+  ↓ (checkpoint recorded)
+Batch 2 (next 100ms of data)
+  ↓ (repeat)
+```
+
+Trigger options:
+
+```python
+# Micro-batch every 10 seconds
+.option("triggerInterval", "10 seconds")
+
+# Continuous mode (low-latency, experimental)
+.trigger(continuous="1 second")
+
+# Once: process all available data and stop
+.trigger(once=True)
+
+# Default: process as fast as data arrives
+.trigger(availableNow=True)
+```
+
+### Stateful Streaming: Aggregations
+
+Stateful operations require Spark to maintain state across batches. Example: counting events per customer over time.
+
+```python
+from pyspark.sql import functions as F, Window
+
+# Count events per customer ID in 1-minute tumbling windows
+windowed = (
+    df.withColumn("timestamp", F.col("timestamp").cast("timestamp"))
+      .groupBy(
+          F.window("timestamp", "1 minute"),
+          "customer_id"
+      )
+      .agg(
+          F.count("*").alias("event_count"),
+          F.sum("amount").alias("total_amount")
+      )
+)
+
+query = (
+    windowed.writeStream
+    .format("delta")
+    .option("checkpointLocation", "s3://bucket/ckpt/agg")
+    .start()
+)
+```
+
+State is maintained in Spark executor memory. For large states, configure:
+
+```python
+spark.conf.set("spark.sql.streaming.stateStore.minDeltasForSnapshot", 10)
+spark.conf.set("spark.sql.streaming.stateStore.format", "delta")
+```
+
+### Watermarking: Handling Late Data
+
+Watermarks define how late data can arrive before being dropped. Without watermarks, state grows indefinitely.
+
+```python
+# Allow data up to 10 minutes late
+df_with_watermark = (
+    df.withWatermark("event_timestamp", "10 minutes")
+      .groupBy(
+          F.window("event_timestamp", "5 minutes"),
+          "customer_id"
+      )
+      .agg(F.sum("amount").alias("total"))
+)
+```
+
+How it works:
+
+```text
+Current watermark: 14:00
+Incoming events before 14:00 are included
+Incoming events after 14:00 but within 10 minutes are included
+Incoming events before 13:50 are dropped (too late)
+After 14:10, watermark advances to 14:10
+```
+
+**Interview Tip**: "Watermarks prevent unbounded state growth. Without them, Spark keeps all historical state in memory forever. With a 10-minute watermark, we only keep 10 minutes of state, which is manageable."
+
+### Exactly-Once Semantics
+
+Spark Structured Streaming guarantees exactly-once end-to-end if source, processing, and sink all support idempotency.
+
+| Component | Behavior |
+|---|---|
+| **Source** | Kafka partitions, S3 files with offsets tracked |
+| **Processing** | Checkpoint records Spark state at each batch |
+| **Sink** | Idempotent writes (Delta, S3) using batch ID |
+
+Checkpoint directory stores:
+
+```text
+s3://bucket/checkpoint/
+  _spark_metadata/
+    0  (batch 0 state)
+    1  (batch 1 state)
+    2  (batch 2 state)
+```
+
+Recovery:
+
+```python
+# On failure, Spark reads latest checkpoint
+# Restarts from that batch
+# Source (Kafka) re-reads from saved offsets
+# State is recreated from checkpoint
+# Sink receives same data again (idempotent write)
+```
+
+**Production Practice**: Always use checkpoints. Never run streaming jobs without `checkpointLocation`.
+
+```python
+# GOOD: with checkpoint
+query = df.writeStream.option("checkpointLocation", path).start()
+
+# BAD: no recovery mechanism
+query = df.writeStream.start()  # Will lose state on failure
+```
+
+### Handling Errors in Streaming
+
+```python
+# Bad records handling
+schema = StructType([...])
+
+parsed = (
+    df.select(F.from_json(F.col("value").cast("string"), schema,
+                         mode="PERMISSIVE").alias("data"))
+      .select("data.*")
+)
+
+# Log or quarantine failures
+failed = (
+    df.withColumn("parsed",
+                 F.from_json(F.col("value").cast("string"), schema))
+      .filter(F.col("parsed").isNull())
+)
+
+query_failed = (
+    failed.writeStream
+    .format("delta")
+    .option("checkpointLocation", "s3://bucket/ckpt/failed")
+    .option("path", "s3://bucket/lake/failed_records")
+    .start()
+)
+```
+
+### Common Streaming Patterns
+
+#### Session Windows (Time-Based Groups)
+
+Group events into sessions with a gap timeout:
+
+```python
+sessions = (
+    df.groupBy(
+        F.session_window("event_ts", "30 minutes"),
+        "user_id"
+    )
+    .agg(
+        F.count("*").alias("events_in_session"),
+        F.sum("amount").alias("session_revenue")
+    )
+)
+```
+
+#### Join Stream with Batch (Slowly Changing Dimension)
+
+```python
+# Stream of transactions
+transactions = spark.readStream.kafka(...)
+
+# Batch reference data (updated daily)
+customers = spark.read.delta("s3://bucket/ref/customers")
+
+# Join: stream to batch
+joined = (
+    transactions.join(
+        F.broadcast(customers),
+        "customer_id",
+        "left"
+    )
+)
+```
+
+**Important**: Always broadcast the batch side. Streaming + streaming joins are expensive.
+
+#### Join Two Streams (State-Managed)
+
+```python
+stream1 = spark.readStream.kafka("topic1", ...)
+stream2 = spark.readStream.kafka("topic2", ...)
+
+# Join on key with 1-hour state
+joined = (
+    stream1.join(
+        stream2,
+        "user_id",
+        "inner"
+    )
+    .select("*")  # State kept for 1 hour
+)
+```
+
+**Warning**: Stateful stream-stream joins can consume significant memory. Use watermarks and ttl carefully.
+
+### Testing Streaming Queries
+
+```python
+from pyspark.sql.streaming import StreamingQueryListener
+
+class MyListener(StreamingQueryListener):
+    def onQueryStarted(self, event):
+        print(f"Query started: {event.id}")
+
+    def onQueryProgress(self, event):
+        print(f"Processed: {event.progress.numInputRows} rows")
+
+    def onQueryTerminated(self, event):
+        print(f"Query ended")
+
+spark.streams.addListener(MyListener())
+
+# Run test
+query = df.writeStream.format("memory").start()
+query.processAllAvailable()
+query.stop()
+```
+
+### Performance Tuning for Streaming
+
+```python
+spark.conf.set("spark.sql.streaming.minBatchesToRetain", 10)
+spark.conf.set("spark.sql.streaming.schemaInference", "false")  # Always provide schema
+spark.conf.set("spark.sql.shuffle.partitions", "200")  # For aggregations
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+```
+
+**Interview Tip**: "Structured Streaming uses micro-batches under the hood. Each batch is a discrete Spark job. For exactly-once, use checkpoints, idempotent sinks (Delta), and partition-aware sources (Kafka)."
+
+## 39. Real-Time AWS Data Pipelines
+
+### Kinesis Data Streams
+
+Kinesis streams provide a scalable, real-time data ingestion service on AWS.
+
+```python
+# Read from Kinesis
+df = (
+    spark.readStream
+    .format("kinesis")
+    .option("streamName", "my-stream")
+    .option("region", "us-east-1")
+    .option("initialPosition", "TRIM_HORIZON")
+    .load()
+)
+
+# Data structure
+# df has columns: data (binary), partitionKey, sequenceNumber, approximateArrivalTimestamp
+
+parsed = (
+    df.select(
+        F.col("approximateArrivalTimestamp").cast("timestamp").alias("timestamp"),
+        F.from_json(F.col("data").cast("string"), schema).alias("payload")
+    )
+    .select("timestamp", "payload.*")
+)
+
+# Write to Delta Lake
+query = (
+    parsed.writeStream
+    .format("delta")
+    .option("checkpointLocation", "s3://bucket/ckpt/kinesis")
+    .option("path", "s3://bucket/lake/bronze/events")
+    .start()
+)
+```
+
+### Kinesis Firehose (Simpler Alternative)
+
+Kinesis Firehose is a managed service that can transform and deliver data to S3, Redshift, or Splunk. Less flexible than streams but minimal operational overhead.
+
+```text
+Applications
+  → Kinesis Firehose
+    → Lambda (optional transformation)
+    → S3 (buffered)
+    → Athena (query)
+```
+
+### EventBridge for Event Routing
+
+EventBridge lets you route events from sources to targets. Common pattern: S3 upload triggers Glue job.
+
+```python
+# When S3 file lands, trigger Glue job
+import boto3
+
+client = boto3.client('events')
+
+client.put_rule(
+    Name='s3-to-glue-rule',
+    EventPattern={
+        "source": ["aws.s3"],
+        "detail-type": ["Object Created"],
+        "detail": {
+            "bucket": {"name": ["my-bucket"]},
+            "object": {"key": [{"prefix": "raw/"}]}
+        }
+    },
+    State='ENABLED'
+)
+
+client.put_targets(
+    Rule='s3-to-glue-rule',
+    Targets=[{
+        'Arn': 'arn:aws:glue:region:account:job/my-job',
+        'RoleArn': 'arn:aws:iam::account:role/service-role',
+        'Id': '1'
+    }]
+)
+```
+
+### Step Functions for Complex Workflows
+
+Step Functions orchestrate multi-step data pipelines with error handling and retries.
+
+```json
+{
+  "Comment": "Data pipeline workflow",
+  "StartAt": "TriggerGlueJob",
+  "States": {
+    "TriggerGlueJob": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "data-ingestion-job"
+      },
+      "Next": "ValidateData"
+    },
+    "ValidateData": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:function:validate-data",
+      "Next": "CheckValidation"
+    },
+    "CheckValidation": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.validation_passed",
+          "BooleanEquals": true,
+          "Next": "TransformData"
+        }
+      ],
+      "Default": "SendAlert"
+    },
+    "TransformData": {
+      "Type": "Task",
+      "Resource": "arn:aws:glue:startJobRun",
+      "End": true
+    },
+    "SendAlert": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "End": true
+    }
+  }
+}
+```
+
+### Real-Time Lakehouse Pattern
+
+Combine Kinesis + Spark Streaming + Delta Lake:
+
+```text
+Kinesis Data Stream
+  ↓ (real-time events)
+Spark Structured Streaming
+  ↓ (parse, validate)
+Bronze Delta Lake (append-only, raw)
+  ↓ (micro-batch dedup)
+Silver Delta Lake (clean, deduplicated)
+  ↓ (aggregation)
+Gold Delta Lake (business metrics)
+  ↓
+Athena / QuickSight (real-time dashboards)
+```
+
+Example Glue Streaming Job:
+
+```python
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from pyspark.sql import functions as F
+
+glue_context = GlueContext(spark)
+job = Job(glue_context)
+job.init(args["JOB_NAME"], args)
+
+# Read Kinesis
+df = glue_context.create_data_frame.from_options(
+    connection_type="kinesis",
+    connection_options={
+        "streamName": "events",
+        "startingPosition": "LATEST",
+        "inferSchema": "true"
+    },
+    format="json"
+)
+
+# Transform
+parsed = (
+    df.select(F.from_json(F.col("body"), schema).alias("data"))
+      .select("data.*")
+      .filter(F.col("event_ts").isNotNull())
+)
+
+# Write to S3 with checkpoint
+query = (
+    parsed.writeStream
+    .format("delta")
+    .option("checkpointLocation", args["checkpoint_path"])
+    .option("path", args["output_path"])
+    .start()
+)
+
+query.awaitTermination()
+job.commit()
+```
+
+**Production Practice**: For real-time Glue jobs, use G.2X workers and enable auto-scaling for consistent throughput.
+
+## 40. Data Quality, Observability, and SLAs
+
+### Why Data Quality Matters
+
+Bad data propagates downstream: wrong dashboards → wrong decisions → wrong business outcomes. Data quality is not optional in production.
+
+```text
+Raw data (98% accurate)
+  ↓
+Silver (should be 99.9% accurate)
+  ↓
+Gold (should be 99.99% accurate)
+  ↓
+Dashboards/ML (garbage in = garbage out)
+```
+
+### Defining Quality Metrics
+
+| Metric | Definition | Example |
+|---|---|---|
+| **Completeness** | % of non-null values in required columns | Customer ID: 99.8% non-null |
+| **Uniqueness** | % of unique values for keys | Order ID: 100% unique |
+| **Accuracy** | % of values matching known patterns | Email: 95% valid format |
+| **Timeliness** | % of data arriving within SLA | Daily report: 99% arrive by 9am |
+| **Consistency** | Values match across systems | Amount in Orders = Amount in GL: 99.9% |
+| **Validity** | Values within expected ranges | Amount: 0 < x < 1,000,000 |
+
+### Great Expectations Framework
+
+Great Expectations is a Python library for data quality validation and testing.
+
+```python
+from great_expectations.dataset import PandasDataset
+import great_expectations as ge
+
+# Create dataset and define expectations
+df = spark.read.parquet("s3://bucket/data/")
+df_pd = df.toPandas()
+
+dataset = ge.from_pandas(df_pd)
+
+# Validate specific columns
+suite = ge.core.expectation_suite.ExpectationSuite("orders_suite")
+
+suite.add_expectation(
+    ge.core.expectation.ExpectMissingColumn(column="order_id").to_not_be()
+)
+
+suite.add_expectation(
+    ge.core.expectation.ExpectColumnValuesToNotBeNull(column="customer_id", mostly=0.99)
+)
+
+suite.add_expectation(
+    ge.core.expectation.ExpectColumnValuesToBeInSet(
+        column="order_status",
+        value_set=["NEW", "SHIPPED", "CANCELLED"]
+    )
+)
+
+# Run validation
+results = dataset.validate(expectation_suite=suite)
+
+if not results.success:
+    print("Validation failed!")
+    for failure in results.results:
+        print(f"{failure['expectation_config']['expectation_type']}: {failure}")
+else:
+    print("All checks passed!")
+```
+
+### Built-in Spark Validation
+
+```python
+def validate_orders(df):
+    """Validate order data against business rules"""
+
+    # Check: required columns exist
+    required = ["order_id", "customer_id", "amount", "order_date"]
+    for col in required:
+        if col not in df.columns:
+            raise ValueError(f"Missing required column: {col}")
+
+    # Check: no nulls in key columns
+    null_counts = df.select([F.count(F.when(F.col(c).isNull(), c)) for c in required])
+    if null_counts.collect()[0][0] > 0:
+        raise ValueError("Null values found in required columns")
+
+    # Check: duplicates
+    duplicates = (
+        df.groupBy("order_id")
+          .count()
+          .filter(F.col("count") > 1)
+          .count()
+    )
+    if duplicates > 0:
+        raise ValueError(f"Found {duplicates} duplicate order IDs")
+
+    # Check: amount range
+    invalid_amounts = (
+        df.filter((F.col("amount") <= 0) | (F.col("amount") > 1000000))
+          .count()
+    )
+    if invalid_amounts > 0:
+        raise ValueError(f"Found {invalid_amounts} invalid amounts")
+
+    # Check: order_date is in past
+    invalid_dates = (
+        df.filter(F.col("order_date") > F.current_date())
+          .count()
+    )
+    if invalid_dates > 0:
+        raise ValueError(f"Found {invalid_dates} future-dated orders")
+
+    return df
+
+# Use in pipeline
+try:
+    validated_df = validate_orders(silver_df)
+    # Proceed with processing
+except ValueError as e:
+    logger.error(f"Validation failed: {e}")
+    # Quarantine data or alert
+```
+
+### SLOs and SLAs for Data
+
+Define and monitor Service Level Objectives (SLOs) and Agreements (SLAs):
+
+```python
+# Define SLOs in configuration
+SLOS = {
+    "silver.orders": {
+        "completeness": 0.99,       # 99% non-null
+        "uniqueness": 1.0,           # 100% unique by order_id
+        "freshness": 86400,          # Data within 1 day
+        "freshness_slo": 0.95        # 95% of time within SLA
+    },
+    "gold.daily_revenue": {
+        "timeliness": "09:00 UTC",   # Should be ready by 9am
+        "accuracy": 0.999,           # 99.9% accurate vs GL
+        "uptime": 0.999              # 99.9% available for queries
+    }
+}
+
+# Implement monitoring
+def check_slo(table_name, metric_name, threshold):
+    if table_name == "silver.orders" and metric_name == "completeness":
+        null_count = df.filter(F.col("order_id").isNull()).count()
+        completeness = 1 - (null_count / df.count())
+        return completeness >= threshold
+    # ... more checks
+```
+
+### Anomaly Detection
+
+Detect unexpected changes in data distributions:
+
+```python
+from pyspark.sql import functions as F
+import numpy as np
+
+def detect_anomalies(df, column, z_score_threshold=3):
+    """Detect outliers using z-score"""
+
+    mean_val = df.agg(F.mean(column)).collect()[0][0]
+    std_val = df.agg(F.stddev(column)).collect()[0][0]
+
+    anomalies = (
+        df.withColumn("z_score",
+                     (F.col(column) - mean_val) / std_val)
+          .filter(F.abs(F.col("z_score")) > z_score_threshold)
+    )
+
+    return anomalies
+
+# Monitor volume anomalies
+daily_counts = (
+    df.groupBy(F.to_date("event_ts"))
+      .count()
+      .withColumnRenamed("count", "event_count")
+)
+
+anomalies = detect_anomalies(daily_counts, "event_count", z_score_threshold=2.5)
+
+if anomalies.count() > 0:
+    logger.warning(f"Anomaly detected: unusual event count")
+```
+
+### Data Contracts
+
+Define schemas and guarantees between producers and consumers:
+
+```python
+# Define data contract
+ORDERS_CONTRACT = {
+    "table": "gold.orders",
+    "owner": "payments_team",
+    "schema": {
+        "order_id": ("string", False),       # not null
+        "customer_id": ("string", False),
+        "amount": ("decimal(10,2)", False),
+        "order_ts": ("timestamp", False),
+        "status": ("string", False)
+    },
+    "partitionBy": ["order_date"],
+    "sortBy": ["order_ts"],
+    "slo": {
+        "freshness_hours": 1,
+        "completeness": 0.99
+    },
+    "lineage": {
+        "source": ["bronze.raw_orders"],
+        "transformations": ["dedup", "validate", "enrich"]
+    }
+}
+
+# Validate against contract
+def validate_contract(df, contract):
+    for col_name, (dtype, nullable) in contract["schema"].items():
+        if col_name not in df.columns:
+            raise ValueError(f"Missing column: {col_name}")
+
+        if not nullable:
+            nulls = df.filter(F.col(col_name).isNull()).count()
+            if nulls > 0:
+                raise ValueError(f"Nulls found in {col_name}")
+
+    return True
+```
+
+**Production Practice**: Start with critical columns and metrics. Expand coverage over time. Automate checks and create dashboards for SLO tracking.
+
+## 41. Data Security and Compliance
+
+### Row-Level Security (RLS)
+
+Restrict data access based on user identity or attributes.
+
+```python
+from pyspark.sql import functions as F
+
+# Example: each region sees only their own data
+user_region = "NORTH_AMERICA"  # From authentication context
+
+filtered_df = (
+    orders_df.filter(F.col("region") == user_region)
+)
+
+# Alternative: dynamic row filtering
+def apply_row_level_security(df, user_attributes):
+    """Apply RLS based on user region and department"""
+
+    region_filter = F.col("region") == user_attributes["region"]
+    dept_filter = F.col("department").isin(user_attributes["departments"])
+
+    return df.filter(region_filter & dept_filter)
+```
+
+Delta Lake with Unity Catalog supports row-level policies:
+
+```sql
+-- Create RLS policy
+CREATE ROW FILTER sales.orders_rls ON glue_catalog.analytics.orders
+USING (region = current_user_region())
+
+-- Apply to column access
+ALTER TABLE glue_catalog.analytics.orders
+SET ROW FILTER sales.orders_rls
+```
+
+### Column-Level Security (CLS)
+
+Mask or redact sensitive columns from unauthorized users.
+
+```python
+# Approach 1: Redact sensitive columns
+def mask_pii(df, columns_to_mask, user_role):
+    """Mask sensitive data for non-admin users"""
+
+    if user_role == "admin":
+        return df  # Admins see full data
+
+    for col in columns_to_mask:
+        df = df.withColumn(
+            col,
+            F.when(F.lit(user_role) == "admin", F.col(col))
+             .otherwise(F.lit("REDACTED"))
+        )
+
+    return df
+
+# Approach 2: Hash sensitive values
+def hash_pii(df, columns_to_hash):
+    """Hash sensitive data for analysis without exposure"""
+
+    for col in columns_to_hash:
+        df = df.withColumn(f"{col}_hash", F.sha2(F.col(col), 256))
+
+    return df.drop(*columns_to_hash)
+
+# Usage
+sensitive_cols = ["ssn", "credit_card", "email"]
+secure_df = mask_pii(orders_df, sensitive_cols, user_role="analyst")
+```
+
+### Encryption
+
+#### In-Transit Encryption (TLS)
+
+```python
+# Spark to S3 with encryption
+spark.conf.set("spark.hadoop.fs.s3a.ssl.enabled", "true")
+spark.conf.set("spark.hadoop.fs.s3a.endpoint.ssl.enabled", "true")
+
+# Kafka with TLS
+df = (
+    spark.readStream
+    .format("kafka")
+    .option("kafka.security.protocol", "SSL")
+    .option("kafka.ssl.truststore.location", "/path/to/truststore")
+    .option("kafka.ssl.truststore.password", "password")
+    .load()
+)
+```
+
+#### At-Rest Encryption (S3 KMS)
+
+```python
+# S3 with server-side KMS encryption
+df.write \
+    .format("delta") \
+    .option("spark.hadoop.fs.s3a.server-side-encryption-algorithm", "aws:kms") \
+    .option("spark.hadoop.fs.s3a.server-side-encryption-kms-key-id", "arn:aws:kms:...") \
+    .save("s3://bucket/encrypted/data")
+```
+
+### PII Detection and Handling
+
+```python
+import re
+
+def detect_pii(df):
+    """Detect potential PII columns"""
+
+    pii_patterns = {
+        "ssn": r"\d{3}-\d{2}-\d{4}",
+        "email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+        "phone": r"\d{3}-\d{3}-\d{4}",
+        "credit_card": r"\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}"
+    }
+
+    findings = {}
+
+    for col_name in df.columns:
+        sample = df.select(col_name).limit(1000).collect()
+        for pii_type, pattern in pii_patterns.items():
+            matches = sum(1 for row in sample if re.search(pattern, str(row[col_name])))
+            if matches > 0:
+                findings.setdefault(col_name, []).append(pii_type)
+
+    return findings
+
+# Catalog PII columns
+pii_cols = detect_pii(df)
+print(f"Detected PII: {pii_cols}")
+
+# Apply masking/hashing
+for col, pii_types in pii_cols.items():
+    df = hash_pii(df, [col])
+```
+
+### Audit Logging
+
+```python
+import logging
+from datetime import datetime
+
+# Structured audit logs
+class AuditLogger:
+    def log_access(self, user_id, table, action, timestamp, status):
+        log_entry = {
+            "timestamp": timestamp,
+            "user_id": user_id,
+            "table": table,
+            "action": action,  # read, write, delete
+            "status": status,   # success, denied
+            "ip_address": "...",
+            "details": "..."
+        }
+        # Send to centralized logging (CloudWatch, ELK, etc.)
+        logger.info(f"AUDIT: {log_entry}")
+
+audit = AuditLogger()
+
+# Log query access
+audit.log_access(
+    user_id="user123",
+    table="glue_catalog.analytics.orders",
+    action="SELECT",
+    timestamp=datetime.utcnow(),
+    status="success"
+)
+
+# Log data access denials
+audit.log_access(
+    user_id="user456",
+    table="sensitive_data",
+    action="SELECT",
+    timestamp=datetime.utcnow(),
+    status="denied"  # User doesn't have permission
+)
+```
+
+### HIPAA/GDPR Compliance Patterns
+
+**GDPR Right to Deletion:**
+
+```python
+def delete_customer_data(customer_id):
+    """GDPR: Delete all data for a customer"""
+
+    # Find all tables with customer_id
+    tables_to_clean = [
+        "silver.orders",
+        "silver.customer_profile",
+        "gold.customer_360"
+    ]
+
+    for table in tables_to_clean:
+        df = spark.read.format("delta").load(f"s3://bucket/lake/{table}")
+
+        # Delete matching records
+        DeltaTable.forPath(spark, f"s3://bucket/lake/{table}").delete(
+            f"customer_id = '{customer_id}'"
+        )
+
+    # Log for audit trail
+    audit.log_access(
+        user_id="compliance_admin",
+        table="all",
+        action="DELETE",
+        timestamp=datetime.utcnow(),
+        status="success",
+        notes=f"GDPR deletion for {customer_id}"
+    )
+```
+
+**HIPAA Data Residency:**
+
+```python
+# Ensure data stays in specific region
+spark.conf.set("spark.hadoop.fs.s3.region", "us-east-1")  # HIPAA-compliant region
+
+# Encrypt at rest
+spark.conf.set("spark.hadoop.fs.s3a.server-side-encryption-algorithm", "aws:kms")
+
+# Log all access
+```
+
+## 42. Cost Optimization for Data Pipelines
+
+### Understanding Spark Costs
+
+Spark cost = compute hours × hourly rate + storage + data transfer
+
+```text
+Glue:  ~$0.44/DPU-hour
+EMR:   ~$0.22/EC2-hour + EMR overhead
+S3:    ~$0.023/GB stored
+
+Example:
+  10 DPU Glue job × 2 hours = 20 DPU-hours × $0.44 = $8.80
+  1 TB input from S3 + 100 GB output = $0.023/GB storage
+  Total: ~$10
+```
+
+### Right-Sizing Executors
+
+```python
+# Configuration for different workload sizes
+
+# Light workloads (< 1GB data)
+spark.conf.set("spark.executor.instances", "2")
+spark.conf.set("spark.executor.memory", "2g")
+spark.conf.set("spark.executor.cores", "1")
+
+# Medium workloads (1-100GB data)
+spark.conf.set("spark.executor.instances", "8")
+spark.conf.set("spark.executor.memory", "8g")
+spark.conf.set("spark.executor.cores", "2")
+
+# Large workloads (100GB+ data)
+spark.conf.set("spark.executor.instances", "32")
+spark.conf.set("spark.executor.memory", "16g")
+spark.conf.set("spark.executor.cores", "4")
+```
+
+For Glue, choose worker types:
+
+| Worker Type | Memory | Cores | Cost/Hour | Best For |
+|---|---|---|---|---|
+| G.1X | 4 GB | 1 | $0.44 | Small jobs, development |
+| G.2X | 16 GB | 2 | $0.44 | Most production jobs |
+| G.4X | 64 GB | 4 | $0.88 | Large data, complex joins |
+
+### Query Optimization Savings
+
+```python
+# BEFORE: Inefficient (full scan, large shuffle)
+slow_df = (
+    df.withColumn("revenue", F.col("amount") * F.col("quantity"))
+      .filter(F.col("order_date") == "2026-07-16")
+      .groupBy("customer_id")
+      .agg(F.sum("revenue"))
+)
+# Cost: High - scans entire table before filtering
+
+# AFTER: Optimized (filter early, column selection)
+fast_df = (
+    df.select("customer_id", "amount", "quantity", "order_date")
+      .filter(F.col("order_date") == "2026-07-16")
+      .withColumn("revenue", F.col("amount") * F.col("quantity"))
+      .groupBy("customer_id")
+      .agg(F.sum("revenue"))
+)
+# Cost: Low - filters and selects columns early, reduces shuffle
+```
+
+Estimated savings: **60-80%** on compute costs.
+
+### Partition Pruning
+
+```python
+# Query only needed partitions
+df = spark.read.parquet("s3://bucket/data/year=2026/month=07/")
+
+# Good: partition predicate pushed down
+filtered = df.filter(F.col("day") == 16)  # Reads only day=16 partition
+
+# Bad: filters after read
+filtered = df.filter(F.col("day") == 16)  # Reads all days, then filters
+```
+
+Savings: **50-80%** on I/O.
+
+### Caching Strategy
+
+```python
+# Cache only reused DataFrames
+temp_df = df.filter(...).select(...)
+
+# If used 3+ times, cache
+temp_df.cache()
+result1 = temp_df.groupBy(...).count()
+result2 = temp_df.filter(...).count()
+result3 = temp_df.join(...).count()
+temp_df.unpersist()
+
+# Specify storage level
+from pyspark import StorageLevel
+temp_df.persist(StorageLevel.MEMORY_ONLY)  # Fastest
+temp_df.persist(StorageLevel.MEMORY_AND_DISK)  # Fallback to disk
+temp_df.persist(StorageLevel.DISK_ONLY)  # Only if RAM constrained
+```
+
+### S3 Optimization
+
+```python
+# Compact small files before querying
+df.repartition(100).write.mode("overwrite").parquet("s3://bucket/data/")
+
+# Use S3 Intelligent-Tiering
+# S3 automatically moves old data to cheaper tiers
+
+# S3 Select: filter at storage layer
+# (Supported for Parquet/JSON in some contexts)
+```
+
+### Monitor Costs
+
+```python
+import logging
+
+def log_cost_metrics(job_name, executor_hours, gb_read, gb_written):
+    """Log job cost for analysis"""
+
+    glue_cost = executor_hours * 0.44
+    s3_cost = (gb_read + gb_written) * 0.000023  # $0.023/GB
+    total_cost = glue_cost + s3_cost
+
+    logger.info(f"""
+    Job: {job_name}
+    Executor Hours: {executor_hours}
+    Data Read: {gb_read} GB
+    Data Written: {gb_written} GB
+    ---
+    Glue Cost: ${glue_cost:.2f}
+    S3 Cost: ${s3_cost:.2f}
+    Total: ${total_cost:.2f}
+    Cost per GB processed: ${total_cost / (gb_read + gb_written):.4f}
+    """)
+
+# At end of job
+log_cost_metrics(
+    job_name="daily_orders_aggregation",
+    executor_hours=2.5,
+    gb_read=50,
+    gb_written=2
+)
+```
+
+**Interview Tip**: "I optimize Spark costs by filtering early, selecting only needed columns, right-sizing executors, caching only reused data, enabling partition pruning, and monitoring query explain plans. I also use Glue's auto-scaling and choose the right worker type for the workload."
+
+## 52. Lakehouse Implementation & Operations Guide
+
+### Part 1: Creating Your First Lakehouse
+
+#### Step 1: Set Up Spark with Lakehouse Support
+
+```python
+from pyspark.sql import SparkSession
+from delta import configure_spark_with_delta_pip
+
+# For Delta Lake
+builder = (
+    SparkSession.builder
+    .appName("lakehouse-setup")
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+)
+
+spark = configure_spark_with_delta_pip(builder).getOrCreate()
+
+# For Iceberg (alternative)
+spark = (
+    SparkSession.builder
+    .appName("iceberg-lakehouse")
+    .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtension")
+    .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog")
+    .config("spark.sql.catalog.glue_catalog.type", "glue")
+    .config("spark.sql.catalog.glue_catalog.warehouse", "s3://my-bucket/warehouse")
+    .getOrCreate()
+)
+```
+
+#### Step 2: Create Initial Bronze Table
+
+```python
+from pyspark.sql import functions as F
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, TimestampType
+
+# Define schema explicitly (CRITICAL for production)
+orders_schema = StructType([
+    StructField("order_id", StringType(), False),
+    StructField("customer_id", StringType(), False),
+    StructField("amount", IntegerType(), False),
+    StructField("order_date", StringType(), False),  # Will convert
+    StructField("status", StringType(), True),
+    StructField("raw_payload", StringType(), True),
+])
+
+# Read raw data
+raw_df = (
+    spark.read
+    .schema(orders_schema)
+    .json("s3://bucket/raw/orders/2026-07-16/")
+)
+
+# Add metadata columns
+bronze_df = (
+    raw_df
+    .withColumn("_ingest_ts", F.current_timestamp())
+    .withColumn("_ingest_date", F.to_date("_ingest_ts"))
+    .withColumn("_source_system", F.lit("order_api_v1"))
+    .withColumn("_file_name", F.input_file_name())
+)
+
+# Create Bronze table (first time) or append
+bronze_path = "s3://my-bucket/lake/bronze/orders"
+
+# Create managed table in Glue Catalog
+bronze_df.write \
+    .format("delta") \
+    .mode("append") \
+    .option("mergeSchema", False) \
+    .save(bronze_path)
+
+# Register in catalog
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS glue_catalog.bronze.orders
+    USING DELTA
+    LOCATION '{bronze_path}'
+    TBLPROPERTIES (
+        'description' = 'Raw order data from API',
+        'owner' = 'data_team',
+        '_ingest_date' = '{F.current_date()}'
+    )
+""")
+
+print("✅ Bronze table created successfully")
+```
+
+#### Step 3: Create Silver Table with Validation
+
+```python
+from pyspark.sql import Window
+
+# Read from Bronze
+bronze_orders = spark.read.format("delta").load(bronze_path)
+
+# Validation rules
+def validate_silver_data(df):
+    """Apply business rules before Silver"""
+
+    validated = (
+        df
+        # Remove nulls in critical fields
+        .filter(F.col("order_id").isNotNull())
+        .filter(F.col("customer_id").isNotNull())
+        .filter(F.col("amount").isNotNull())
+
+        # Type conversions
+        .withColumn("amount", F.col("amount").cast("decimal(10,2)"))
+        .withColumn("order_date", F.to_date("order_date", "yyyy-MM-dd"))
+
+        # Business rule validation
+        .filter(F.col("amount") > 0)  # No zero/negative orders
+        .filter(F.col("order_date") <= F.current_date())  # No future dates
+        .filter(F.col("status").isin("NEW", "SHIPPED", "CANCELLED", "REFUNDED"))
+    )
+
+    return validated
+
+# Deduplicate (keep latest version of each order)
+w = Window.partitionBy("order_id").orderBy(F.col("_ingest_ts").desc())
+
+silver_df = (
+    bronze_orders
+    .transform(validate_silver_data)
+    .withColumn("_row_num", F.row_number().over(w))
+    .filter(F.col("_row_num") == 1)
+    .drop("_row_num")
+    .withColumn("_processed_ts", F.current_timestamp())
+)
+
+# Create Silver table
+silver_path = "s3://my-bucket/lake/silver/orders"
+
+silver_df.write \
+    .format("delta") \
+    .mode("append") \
+    .partitionBy("order_date") \
+    .save(silver_path)
+
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS glue_catalog.silver.orders
+    USING DELTA
+    LOCATION '{silver_path}'
+    PARTITIONED BY (order_date)
+    TBLPROPERTIES (
+        'description' = 'Cleaned and validated orders',
+        'owner' = 'data_team',
+        'quality_level' = 'silver'
+    )
+""")
+
+print("✅ Silver table created with validation")
+```
+
+#### Step 4: Create Gold Table (Business-Ready)
+
+```python
+# Read from Silver
+silver_orders = spark.read.format("delta").load(silver_path)
+
+# Business aggregations
+gold_daily_orders = (
+    silver_orders
+    .groupBy("order_date")
+    .agg(
+        F.count("*").alias("total_orders"),
+        F.countDistinct("customer_id").alias("unique_customers"),
+        F.sum("amount").alias("total_revenue"),
+        F.avg("amount").alias("avg_order_value"),
+        F.min("amount").alias("min_order_value"),
+        F.max("amount").alias("max_order_value"),
+    )
+    .withColumn("_created_ts", F.current_timestamp())
+)
+
+# Create Gold table
+gold_path = "s3://my-bucket/lake/gold/daily_orders"
+
+gold_daily_orders.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .partitionBy("order_date") \
+    .save(gold_path)
+
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS glue_catalog.gold.daily_orders
+    USING DELTA
+    LOCATION '{gold_path}'
+    PARTITIONED BY (order_date)
+    TBLPROPERTIES (
+        'description' = 'Daily order metrics for dashboards',
+        'owner' = 'analytics_team',
+        'slo_freshness_hours' = '4',
+        'slo_accuracy' = '99.9'
+    )
+""")
+
+print("✅ Gold table created successfully")
+```
+
+---
+
+### Part 2: Migrating from Parquet to Lakehouse
+
+#### Strategy 1: Zero-Downtime Migration (Recommended)
+
+```python
+# Current state: Parquet files
+parquet_path = "s3://bucket/legacy/customers/"
+
+# Step 1: Read existing Parquet
+parquet_df = spark.read.parquet(parquet_path)
+
+# Step 2: Validate data quality
+row_count_before = parquet_df.count()
+print(f"Parquet rows: {row_count_before}")
+
+# Step 3: Write to Delta (new location initially)
+delta_temp_path = "s3://my-bucket/lake/temp/customers_migration/"
+
+parquet_df.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .save(delta_temp_path)
+
+# Step 4: Verify integrity
+delta_df = spark.read.format("delta").load(delta_temp_path)
+row_count_after = delta_df.count()
+
+assert row_count_before == row_count_after, "Row count mismatch!"
+print(f"✅ Validation passed: {row_count_after} rows")
+
+# Step 5: Move to production location
+delta_prod_path = "s3://my-bucket/lake/silver/customers/"
+
+# First migration: copy data
+delta_df.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .partitionBy("customer_date") \
+    .save(delta_prod_path)
+
+# Step 6: Update applications to read from new location
+# - Update Glue jobs
+# - Update dashboards
+# - Update data consumers
+
+# Step 7: After validation period, deprecate Parquet
+# - Add deprecation notice to old path
+# - Monitor for stragglers
+# - Keep Parquet for X days as fallback
+
+print("✅ Migration complete")
+```
+
+#### Strategy 2: Dual-Write Approach (For High-Availability)
+
+```python
+def write_to_both_formats(df, base_path):
+    """Write to both Parquet and Delta during migration"""
+
+    # Write to Parquet (old system)
+    df.write \
+        .mode("overwrite") \
+        .parquet(f"{base_path}/parquet/")
+
+    # Write to Delta (new system)
+    df.write \
+        .format("delta") \
+        .mode("append") \
+        .save(f"{base_path}/delta/")
+
+    print("✅ Written to both Parquet and Delta")
+
+# During migration window, write both
+df = spark.read.parquet("s3://bucket/input/")
+write_to_both_formats(df, "s3://my-bucket/lake/orders/")
+
+# Gradually shift readers from Parquet to Delta
+# Once all readers migrated, stop Parquet writes
+```
+
+#### Strategy 3: Backfill Historical Data
+
+```python
+from datetime import datetime, timedelta
+
+def backfill_delta_from_daily_parquets(start_date, end_date):
+    """Backfill Delta table from daily Parquet archives"""
+
+    current = start_date
+    delta_path = "s3://my-bucket/lake/silver/transactions/"
+
+    while current <= end_date:
+        date_str = current.strftime("%Y-%m-%d")
+        parquet_dir = f"s3://archive/daily_parquets/{date_str}/"
+
+        try:
+            # Read daily Parquet
+            daily_df = spark.read.parquet(parquet_dir)
+
+            # Validate
+            if daily_df.count() == 0:
+                print(f"⚠️ No data for {date_str}")
+            else:
+                # Write to Delta
+                daily_df.write \
+                    .format("delta") \
+                    .mode("append") \
+                    .partitionBy("transaction_date") \
+                    .save(delta_path)
+
+                print(f"✅ Backfilled {date_str}: {daily_df.count()} rows")
+
+        except Exception as e:
+            print(f"❌ Error for {date_str}: {e}")
+
+        current += timedelta(days=1)
+
+# Backfill last 2 years
+backfill_delta_from_daily_parquets(
+    start_date=datetime(2024, 1, 1),
+    end_date=datetime(2026, 1, 1)
+)
+```
+
+---
+
+### Part 3: Building Medallion + Lakehouse End-to-End
+
+#### Complete Pipeline Example
+
+```python
+from delta.tables import DeltaTable
+from pyspark.sql import Window
+
+class LakehousePipeline:
+    """Complete medallion + lakehouse pipeline"""
+
+    def __init__(self, spark, base_path="s3://my-bucket/lake"):
+        self.spark = spark
+        self.base_path = base_path
+
+    def ingest_to_bronze(self, source_path, table_name):
+        """Step 1: Ingest raw data to Bronze"""
+
+        print(f"🔵 Ingesting {table_name} to Bronze...")
+
+        df = self.spark.read.json(source_path)
+
+        bronze_df = (
+            df
+            .withColumn("_ingest_ts", F.current_timestamp())
+            .withColumn("_ingest_date", F.to_date("_ingest_ts"))
+            .withColumn("_source_file", F.input_file_name())
+        )
+
+        bronze_path = f"{self.base_path}/bronze/{table_name}"
+
+        bronze_df.write \
+            .format("delta") \
+            .mode("append") \
+            .partitionBy("_ingest_date") \
+            .save(bronze_path)
+
+        print(f"✅ Bronze {table_name}: {bronze_df.count()} rows")
+        return bronze_path
+
+    def transform_to_silver(self, bronze_path, table_name, business_key):
+        """Step 2: Clean and deduplicate to Silver"""
+
+        print(f"🟢 Transforming {table_name} to Silver...")
+
+        bronze_df = self.spark.read.format("delta").load(bronze_path)
+
+        # Validation
+        validated = (
+            bronze_df
+            .filter(F.col(business_key).isNotNull())
+            .filter(F.col("_ingest_ts").isNotNull())
+        )
+
+        # Deduplication: keep latest version
+        w = Window.partitionBy(business_key).orderBy(F.col("_ingest_ts").desc())
+
+        silver_df = (
+            validated
+            .withColumn("_rn", F.row_number().over(w))
+            .filter(F.col("_rn") == 1)
+            .drop("_rn")
+            .withColumn("_processed_ts", F.current_timestamp())
+        )
+
+        silver_path = f"{self.base_path}/silver/{table_name}"
+
+        # Use MERGE for upserts (key feature of lakehouse)
+        if self._table_exists(silver_path):
+            silver_table = DeltaTable.forPath(self.spark, silver_path)
+
+            silver_table.alias("silver") \
+                .merge(
+                    silver_df.alias("source"),
+                    f"silver.{business_key} = source.{business_key}"
+                ) \
+                .whenMatchedUpdateAll() \
+                .whenNotMatchedInsertAll() \
+                .execute()
+        else:
+            silver_df.write \
+                .format("delta") \
+                .mode("overwrite") \
+                .partitionBy("_ingest_date") \
+                .save(silver_path)
+
+        print(f"✅ Silver {table_name}: {silver_df.count()} rows")
+        return silver_path
+
+    def aggregate_to_gold(self, silver_path, table_name, agg_spec):
+        """Step 3: Create business-ready Gold tables"""
+
+        print(f"🟡 Aggregating {table_name} to Gold...")
+
+        silver_df = self.spark.read.format("delta").load(silver_path)
+
+        # Apply aggregations
+        gold_df = silver_df.groupBy(*agg_spec["group_by"]) \
+                           .agg(*agg_spec["agg_functions"])
+
+        gold_path = f"{self.base_path}/gold/{table_name}"
+
+        gold_df.write \
+            .format("delta") \
+            .mode("overwrite") \
+            .partitionBy("date") \
+            .save(gold_path)
+
+        print(f"✅ Gold {table_name}: {gold_df.count()} rows")
+        return gold_path
+
+    def _table_exists(self, path):
+        """Check if Delta table exists"""
+        try:
+            self.spark.read.format("delta").load(path).limit(1).collect()
+            return True
+        except:
+            return False
+
+# Usage
+pipeline = LakehousePipeline(spark)
+
+# Execute pipeline
+bronze = pipeline.ingest_to_bronze("s3://raw/orders/", "orders")
+silver = pipeline.transform_to_silver(bronze, "orders", "order_id")
+gold = pipeline.aggregate_to_gold(silver, "orders", {
+    "group_by": ["order_date"],
+    "agg_functions": [
+        F.count("*").alias("total_orders"),
+        F.sum("amount").alias("revenue")
+    ]
+})
+
+print("✅ Complete medallion + lakehouse pipeline executed")
+```
+
+---
+
+### Part 4: Lakehouse Maintenance Operations
+
+#### OPTIMIZE: Compact Small Files
+
+```python
+from delta.tables import DeltaTable
+
+def optimize_delta_table(table_path, partition_col=None):
+    """Compact small files using OPTIMIZE"""
+
+    table = DeltaTable.forPath(spark, table_path)
+
+    print(f"Optimizing {table_path}...")
+
+    # Get file count before
+    files_before = spark.read.format("delta").load(table_path).rdd.getNumPartitions()
+
+    # Run OPTIMIZE with Z-order clustering
+    if partition_col:
+        spark.sql(f"""
+            OPTIMIZE delta.`{table_path}`
+            ZORDER BY ({partition_col})
+        """)
+    else:
+        spark.sql(f"OPTIMIZE delta.`{table_path}`")
+
+    # Verify
+    files_after = spark.read.format("delta").load(table_path).rdd.getNumPartitions()
+
+    print(f"✅ Optimized: {files_before} → {files_after} files")
+
+# Schedule this weekly
+optimize_delta_table("s3://lake/silver/orders", "order_date")
+```
+
+#### VACUUM: Clean Old Files
+
+```python
+def vacuum_delta_table(table_path, retention_hours=168):  # 7 days default
+    """Delete old files to save storage"""
+
+    print(f"Vacuuming {table_path} (retention: {retention_hours}h)...")
+
+    # Safety check: retention >= 7 days for production
+    assert retention_hours >= 168, "Retention must be >= 7 days"
+
+    # Run VACUUM
+    spark.sql(f"""
+        VACUUM delta.`{table_path}`
+        RETAIN {retention_hours} HOURS
+    """)
+
+    print(f"✅ Vacuumed old files")
+
+# Run monthly after backups
+vacuum_delta_table("s3://lake/silver/orders", retention_hours=720)  # 30 days
+```
+
+#### Collect Statistics
+
+```python
+def analyze_delta_table(table_path):
+    """Collect statistics for query optimization"""
+
+    print(f"Analyzing {table_path}...")
+
+    spark.sql(f"""
+        ANALYZE TABLE delta.`{table_path}`
+        COMPUTE STATISTICS
+    """)
+
+    # View statistics
+    stats = spark.sql(f"""
+        SELECT
+            num_rows,
+            num_files,
+            size_in_bytes
+        FROM delta.`{table_path}`.delta_log
+        ORDER BY version DESC
+        LIMIT 1
+    """)
+
+    stats.show()
+
+# Run after major loads
+analyze_delta_table("s3://lake/silver/orders")
+```
+
+#### Monitor Table Health
+
+```python
+def monitor_lakehouse_health(base_path):
+    """Monitor medallion layer health"""
+
+    for layer in ["bronze", "silver", "gold"]:
+        layer_path = f"{base_path}/{layer}"
+
+        # Check if layer exists
+        try:
+            df = spark.read.format("delta").load(layer_path)
+
+            # Get metrics
+            row_count = df.count()
+            partition_count = df.rdd.getNumPartitions()
+
+            # Check for nulls in key columns
+            null_check = df.select([
+                F.count(F.when(F.col(c).isNull(), c)).alias(f"{c}_nulls")
+                for c in df.columns
+            ]).collect()[0]
+
+            print(f"""
+            {layer.upper()} Layer:
+              Rows: {row_count}
+              Partitions: {partition_count}
+              Avg rows/partition: {row_count // partition_count}
+              Null checks: {dict(null_check.asDict())}
+            """)
+
+        except Exception as e:
+            print(f"⚠️ {layer}: {e}")
+
+monitor_lakehouse_health("s3://my-bucket/lake")
+```
+
+---
+
+### Part 5: Lakehouse Troubleshooting
+
+#### Issue 1: Schema Mismatch
+
+```python
+# Problem: New data has different schema than table
+
+# Solution 1: Auto-merge schema
+df.write \
+    .format("delta") \
+    .mode("append") \
+    .option("mergeSchema", True) \
+    .save(table_path)
+
+# Solution 2: Explicit schema evolution
+spark.sql(f"""
+    ALTER TABLE delta.`{table_path}`
+    ADD COLUMN new_column STRING
+""")
+
+# Solution 3: Rename columns safely
+df_renamed = df.withColumnRenamed("old_name", "new_name")
+df_renamed.write \
+    .format("delta") \
+    .mode("append") \
+    .save(table_path)
+```
+
+#### Issue 2: Slow Queries After Updates
+
+```python
+# Problem: Query slowness after MERGE operations
+
+# Solution: OPTIMIZE after big merges
+(
+    DeltaTable.forPath(spark, table_path)
+    .alias("t")
+    .merge(updates.alias("u"), "t.id = u.id")
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .execute()
+)
+
+# Then optimize
+spark.sql(f"OPTIMIZE delta.`{table_path}`")
+```
+
+#### Issue 3: Out of Memory During Merge
+
+```python
+# Problem: MERGE fails with OOM on large tables
+
+# Solution: Batch the merge
+def batch_merge(target_path, updates_df, merge_key, batch_size=100000):
+    """Merge large dataset in batches"""
+
+    total_rows = updates_df.count()
+    num_batches = (total_rows // batch_size) + 1
+
+    for batch_num in range(num_batches):
+        offset = batch_num * batch_size
+
+        batch = updates_df.repartition(10).limit(batch_size).collect()
+        batch_df = spark.createDataFrame(batch, updates_df.schema)
+
+        target_table = DeltaTable.forPath(spark, target_path)
+
+        target_table.alias("target") \
+            .merge(batch_df.alias("source"), f"target.{merge_key} = source.{merge_key}") \
+            .whenMatchedUpdateAll() \
+            .whenNotMatchedInsertAll() \
+            .execute()
+
+        print(f"✅ Merged batch {batch_num + 1}/{num_batches}")
+
+batch_merge(silver_path, large_updates_df, "order_id", batch_size=50000)
+```
+
+#### Issue 4: Concurrent Write Conflicts
+
+```python
+# Problem: Two jobs writing to same table simultaneously
+
+# Lakehouse solution: Automatic retry on conflict
+try:
+    df.write \
+        .format("delta") \
+        .mode("append") \
+        .option("maxRetries", 3) \
+        .option("retryDelayMs", 1000) \
+        .save(table_path)
+except Exception as e:
+    print(f"❌ Conflict after retries: {e}")
+    # Log and alert
+```
+
+#### Issue 5: File Count Explosion
+
+```python
+# Problem: Too many small files slowing queries
+
+# Monitor
+def check_file_explosion(table_path):
+    """Alert if too many small files"""
+
+    spark.sql(f"""
+        SELECT
+            count(*) as num_files,
+            percentile(size_bytes, 0.5) as median_size,
+            percentile(size_bytes, 0.95) as p95_size
+        FROM table_info(delta.`{table_path}`)
+    """).show()
+
+check_file_explosion("s3://lake/silver/orders")
+
+# Solution: Coalesce before write
+df.coalesce(100).write \
+    .format("delta") \
+    .mode("overwrite") \
+    .save(table_path)
+
+# Or OPTIMIZE periodically
+spark.sql(f"OPTIMIZE delta.`{table_path}`")
+```
+
+---
+
+### Part 6: Lakehouse Format Decision Framework
+
+#### Decision Tree
+
+```python
+def choose_lakehouse_format():
+    """Decision framework for Delta vs Hudi vs Iceberg"""
+
+    return {
+        "question_1": "Is your primary engine Spark?",
+        "if_yes": {
+            "question_2": "Do you need CDC/streaming upserts?",
+            "if_yes_cdc": {
+                "decision": "Apache Hudi",
+                "why": "Specialized for CDC, record-level upserts",
+                "use_cases": ["Real-time CDC ingestion", "Streaming updates"],
+                "examples": ["Debezium → Kafka → Hudi", "Streaming dimensions"],
+            },
+            "if_no_cdc": {
+                "question_3": "Do multiple engines need to access data?",
+                "if_yes_multi": {
+                    "decision": "Apache Iceberg",
+                    "why": "Best multi-engine support",
+                    "use_cases": ["Trino queries", "Athena queries", "Flink processing"],
+                    "examples": ["Data sharing across organizations"],
+                },
+                "if_no_multi": {
+                    "decision": "Delta Lake",
+                    "why": "Spark-optimized, simplest MERGE",
+                    "use_cases": ["Databricks workloads", "Spark-centric platforms"],
+                    "examples": ["Most Glue/EMR deployments"],
+                }
+            }
+        },
+        "if_no_spark": {
+            "decision": "Apache Iceberg",
+            "why": "Better support for non-Spark engines",
+            "use_cases": ["Trino-first platforms", "Flink streaming"],
+        }
+    }
+
+# Example usage
+framework = choose_lakehouse_format()
+print(framework)
+```
+
+#### Format Comparison Matrix
+
+```python
+format_comparison = {
+    "metric": ["Transaction Log", "Update Mechanism", "Spark Support", "Multi-Engine", "Streaming", "Maturity"],
+    "Delta Lake": ["JSON in _delta_log", "MERGE rewrites files", "Excellent", "Limited", "Good", "Excellent"],
+    "Hudi": ["Parquet timeline", "Record-level CoW/MoR", "Good", "Growing", "Excellent", "Good"],
+    "Iceberg": ["Metadata in manifest", "Full table snapshots", "Good", "Excellent", "Growing", "Growing"],
+}
+
+# Create comparison table
+comparison_df = spark.createDataFrame([
+    (format_comparison["metric"][i],
+     format_comparison["Delta Lake"][i],
+     format_comparison["Hudi"][i],
+     format_comparison["Iceberg"][i])
+    for i in range(len(format_comparison["metric"]))
+], ["Metric", "Delta Lake", "Hudi", "Iceberg"])
+
+comparison_df.show(truncate=False)
+```
+
+#### When NOT to Use Lakehouse
+
+```python
+# Use plain Parquet when:
+
+# 1. Append-only, no updates
+df.write.parquet("s3://bucket/data/")
+
+# 2. Very cost-sensitive (lakehouse adds overhead)
+# → Plain Parquet: ~$23/TB/year
+# → Lakehouse: ~$25-30/TB/year
+
+# 3. Single writer, no concurrency needs
+# → Transaction overhead unnecessary
+
+# 4. Time-travel not required
+# → No need for version management
+
+# 5. External systems don't support format
+# → Some legacy tools only understand Parquet
+
+print("""
+Verdict: Most modern data platforms benefit from lakehouse.
+But cost-sensitive, append-only workloads can use plain Parquet.
+""")
+```
+
+---
+
+### Production Checklist: Before Going Live
+
+```python
+def pre_launch_lakehouse_checklist():
+    """Critical checks before production launch"""
+
+    checklist = {
+        "Architecture": [
+            "☐ Bronze/Silver/Gold strategy defined",
+            "☐ Partition columns chosen based on query patterns",
+            "☐ Format selected (Delta/Hudi/Iceberg)",
+            "☐ Retention policies defined",
+        ],
+        "Implementation": [
+            "☐ Schema validated (explicit, not inferred)",
+            "☐ Deduplication logic tested",
+            "☐ MERGE logic validated",
+            "☐ Backfill strategy documented",
+        ],
+        "Operations": [
+            "☐ OPTIMIZE schedule set (weekly/monthly)",
+            "☐ VACUUM schedule set (30-90 day retention)",
+            "☐ Monitoring dashboards created",
+            "☐ Alerting configured",
+        ],
+        "Security": [
+            "☐ S3 encryption configured (KMS)",
+            "☐ IAM roles created (least privilege)",
+            "☐ Lake Formation or Ranger configured",
+            "☐ PII columns identified",
+        ],
+        "Governance": [
+            "☐ Data catalog entries created",
+            "☐ SLOs/SLAs documented",
+            "☐ Owner/contact assigned",
+            "☐ Lineage documented",
+        ],
+        "Testing": [
+            "☐ Data quality tests pass",
+            "☐ Concurrent writes tested",
+            "☐ Failure recovery tested",
+            "☐ Performance benchmarked",
+        ],
+    }
+
+    for category, items in checklist.items():
+        print(f"\n{category}:")
+        for item in items:
+            print(f"  {item}")
+
+pre_launch_lakehouse_checklist()
+```
+
+---
+
+### Summary: Lakehouse Implementation Maturity Levels
+
+```
+Level 1: Single Delta Table
+  → One table with basic append writes
+  → No deduplication or MERGE
+  → Manual maintenance
+
+Level 2: Bronze + Silver
+  → Two-layer medallion
+  → Deduplication in Silver
+  → Automated nightly jobs
+
+Level 3: Full Medallion (Bronze + Silver + Gold)
+  → Three layers with clear responsibilities
+  → MERGE for upserts
+  → Scheduled OPTIMIZE/VACUUM
+
+Level 4: Multi-Table Lakehouse (Production)
+  → 10+ tables across bronze/silver/gold
+  → Data mesh with domain ownership
+  → Automated governance and SLO monitoring
+  → Real-time streaming + batch
+
+Level 5: Enterprise Lakehouse
+  → Petabyte-scale data
+  → Multi-region/multi-cloud
+  → Advanced features: time travel, governance
+  → Integration with ML platforms
+```
+
+**Production Practice**: Start at Level 2-3, grow to Level 4+ as your platform matures.
+
+## 43. Spark MLlib and Distributed Feature Engineering
+
+### Why MLlib for Big Data?
+
+Spark MLlib is the machine learning library built for distributed systems. Unlike scikit-learn (single-machine) or TensorFlow (specialized for deep learning), MLlib trains on massive datasets across clusters.
+
+**When to use MLlib:**
+- Training on 100GB+ datasets
+- Feature engineering pipelines that need to scale
+- Spark-native ML workflows
+- Batch model training
+- Feature transformation and validation
+
+### Distributed Feature Engineering
+
+Feature engineering is where most ML work happens in production data platforms.
+
+```python
+from pyspark.sql import functions as F
+from pyspark.ml import Pipeline
+from pyspark.ml.feature import (
+    StringIndexer, OneHotEncoder, StandardScaler, VectorAssembler
+)
+
+# Raw data
+df = spark.read.parquet("s3://bucket/bronze/user_events/")
+
+# Feature 1: Numeric scaling
+from pyspark.ml.feature import StandardScaler, VectorAssembler
+
+numeric_cols = ["age", "session_duration", "scroll_depth"]
+assembler = VectorAssembler(inputCols=numeric_cols, outputCol="features_numeric")
+scaler = StandardScaler(inputCol="features_numeric", outputCol="scaled_features")
+
+# Feature 2: Categorical encoding
+categorical_cols = ["device_type", "browser", "region"]
+indexers = [StringIndexer(inputCol=col, outputCol=f"{col}_indexed")
+            for col in categorical_cols]
+encoders = [OneHotEncoder(inputCol=f"{col}_indexed", outputCol=f"{col}_encoded")
+            for col in categorical_cols]
+
+# Feature 3: Time-based features
+features_df = (
+    df.withColumn("event_hour", F.hour("event_ts"))
+      .withColumn("event_day", F.dayofweek("event_ts"))
+      .withColumn("event_date_num", F.unix_timestamp("event_ts"))
+)
+
+# Combine all features
+feature_cols = ["scaled_features"] + [f"{col}_encoded" for col in categorical_cols] + ["event_hour", "event_day"]
+final_assembler = VectorAssembler(inputCols=feature_cols, outputCol="final_features")
+
+# Build pipeline
+pipeline = Pipeline(stages=indexers + encoders + [assembler, scaler, final_assembler])
+model = pipeline.fit(features_df)
+engineered_df = model.transform(features_df)
+```
+
+### Feature Store Integration
+
+A feature store (Feast, Tecton) manages features for production ML. Spark is often the compute engine that populates it.
+
+```python
+from pyspark.sql import functions as F
+
+# Compute features in Spark
+def compute_user_features(transactions_df):
+    """Compute user features from transaction history"""
+
+    return (
+        transactions_df
+        .groupBy("user_id")
+        .agg(
+            F.count("*").alias("total_transactions"),
+            F.sum("amount").alias("total_spend"),
+            F.avg("amount").alias("avg_transaction"),
+            F.max("amount").alias("max_transaction"),
+            F.stddev("amount").alias("stddev_transaction"),
+            F.min("transaction_date").alias("first_transaction_date"),
+            F.max("transaction_date").alias("last_transaction_date"),
+            F.datediff(F.max("transaction_date"), F.min("transaction_date")).alias("customer_lifetime_days")
+        )
+        .withColumn("days_since_last_purchase",
+                   F.datediff(F.current_date(), F.col("last_transaction_date")))
+    )
+
+user_features = compute_user_features(transactions_df)
+
+# Write to feature store (pseudo-code)
+# This would be Feast, Tecton, or custom store
+user_features.write.format("delta").mode("overwrite").save("s3://bucket/feature_store/user_features/")
+```
+
+### Training at Scale
+
+```python
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+
+# Prepare training data
+train_df = engineered_df.filter(F.col("training_flag") == 1)
+
+# Train model
+lr = LogisticRegression(
+    featuresCol="final_features",
+    labelCol="target",
+    maxIter=100,
+    regParam=0.01,
+    elasticNetParam=0.8  # L1/L2 mix
+)
+
+model = lr.fit(train_df)
+
+# Evaluate
+predictions = model.transform(test_df)
+evaluator = BinaryClassificationEvaluator(labelCol="target")
+auc = evaluator.evaluate(predictions)
+
+print(f"AUC: {auc}")
+```
+
+### Batch Scoring
+
+```python
+# Load trained model
+model = PipelineModel.load("s3://bucket/models/user_churn_model/v1")
+
+# Score new data
+new_data = spark.read.parquet("s3://bucket/bronze/user_events_today/")
+scores = model.transform(new_data)
+
+# Write predictions for serving
+(
+    scores
+    .select("user_id", "probability", "prediction")
+    .write.mode("overwrite")
+    .format("delta")
+    .save("s3://bucket/gold/user_churn_predictions/")
+)
+```
+
+**Production Practice**: Feature engineering typically takes 80% of ML project time. Invest in making it scalable, testable, and reproducible.
+
+## 44. Data Mesh Architecture for Big Data Platforms
+
+### What Is Data Mesh?
+
+Data mesh is an organizational and technical architecture for decentralized data ownership. Instead of a central data warehouse run by one team, each business domain owns its own data.
+
+```text
+Traditional (Centralized):
+  Applications → Central Data Team → Single Data Warehouse
+
+Data Mesh (Decentralized):
+  Payments Domain → Owns payment data
+    ↓
+  Payments Data Product (curated, documented)
+    ↓
+  Shared by other domains (discovery, contracts, governance)
+
+  Orders Domain → Owns order data
+    ↓
+  Orders Data Product
+    ↓
+  Shared via data marketplace
+```
+
+### Four Pillars of Data Mesh
+
+#### 1. Domain Ownership
+
+Each business domain owns its data end-to-end:
+
+```python
+# Payments Domain owns payment.py
+class PaymentsDomain:
+    """Payments domain - owns all payment data"""
+
+    owner = "Payments Team"
+    domain_id = "payments"
+    slack_channel = "#payments-data"
+
+    # Domain produces data products
+    data_products = [
+        "transactions",
+        "payment_methods",
+        "reconciliation"
+    ]
+
+    # Domain defines SLOs
+    slos = {
+        "transactions": {"freshness_hours": 1, "accuracy": 0.9999},
+        "payment_methods": {"freshness_hours": 1, "completeness": 0.99},
+    }
+```
+
+#### 2. Data as a Product
+
+Each domain treats its output data as a product for internal/external consumption.
+
+```python
+class TransactionDataProduct:
+    """Payments domain's transaction data product"""
+
+    # Product metadata
+    domain = "payments"
+    name = "transactions"
+    version = "1.0"
+    location = "s3://lake/payments/transactions"
+
+    # Schema contract (guaranteed by domain)
+    schema = StructType([
+        StructField("transaction_id", StringType(), False),
+        StructField("user_id", StringType(), False),
+        StructField("amount", DecimalType(10, 2), False),
+        StructField("currency", StringType(), False),
+        StructField("status", StringType(), False),
+        StructField("timestamp", TimestampType(), False),
+    ])
+
+    # SLO/SLA
+    freshness_slo = "data within 1 hour"
+    completeness_slo = "99.9% of transactions included"
+    accuracy_slo = "amount reconciles with ledger 99.99%"
+
+    # Discovery/documentation
+    description = "Real-time transaction records from payment system"
+    contact = "payments-data@company.com"
+
+    # Governance
+    pii_columns = ["user_id"]
+    retention_days = 7
+    sensitivity = "confidential"
+```
+
+#### 3. Self-Service Infrastructure
+
+Central platform provides tools for domains to manage their data:
+
+```text
+Self-Service Platform:
+  → Data ingestion (Kafka, APIs)
+  → Data transformation (Spark jobs)
+  → Data storage (S3 + Delta Lake)
+  → Data catalog (Glue Catalog, Atlas)
+  → Data quality monitoring
+  → Access control (IAM, Lake Formation)
+  → Observability (CloudWatch, DataDog)
+```
+
+#### 4. Governance & Interoperability
+
+Central governance ensures:
+- Data quality standards
+- Security and compliance
+- Discoverability
+- Schema evolution
+
+```python
+# Central governance layer
+class DataMeshGovernance:
+    """Central governance policies for all domains"""
+
+    def validate_data_product(self, product):
+        """Ensure all products meet minimum standards"""
+
+        checks = {
+            "has_schema": product.schema is not None,
+            "has_documentation": len(product.description) > 50,
+            "has_owner": product.owner is not None,
+            "has_slos": "freshness_slo" in product.__dict__,
+            "pii_classified": "pii_columns" in product.__dict__,
+            "retention_defined": product.retention_days is not None,
+        }
+
+        failed = [k for k, v in checks.items() if not v]
+        if failed:
+            raise ValueError(f"Data product missing: {failed}")
+
+        return True
+
+    def enforce_catalog_entry(self, domain, product_name):
+        """Register product in central catalog"""
+        # Creates Glue Table with metadata
+        # Registers in data lineage system
+        # Sets up monitoring and alerts
+        pass
+```
+
+### Implementing Data Mesh on AWS
+
+```text
+Payments Domain → Glue Job (ingestion) → S3 (Bronze)
+                    ↓
+                Glue Job (transform) → S3 (Silver/Delta)
+                    ↓
+                Glue Catalog (register as data product)
+                    ↓
+            [Available in data marketplace]
+                    ↓
+                Orders Domain (discovers) → Glue Query (joins with transactions)
+                    ↓
+                Orders Domain transforms → S3 (Gold) → Dashboard
+```
+
+### Data Product Contract Example
+
+```python
+# Define contract between producer and consumer
+PAYMENT_TRANSACTIONS_CONTRACT = {
+    "producer": "payments",
+    "product_name": "transactions",
+    "version": "1.0",
+    "location": "s3://lake/payments/transactions",
+
+    "schema": {
+        "transaction_id": ("string", False, "Unique transaction ID"),
+        "user_id": ("string", False, "Customer ID"),
+        "amount": ("decimal(10,2)", False, "Transaction amount"),
+        "currency": ("string", False, "ISO 4217 code (USD, EUR, etc)"),
+        "status": ("string", False, "Status enum: PENDING, COMPLETED, FAILED"),
+        "timestamp": ("timestamp", False, "UTC transaction time"),
+        "created_at": ("timestamp", False, "Record creation time"),
+    },
+
+    "partitioning": ["date(timestamp)"],
+    "slos": {
+        "freshness": {"max_latency_hours": 1},
+        "completeness": {"min_percentage": 99.9},
+        "accuracy": {"reconciliation_target": 99.99},
+    },
+
+    "consumers": ["orders", "analytics", "risk"],
+    "owner": "payments-data@company.com",
+    "support_link": "https://wiki/payments-data",
+}
+
+# Consumer validates against contract
+def consume_data_product(contract):
+    df = spark.read.format("delta").load(contract["location"])
+
+    # Validate schema
+    for col, (dtype, nullable, _) in contract["schema"].items():
+        assert col in df.columns, f"Missing column: {col}"
+
+    # Validate SLOs
+    row_count = df.count()
+    if row_count == 0:
+        raise ValueError("No data (SLO violation)")
+
+    return df
+```
+
+**Production Practice**: Start with 2-3 critical domains. Let the pattern grow organically as teams adopt it.
+
+## 45. Data APIs and Real-Time Serving
+
+### Why Data APIs?
+
+Data must be served to applications, dashboards, and other systems. APIs provide controlled access without exposing raw data.
+
+```text
+Data Lake (raw data)
+  → Transformation (Spark)
+  → Serving Layer (API)
+  → Applications (web, mobile, ML models)
+```
+
+### REST API Pattern
+
+```python
+from flask import Flask, request, jsonify
+from pyspark.sql import SparkSession
+
+app = Flask(__name__)
+spark = SparkSession.builder.appName("data-api").getOrCreate()
+
+@app.route("/api/v1/user/<user_id>/metrics", methods=["GET"])
+def get_user_metrics(user_id):
+    """Real-time user metrics API"""
+
+    # Query gold table
+    df = spark.read.format("delta").load("s3://lake/gold/user_metrics/")
+
+    metrics = (
+        df.filter(F.col("user_id") == user_id)
+          .select("user_id", "total_spend", "order_count", "customer_lifetime")
+          .limit(1)
+          .collect()
+    )
+
+    if not metrics:
+        return jsonify({"error": "User not found"}), 404
+
+    record = metrics[0]
+    return jsonify({
+        "user_id": record.user_id,
+        "total_spend": float(record.total_spend),
+        "order_count": int(record.order_count),
+        "customer_lifetime_days": int(record.customer_lifetime),
+    })
+
+@app.route("/api/v1/products/search", methods=["GET"])
+def search_products():
+    """Search products by keyword"""
+
+    query = request.args.get("q", "")
+    limit = int(request.args.get("limit", 10))
+
+    df = spark.read.format("delta").load("s3://lake/gold/products/")
+
+    results = (
+        df.filter(F.col("product_name").ilike(f"%{query}%"))
+          .select("product_id", "product_name", "category", "price")
+          .limit(limit)
+          .collect()
+    )
+
+    return jsonify([dict(row) for row in results])
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+```
+
+### Caching for Low-Latency Access
+
+```python
+import redis
+
+# Use Redis for frequently accessed data
+redis_client = redis.Redis(host="redis-server", port=6379)
+
+@app.route("/api/v1/catalog/categories", methods=["GET"])
+def get_categories():
+    """Cached categories endpoint"""
+
+    # Check cache first
+    cached = redis_client.get("categories")
+    if cached:
+        return jsonify(json.loads(cached))
+
+    # Query data lake
+    df = spark.read.format("delta").load("s3://lake/gold/categories/")
+    categories = df.select("category_id", "category_name").collect()
+
+    result = [dict(row) for row in categories]
+
+    # Cache for 1 hour
+    redis_client.setex("categories", 3600, json.dumps(result))
+
+    return jsonify(result)
+```
+
+### Batch Export for BI Tools
+
+```python
+# Export to Athena/Redshift for BI tools
+def export_to_bi_layer():
+    """Export gold tables to Athena for BI consumption"""
+
+    # Read gold layer
+    daily_sales = spark.read.format("delta").load("s3://lake/gold/daily_sales/")
+
+    # Optimize for BI queries (sorted, partitioned)
+    (
+        daily_sales
+        .repartition(10, "date")
+        .write.mode("overwrite")
+        .option("compression", "snappy")
+        .format("parquet")
+        .save("s3://bi-layer/daily_sales/")
+    )
+
+    # Register in Athena
+    spark.sql("""
+        CREATE EXTERNAL TABLE IF NOT EXISTS bi_db.daily_sales
+        STORED AS PARQUET
+        LOCATION 's3://bi-layer/daily_sales/'
+    """)
+```
+
+**Interview Tip**: "I serve data through layered approaches: real-time APIs for critical paths (Redis cached), batch exports for BI tools, and streaming updates for dashboards. I optimize based on SLAs: sub-second for APIs, hourly for batch dashboards."
+
+## 46. Advanced AWS Glue Patterns
+
+### Glue Studio Visual Jobs
+
+Glue Studio is the no-code/low-code visual interface for building ETL jobs.
+
+```text
+Glue Studio Workflow:
+  1. Drag data source (S3, Kafka, JDBC)
+  2. Apply transforms (join, filter, aggregate visually)
+  3. Map to target (S3, Redshift, Glue Catalog)
+  4. Generate and deploy PySpark code
+```
+
+Example transforms in Studio:
+- **Source**: S3 bucket with CSV files
+- **Select Fields**: Keep only needed columns
+- **Filter**: Remove invalid records
+- **Join**: Join with reference data
+- **Aggregate**: Group and summarize
+- **Target**: Write to S3 as Parquet
+
+### Glue 4.0+ Features
+
+Glue 4.0 brings significant improvements:
+
+```python
+# Glue 4.0 has Spark 3.3, Python 3.11, better performance
+
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from awsglue.dynamicframe import DynamicFrame
+from pyspark.sql import functions as F
+
+glueContext = GlueContext(spark)
+job = Job(glueContext)
+job.init(args["JOB_NAME"], args)
+
+# Glue 4.0: Better partition handling
+dyf = glueContext.create_dynamic_frame.from_options(
+    connection_type="s3",
+    connection_options={
+        "paths": ["s3://bucket/data/"],
+        "recurse": True,  # Handle nested partitions
+        "ignorePartitionColumns": False,
+    },
+    format="parquet"
+)
+
+# Glue 4.0: Improved error reporting
+df = dyf.toDF()
+error_info = dyf.errorsAsDynamicFrame()
+
+# Glue 4.0: Better AQE defaults
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
+
+job.commit()
+```
+
+### Custom Connectors
+
+```python
+# Create custom Glue connector for proprietary system
+
+class CustomDatabaseConnector:
+    """Custom connector for internal database"""
+
+    def __init__(self, host, port, username, password):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+
+    def read(self, table_name):
+        """Read table and return Spark DataFrame"""
+
+        connection_url = f"jdbc:database://{self.host}:{self.port}/db"
+
+        df = spark.read.format("jdbc").option("url", connection_url) \
+            .option("dbtable", table_name) \
+            .option("user", self.username) \
+            .option("password", self.password) \
+            .load()
+
+        return df
+
+# Use in Glue job
+connector = CustomDatabaseConnector("internal.db", 5432, "user", "pass")
+df = connector.read("customers")
+
+# Transform
+transformed = df.filter(F.col("active") == True)
+
+# Write to S3
+transformed.write.mode("overwrite").parquet("s3://bucket/customers/")
+```
+
+### Glue Catalog Federation
+
+Connect to external Hive/Iceberg catalogs:
+
+```python
+# Register external catalog
+spark.conf.set("spark.sql.catalog.external", "org.apache.iceberg.spark.SparkCatalog")
+spark.conf.set("spark.sql.catalog.external.type", "hive")
+spark.conf.set("spark.sql.catalog.external.uri", "thrift://hive-metastore:9083")
+
+# Query external tables
+result = spark.sql("SELECT * FROM external.database.table")
+```
+
+**Production Practice**: Use Glue Studio for simple jobs, code-based Glue for complex logic with version control.
+
+## 47. Graph Processing and Network Analysis
+
+### GraphFrames Basics
+
+GraphFrames extend Spark DataFrames for graph problems.
+
+```python
+from graphframes import GraphFrame
+from pyspark.sql import functions as F
+
+# Vertex DataFrame: users
+users = spark.createDataFrame([
+    (1, "Alice"),
+    (2, "Bob"),
+    (3, "Charlie"),
+    (4, "David"),
+], ["id", "name"])
+
+# Edge DataFrame: friendships (social graph)
+edges = spark.createDataFrame([
+    (1, 2),  # Alice → Bob
+    (1, 3),  # Alice → Charlie
+    (2, 3),  # Bob → Charlie
+    (3, 4),  # Charlie → David
+    (4, 2),  # David → Bob
+], ["src", "dst"])
+
+# Create graph
+g = GraphFrame(users, edges)
+
+# Graph queries
+# 1. Degree distribution
+g.degrees.show()  # In/out degree per vertex
+
+# 2. Find all paths of length 2
+paths = g.find("(a)-[e1]->(b); (b)-[e2]->(c)").show()
+
+# 3. Connected components (find communities)
+result = g.connectedComponents()
+result.show()
+
+# 4. PageRank (importance scores)
+ranks = g.pageRank(resetProbability=0.15, maxIter=10)
+ranks.vertices.select("id", "name", "pagerank").show()
+
+# 5. Shortest path
+from graphframes.lib import AggregateMessages as AM
+shortest_paths = g.shortestPaths(landmarks=[1, 4])
+shortest_paths.select("id", "distances").show()
+```
+
+### Real-World: Fraud Detection Graph
+
+```python
+# Build transaction graph for fraud detection
+customers = spark.read.parquet("s3://lake/customers/")
+transactions = spark.read.parquet("s3://lake/transactions/")
+
+# Vertices: customers
+vertices = customers.select("customer_id", "name").withColumnRenamed("customer_id", "id")
+
+# Edges: transactions (customer → customer transfers)
+edges = (
+    transactions
+    .select(
+        F.col("sender_id").alias("src"),
+        F.col("receiver_id").alias("dst"),
+        "amount",
+        "timestamp"
+    )
+    .filter(F.col("amount") > 1000)  # High-value transfers
+)
+
+# Create transaction graph
+tx_graph = GraphFrame(vertices, edges)
+
+# Find highly connected suspicious clusters
+suspicious_clusters = (
+    tx_graph.connectedComponents()
+    .groupBy("component")
+    .agg(F.count("*").alias("size"))
+    .filter(F.col("size") > 10)  # Clusters with 10+ members
+)
+
+# Identify potential fraud rings
+fraud_risk = suspicious_clusters.join(
+    vertices, vertices.id.isin(suspicious_clusters.component)
+)
+```
+
+### Network Analysis Use Cases
+
+| Problem | Solution |
+|---|---|
+| **Community detection** | Connected components, clustering |
+| **Influence ranking** | PageRank, betweenness centrality |
+| **Anomaly detection** | Unusual edge patterns, new connections |
+| **Path analysis** | Shortest path, all paths queries |
+| **Bottleneck detection** | Degree distribution, clustering coefficient |
+
+**Production Practice**: Graph problems at scale require careful partitioning strategy. Use edge partitioning for sparse graphs.
+
+## 48. Production Debugging and Deep Optimization
+
+### Event Log Analysis
+
+Spark saves detailed event logs. Parse them to diagnose issues:
+
+```python
+import json
+from pyspark.sql import functions as F
+
+# Read Spark event log
+event_log_path = "/path/to/spark-events/"
+
+events = (
+    spark.read.text(event_log_path)
+    .select(F.from_json(F.col("value"), "map<string,string>").alias("event"))
+    .select("event.*")
+)
+
+# Analyze task metrics
+task_metrics = (
+    events
+    .filter(F.col("Event") == "SparkListenerTaskEnd")
+    .select(
+        F.col("Stage ID"),
+        F.col("Task Type"),
+        F.col("Task Metrics.executorRunTime"),
+        F.col("Task Metrics.peakExecutionMemory"),
+        F.col("Task Metrics.diskBytesSpilled")
+    )
+)
+
+# Find slow tasks
+slow_tasks = (
+    task_metrics
+    .withColumn("duration_secs", F.col("executorRunTime") / 1000)
+    .filter(F.col("duration_secs") > 60)
+    .orderBy(F.desc("duration_secs"))
+)
+
+slow_tasks.show()
+```
+
+### Memory Spill Diagnosis
+
+```python
+# Detect memory pressure
+def diagnose_memory_spill(df, stage_name):
+    """Analyze memory usage and spill patterns"""
+
+    df.explain("formatted")  # Shows estimated stats
+
+    # Add metrics tracking
+    df_with_metrics = (
+        df.withColumn("execution_plan", F.col("execution_plan"))
+    )
+
+    # Monitor during execution
+    result = df.collect()
+
+    print(f"Rows processed: {df.count()}")
+    print(f"Partitions: {df.rdd.getNumPartitions()}")
+
+    # Check for spill indicators
+    # - Very slow execution
+    # - GC warnings in logs
+    # - Task failures with "shuffle fetch failure"
+
+    return result
+
+# Prevention
+def prevent_spill(df, operation_name):
+    """Optimize to avoid spill"""
+
+    # Strategy 1: Increase shuffle partitions
+    spark.conf.set("spark.sql.shuffle.partitions", "1000")
+
+    # Strategy 2: Reduce per-task memory
+    df_reduced = df.select(  # Select only needed columns
+        F.col("a"), F.col("b"), F.col("c")
+    )
+
+    # Strategy 3: Sample and scale down
+    sample = df.sample(0.1)  # Test with 10% first
+    sample.groupBy(...).count().show()
+
+    return df_reduced
+```
+
+### Executor Loss Debugging
+
+```python
+# Detect executor failures
+def check_executor_health():
+    """Monitor executor stability"""
+
+    # Read Spark event logs
+    events = spark.read.text("/path/to/events/").collect()
+
+    executor_fails = []
+    for event in events:
+        data = json.loads(event)
+        if data.get("Event") == "SparkListenerExecutorMetricsUpdate":
+            executor_fails.append({
+                "executor_id": data.get("Executor ID"),
+                "memory_used": data.get("Peak Executor Memory"),
+            })
+
+    # Diagnose common causes
+    causes = {
+        "OOM": "Peak memory exceeds allocated",
+        "Spot termination": "Frequent failures at same time",
+        "Network": "Shuffle fetch failures increasing",
+        "Disk": "I/O errors in task logs",
+    }
+
+    return causes
+```
+
+## 49. Common Big Data Architecture Patterns
+
+### Lambda Architecture (Batch + Speed Layer)
+
+```text
+Data Source
+  ↙         ↘
+Batch      Speed
+Layer      Layer
+  ↘         ↙
+  Serving Layer
+    ↓
+  Clients
+```
+
+```python
+# Batch layer: daily aggregations
+def batch_layer():
+    """Process historical data in batch"""
+    df = spark.read.parquet("s3://lake/transactions/")
+    daily_metrics = df.groupBy("date").agg(F.sum("amount"))
+    daily_metrics.write.mode("overwrite").parquet("s3://batch_results/")
+
+# Speed layer: real-time stream
+def speed_layer():
+    """Process real-time events"""
+    df = spark.readStream.kafka("...", topics="events")
+    hourly_metrics = (
+        df.groupBy(F.window("timestamp", "1 hour"))
+        .agg(F.sum("amount"))
+    )
+    hourly_metrics.writeStream.start()
+
+# Serving layer: merge results
+def serving_layer():
+    """Merge batch and real-time results"""
+    batch = spark.read.parquet("s3://batch_results/latest/")
+    speed = spark.read.delta("s3://speed_results/")
+    result = batch.union(speed).coalesce(1)
+    result.write.mode("overwrite").parquet("s3://serving/")
+```
+
+### Kappa Architecture (Stream Only)
+
+```text
+Data Source
+  ↓
+Event Stream (Kafka)
+  ↓
+Stream Processing (Spark Streaming)
+  ↓
+Materialized View (Delta Lake)
+  ↓
+Serving
+```
+
+All processing through streaming:
+
+```python
+def kappa_pipeline():
+    """Kappa: everything through stream"""
+
+    df = spark.readStream.kafka("events_topic")
+
+    # Deduplication via state
+    deduped = (
+        df.withWatermark("timestamp", "24 hours")
+        .groupBy("event_id")
+        .agg(F.first("payload"))
+    )
+
+    # Aggregation
+    metrics = (
+        deduped
+        .groupBy(F.window("timestamp", "1 hour"))
+        .agg(F.count("*").alias("events"))
+    )
+
+    # Materialized view
+    query = (
+        metrics.writeStream
+        .format("delta")
+        .option("checkpointLocation", "ckpt/")
+        .start()
+    )
+
+    return query
+```
+
+### Lakehouse with Medallion + Data Mesh
+
+```text
+Medallion Layers:
+  Bronze (raw)
+    ↓ (per domain)
+  Silver (cleaned)
+    ↓ (per domain)
+  Gold (business-ready)
+
+Data Mesh:
+  Payments Domain
+    - Bronze → Silver → Gold
+    - Produces: transactions, payment_methods
+
+  Orders Domain
+    - Bronze → Silver → Gold
+    - Produces: orders, order_items
+
+  Central Platform
+    - Catalog (Glue)
+    - Governance (Lake Formation)
+    - Observability (CloudWatch)
+```
+
+## 50. Handling Scale, Skew, and Performance Challenges
+
+### Extreme Scale (Petabyte Range)
+
+```python
+# At petabyte scale, every optimization matters
+
+# 1. Partition aggressively
+df.repartition(10000, "date", "region")  # 10K partitions for massive data
+
+# 2. Use statistics for planning
+spark.sql("ANALYZE TABLE big_table COMPUTE STATISTICS")
+
+# 3. Predicate pushdown is critical
+df_filtered = df.filter(F.col("date") == "2026-07-01")  # Filter early
+
+# 4. Compact files
+df_filtered.coalesce(1000).write.parquet("s3://bucket/data/")
+```
+
+### Handling Extreme Skew
+
+```python
+# Problem: One customer has 99% of transactions
+
+# Solution 1: Salting
+skewed_df = (
+    df.withColumn("salt", F.concat(
+        F.col("customer_id"),
+        F.lit("_"),
+        F.rand() * 100  # Spread across 100 buckets
+    ))
+    .groupBy("salt")
+    .agg(...)
+)
+
+# Solution 2: Heavy-hitter isolation
+heavy_hitters = df.groupBy("customer_id").count() \
+    .filter(F.col("count") > df.count() * 0.01)  # Top 1%
+
+heavy_data = df.filter(F.col("customer_id").isin(heavy_hitters))
+normal_data = df.filter(~F.col("customer_id").isin(heavy_hitters))
+
+# Process separately, union results
+results = (
+    heavy_data.groupBy("customer_id").agg(...).union(
+        normal_data.groupBy("customer_id").agg(...)
+    )
+)
+```
+
+### Managing Long Lineage
+
+```python
+# Problem: 100+ transformations create expensive lineage
+
+# Solution: Checkpoint at boundaries
+def checkpoint_intermediate():
+    """Break lineage at safe points"""
+
+    df = spark.read.parquet("s3://input/")
+
+    # Complex transformation 1 (50 steps)
+    df1 = expensive_transform_1(df)
+    df1.write.mode("overwrite").format("delta").save("s3://temp/stage1/")
+
+    # Read back (breaks lineage)
+    df1 = spark.read.format("delta").load("s3://temp/stage1/")
+
+    # Complex transformation 2 (50 steps)
+    df2 = expensive_transform_2(df1)
+    df2.write.mode("overwrite").format("delta").save("s3://output/")
+```
+
+## 51. Modern Big Data Stack Integration
+
+### Airflow Orchestration with Spark
+
+```python
+from airflow import DAG
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from airflow.providers.amazon.aws.operators.glue import AwsGlueJobOperator
+from datetime import datetime, timedelta
+
+default_args = {
+    "owner": "data_team",
+    "retries": 2,
+    "retry_delay": timedelta(minutes=5),
+}
+
+with DAG(
+    "data_pipeline",
+    default_args=default_args,
+    schedule_interval="0 2 * * *",  # Daily at 2 AM
+    start_date=datetime(2026, 1, 1),
+) as dag:
+
+    # Task 1: Ingest with Glue
+    ingest = AwsGlueJobOperator(
+        task_id="ingest_data",
+        job_name="data-ingestion-job",
+    )
+
+    # Task 2: Transform with Spark on EMR
+    transform = SparkSubmitOperator(
+        task_id="transform_data",
+        application="s3://bucket/jobs/transform.py",
+        conf={"spark.executor.instances": "10"},
+        total_executor_cores=40,
+    )
+
+    # Task 3: Validate quality
+    validate = AwsGlueJobOperator(
+        task_id="validate_quality",
+        job_name="data-quality-validation",
+    )
+
+    ingest >> transform >> validate
+```
+
+### Infrastructure as Code (CDK)
+
+```python
+from aws_cdk import (
+    aws_glue as glue,
+    aws_s3 as s3,
+    aws_iam as iam,
+    core,
+)
+
+class DataPipelineStack(core.Stack):
+    def __init__(self, scope: core.Construct, id: str, **kwargs):
+        super().__init__(scope, id, **kwargs)
+
+        # S3 bucket for data lake
+        data_bucket = s3.Bucket(self, "DataLake",
+            versioned=True,
+            encryption=s3.BucketEncryption.KMS,
+        )
+
+        # IAM role for Glue
+        glue_role = iam.Role(self, "GlueRole",
+            assumed_by=iam.ServicePrincipal("glue.amazonaws.com"),
+        )
+        data_bucket.grant_read_write(glue_role)
+
+        # Glue job
+        glue_job = glue.Job(self, "ETLJob",
+            executable=glue.JobExecutable.python_etl(
+                glue_version=glue.GlueVersion.V4_0,
+                python_version=glue.PythonVersion.THREE_11,
+                script=glue.Code.from_asset("jobs/etl.py"),
+            ),
+            role=glue_role,
+            worker_type=glue.WorkerType.G_2X,
+            number_of_workers=10,
+        )
+```
+
+### Data Catalog Management
+
+```python
+# Unified metadata management
+def register_data_product():
+    """Register new data product in catalog"""
+
+    # 1. Create table
+    spark.sql("""
+        CREATE TABLE IF NOT EXISTS glue_catalog.analytics.daily_revenue
+        USING DELTA
+        LOCATION 's3://lake/gold/daily_revenue/'
+        TBLPROPERTIES (
+            'classification' = 'business_metrics',
+            'owner' = 'finance_team',
+            'description' = 'Daily revenue aggregates',
+            'slo_freshness_hours' = '1',
+            'slo_accuracy' = '99.99'
+        )
+    """)
+
+    # 2. Set column-level metadata
+    spark.sql("""
+        ALTER TABLE glue_catalog.analytics.daily_revenue
+        SET TBLPROPERTIES (
+            'columns.revenue.description' = 'Total daily revenue in USD',
+            'columns.date.description' = 'Business date (UTC)',
+            'columns.region.pii_type' = 'none'
+        )
+    """)
+
+    # 3. Set access control
+    spark.sql("""
+        GRANT SELECT ON TABLE glue_catalog.analytics.daily_revenue
+        TO ROLE analysts_group
+    """)
+```
+
+**Interview Tip**: "Modern big data stacks combine multiple tools: Airflow for orchestration, Spark for transformation, Delta/Iceberg for storage, AWS Glue for managed service, and unified catalogs for governance. The key is orchestrating them cohesively."
+
+---
+
+## Further Learning Resources
+
+### If Interested in Topics Beyond This Guide:
+
+- **Deep Learning & AI**: See companion guide "ML Engineering at Scale"
+- **Vector Databases**: See "Vector Search and RAG Systems"
+- **dbt & Modern Stack**: See "Modern Data Stack Engineering"
+- **Graph Databases**: See "Knowledge Graphs and Neo4j"
+- **Streaming Orchestration**: Apache Airflow, Prefect, Dagster documentation
+- **Advanced Kubernetes**: Operator patterns, Spark on K8s
+- **Advanced Observability**: DataDog, New Relic, OpenTelemetry
+
+---
+
+## Final Thoughts
+
+This guide covers **90%+ of what you need to know** to be a successful big data engineer in 2026. Master the fundamentals, practice the patterns, and understand the trade-offs. The rest comes from experience building real systems.
