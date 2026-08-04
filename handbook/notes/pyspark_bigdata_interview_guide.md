@@ -40,19 +40,6 @@ This guide focuses on **big data engineering** at scale:
 ✅ **Cost Optimization** - Right-sizing, query optimization, resource management
 ✅ **Distributed Machine Learning** - Spark MLlib, feature engineering at scale
 
-### OUT OF SCOPE (Different Specializations)
-
-These are important but beyond this guide's focus:
-
-❌ **Deep Learning & AI** - PyTorch, TensorFlow, CUDA, neural networks
-❌ **Vector Databases & RAG** - Pinecone, Weaviate, retrieval-augmented generation
-❌ **LLM Fine-Tuning** - Language model training, prompt engineering
-❌ **dbt & SQL Transformations** - dbt is SQL-focused (not Spark-based)
-❌ **Reverse ETL & Sync** - Syncing data back to operational systems
-❌ **BI & Visualization Tools** - Tableau, Power BI, QuickSight (covered briefly)
-❌ **Graph Databases** - Neo4j, graph-specific storage (GraphFrames included)
-❌ **Specialized Topics** - Computer vision, NLP models, recommendation systems
-
 ### WHO SHOULD USE THIS GUIDE
 
 ✅ **Data Engineers** - Building and maintaining data pipelines
