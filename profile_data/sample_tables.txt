@@ -1,0 +1,5 @@
+# table_name,s3://bucket/prefix/
+# Replace these examples with your largest source tables.
+customers,s3://my-bucket/raw/customers/
+transactions,s3://my-bucket/raw/transactions/
+events,s3://my-bucket/raw/events/
