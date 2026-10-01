@@ -1,10 +1,13 @@
 # PySpark 101 Examples For SQL And Database Users
 
-This guide covers the PySpark operations used in most beginner and intermediate data engineering jobs. It is written for people who already know SQL, tables, joins, keys, filters, aggregates, and ETL concepts.
+This guide covers the PySpark operations used in most beginner and intermediate data engineering jobs. It is written for
+people who already know SQL, tables, joins, keys, filters, aggregates, and ETL concepts.
 
 ## 1. What You Will Learn
 
-This guide is organized as a study path for SQL/database users who want their first data engineering job. Start with the local PySpark sections first. After you are comfortable reading, transforming, joining, and writing files locally, move to LocalStack and AWS Glue concepts.
+This guide is organized as a study path for SQL/database users who want their first data engineering job. Start with the
+local PySpark sections first. After you are comfortable reading, transforming, joining, and writing files locally, move
+to LocalStack and AWS Glue concepts.
 
 Recommended study order:
 
@@ -16,7 +19,8 @@ Recommended study order:
 6. Practice LocalStack S3 as a local AWS simulator.
 7. Learn Glue Data Catalog for interview and real-world data lake work.
 
-By the end, you should be able to explain and build a small batch ETL pipeline: read raw files, clean and join data, write partitioned Parquet, validate output, and describe how the dataset would be cataloged for Athena or Glue.
+By the end, you should be able to explain and build a small batch ETL pipeline: read raw files, clean and join data,
+write partitioned Parquet, validate output, and describe how the dataset would be cataloged for Athena or Glue.
 
 ## 2. SQL To PySpark Mental Model
 
@@ -26,10 +30,10 @@ For SQL users, the easiest way to learn PySpark is to map familiar SQL operation
 - Transformations build a plan. Examples: `select`, `filter`, `join`, `groupBy`.
 - Actions run the plan. Examples: `show`, `count`, `write`, `collect`.
 - Spark is distributed, so output is usually a folder with many `part-*` files.
-- S3 is object storage, not a database. Updates usually mean rewriting files or partitions unless you use Iceberg, Delta, or Hudi.
+- S3 is object storage, not a database. Updates usually mean rewriting files or partitions unless you use Iceberg,
+  Delta, or Hudi.
 
 ### PySpark To SQL Cheat Sheet
-
 
 | SQL                       | PySpark                                                |
 |---------------------------|--------------------------------------------------------|
@@ -100,7 +104,8 @@ You can practice in two ways:
 - Create DataFrames directly in code.
 - Create small files under `data/input/` and read them like a real ETL job.
 
-For interview and job practice, file-based examples are more realistic because most data engineering work starts by reading files, tables, or streams.
+For interview and job practice, file-based examples are more realistic because most data engineering work starts by
+reading files, tables, or streams.
 
 Create sample files:
 
@@ -449,7 +454,6 @@ df = (
 )
 ```
 
-
 ### String Operations
 
 ```python
@@ -467,7 +471,6 @@ Split and concatenate:
 df = customers.withColumn("customer_key", F.concat_ws("-", "state", "customer_id"))
 ```
 
-
 ### Union Data
 
 Use `unionByName` for safer appends:
@@ -483,7 +486,6 @@ combined = df_old.unionByName(df_new, allowMissingColumns=True)
 ```
 
 This is similar to inserting rows into a table with column-name alignment.
-
 
 ### Pivot
 
@@ -502,7 +504,6 @@ SQL idea:
 ```sql
 sum(case when category = 'books' then amount else 0 end) as books
 ```
-
 
 ### Explode Arrays
 
@@ -523,15 +524,16 @@ Use this when JSON has arrays.
 
 SQL/database users usually think of CRUD like this:
 
-| Database CRUD | SQL example | Spark/file-lake equivalent |
-|---|---|---|
-| Create | `insert into table ...` | Write a new dataset or append files |
-| Read | `select * from table` | Read CSV, JSON, Parquet, or a catalog table |
-| Update | `update table set ... where ...` | Read old data, create corrected DataFrame, write replacement files |
-| Delete rows | `delete from table where ...` | Filter out rows and write replacement files |
-| Delete table/files | `drop table` or remove data | Delete metadata, S3 objects, or local output folders |
+| Database CRUD      | SQL example                      | Spark/file-lake equivalent                                         |
+|--------------------|----------------------------------|--------------------------------------------------------------------|
+| Create             | `insert into table ...`          | Write a new dataset or append files                                |
+| Read               | `select * from table`            | Read CSV, JSON, Parquet, or a catalog table                        |
+| Update             | `update table set ... where ...` | Read old data, create corrected DataFrame, write replacement files |
+| Delete rows        | `delete from table where ...`    | Filter out rows and write replacement files                        |
+| Delete table/files | `drop table` or remove data      | Delete metadata, S3 objects, or local output folders               |
 
-The important shift: plain CSV and Parquet files are not OLTP database tables. PySpark does not update one row inside an existing Parquet file. It usually rewrites a new dataset.
+The important shift: plain CSV and Parquet files are not OLTP database tables. PySpark does not update one row inside an
+existing Parquet file. It usually rewrites a new dataset.
 
 ## 17. Write Files
 
@@ -599,7 +601,9 @@ df.where("order_year = 2026 and category = 'books'").show()
 
 Plain CSV and Parquet files do not support database-style row-level `UPDATE` and `DELETE`.
 
-Very important: PySpark does not update the existing Parquet file in place. It reads the old Parquet dataset, creates a new DataFrame with the corrected data, and writes a new Parquet dataset. For small examples this may look like "updating a file", but Spark is really recreating the output files.
+Very important: PySpark does not update the existing Parquet file in place. It reads the old Parquet dataset, creates a
+new DataFrame with the corrected data, and writes a new Parquet dataset. For small examples this may look like "updating
+a file", but Spark is really recreating the output files.
 
 For plain Parquet, an "update" usually means:
 
@@ -660,7 +664,8 @@ Expected idea:
 order_id = 2 now has status = RETURNED
 ```
 
-After validation, you can treat `data/output/orders_partitioned_updated` as the new dataset. In production, teams often write to a temporary path, validate counts and quality checks, then promote the new path using orchestration.
+After validation, you can treat `data/output/orders_partitioned_updated` as the new dataset. In production, teams often
+write to a temporary path, validate counts and quality checks, then promote the new path using orchestration.
 
 ### Update A Parquet Dataset In LocalStack S3
 
@@ -842,10 +847,10 @@ Not every example in this guide uses LocalStack.
 
 There are two kinds of paths:
 
-| Path style | Where it writes | Example |
-|---|---|---|
-| `data/input/...` or `data/output/...` | Your local computer, inside the lab/project folder | `data/output/orders_parquet` |
-| `s3a://de-lab/...` | The LocalStack S3 bucket named `de-lab` | `s3a://de-lab/curated/orders_parquet` |
+| Path style                            | Where it writes                                    | Example                               |
+|---------------------------------------|----------------------------------------------------|---------------------------------------|
+| `data/input/...` or `data/output/...` | Your local computer, inside the lab/project folder | `data/output/orders_parquet`          |
+| `s3a://de-lab/...`                    | The LocalStack S3 bucket named `de-lab`            | `s3a://de-lab/curated/orders_parquet` |
 
 If your lab folder is `~/spark-glue-local-lab`, then this code:
 
@@ -874,10 +879,10 @@ _SUCCESS
 
 LocalStack is used only when the path starts with `s3a://` or when commands use `awslocal s3 ...`.
 
-
 ## 25. What LocalStack Is
 
-LocalStack is a local AWS simulator. For this lab, assume Docker is acting like a small local AWS account running on your laptop.
+LocalStack is a local AWS simulator. For this lab, assume Docker is acting like a small local AWS account running on
+your laptop.
 
 When you start LocalStack, Docker runs a container that exposes AWS-like services on:
 
@@ -1002,38 +1007,105 @@ Verify:
 awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
 ```
 
+At this point, you have only created data files in LocalStack S3. You have not created a Glue table yet.
+
+To practice Glue on LocalStack end to end, use the `Self-Contained LocalStack Glue Catalog Lab` section below. That lab creates:
+
+1. The actual Parquet files in LocalStack S3.
+2. The Glue database and external table metadata in LocalStack Glue Data Catalog.
+
 ## 27. AWS Glue Data Catalog
 
-The AWS Glue Data Catalog is a central metadata store for data lake tables. For SQL/database users, think of it as a shared metastore that tells tools where data is, what columns it has, how it is partitioned, and how to read it.
+The AWS Glue Data Catalog is a central metadata store for data lake tables. For SQL/database users, think of it as a
+shared metastore that tells tools where data is, what columns it has, how it is partitioned, and how to read it.
 
-It does not store the actual rows for a normal S3 Parquet or CSV table. The actual data files stay in S3. The Data Catalog stores metadata about those files.
+It does not store the actual rows for a normal S3 Parquet or CSV table. The actual data files stay in S3. The Data
+Catalog stores metadata about those files.
 
 SQL mental model:
 
-| Database concept | Glue Data Catalog equivalent |
-|---|---|
-| Database/schema | Glue database |
-| Table definition | Glue table |
-| Columns and data types | Glue table schema |
-| Table location | S3 path such as `s3://company-curated/orders/` |
-| Partition metadata | Known partition folders such as `order_year=2026/category=books/` |
-| `CREATE TABLE` metadata | Create a Glue table |
-| `DROP TABLE` metadata | Delete a Glue table definition |
+| Database concept        | Glue Data Catalog equivalent                                      |
+|-------------------------|-------------------------------------------------------------------|
+| Database/schema         | Glue database                                                     |
+| Table definition        | Glue table                                                        |
+| Columns and data types  | Glue table schema                                                 |
+| External table location | S3 path such as `s3://company-curated/orders/`                    |
+| Partition metadata      | Known partition folders such as `order_year=2026/category=books/` |
+| `CREATE EXTERNAL TABLE` | Create metadata that points to files outside the catalog          |
+| `DROP TABLE`            | Delete the table metadata, not necessarily the S3 files           |
+
+### What Is An External Table?
+
+An external table is a table definition whose data lives outside the metastore. In AWS data lakes, that usually means:
+
+```text
+Table metadata lives in Glue Data Catalog.
+Actual data files live in S3.
+```
 
 Example:
 
 ```text
+Glue database: curated
+Glue table: orders
+S3 location: s3://de-lab/curated/orders_parquet/
+File format: Parquet
+Columns: order_id, customer_id, order_date, status, amount
+Partitions: order_year, category
+```
+
+The table is called external because Glue does not own the actual data files like a traditional database owns table
+pages on disk. Glue only stores the definition. The Parquet files remain in S3.
+
+Important behavior:
+
+- Creating the external table does not copy data into Glue.
+- Querying the table reads files from S3.
+- Dropping the table usually removes metadata, not the underlying S3 files.
+- If S3 files are deleted, the table can still exist but queries may fail or return no data.
+- If table metadata is deleted, the S3 files can still exist but tools lose the convenient table name and schema.
+
+### How Data Is Ingested Before The Table Exists
+
+A common beginner data lake flow looks like this:
+
+```text
+1. Raw data lands in S3.
+   Example: s3://de-lab/raw/orders/orders.csv
+
+2. PySpark reads raw data.
+   Example: spark.read.csv("s3a://de-lab/raw/orders/orders.csv")
+
+3. PySpark cleans, casts, filters, joins, and validates the data.
+
+4. PySpark writes curated Parquet to S3.
+   Example: s3://de-lab/curated/orders_parquet/
+
+5. A Glue Data Catalog external table is created over that curated S3 location.
+
+6. Athena, Glue Spark, EMR, Redshift Spectrum, or other tools query the table by name.
+   Example: select * from curated.orders;
+```
+
+The table usually comes after the data location exists, because the table definition needs to point to a real S3
+location and use the correct schema and partition design.
+
+### Example S3 Layout And Glue Table Metadata
+
 Actual data files in S3:
 
+```text
 s3://de-lab/curated/orders_parquet/
   order_year=2026/
     category=books/
       part-00000-....snappy.parquet
     category=electronics/
       part-00001-....snappy.parquet
+```
 
 Glue Data Catalog metadata:
 
+```text
 database: curated
 table: orders
 location: s3://de-lab/curated/orders_parquet/
@@ -1050,56 +1122,12 @@ After this metadata exists, tools can query the same dataset consistently:
 - Redshift Spectrum can query cataloged S3 tables.
 - Lake Formation can apply permissions on catalog databases and tables.
 
-### Why The Data Catalog Matters
+### How The User Creates The Table
 
-Without a catalog, every job needs to know physical paths and schemas:
+For beginners, the cleanest mental model is manual or scripted table creation: you define the database, table name,
+schema, partition columns, file format, and S3 location.
 
-```python
-orders = spark.read.parquet("s3://de-lab/curated/orders_parquet/")
-```
-
-With a catalog, jobs and query tools can refer to a logical table:
-
-```sql
-select *
-from curated.orders
-where order_year = 2026
-  and category = 'books';
-```
-
-That is easier for teams because the physical S3 layout can be managed centrally. Analysts, engineers, and BI tools do not all need to memorize raw S3 paths.
-
-### What A Glue Table Stores
-
-A Glue table commonly stores:
-
-- Table name.
-- Database name.
-- S3 location.
-- Column names and data types.
-- Partition keys.
-- File format such as Parquet, CSV, JSON, ORC, Iceberg, Hudi, or Delta depending on the setup.
-- SerDe/input/output format details used by query engines.
-- Table properties such as classification, compression, or table format settings.
-
-It does not usually store:
-
-- Every row of your data.
-- A copy of every Parquet file.
-- Database-style indexes like an OLTP system.
-- Transaction history for plain Parquet or CSV.
-
-Important: deleting a Glue table normally deletes the table metadata, not the S3 data files. The files in S3 remain unless you delete them separately.
-
-### How Tables Get Into The Data Catalog
-
-There are three common ways.
-
-1. Create table metadata manually.
-
-Use this when you already know the schema, file format, S3 path, and partition columns. This is common in production because it is controlled and repeatable.
-
-Example idea:
+Example SQL-style table definition:
 
 ```sql
 create external table curated.orders (
@@ -1114,33 +1142,279 @@ stored as parquet
 location 's3://de-lab/curated/orders_parquet/';
 ```
 
-2. Use a crawler to discover metadata.
+What this means:
 
-A crawler scans a data location, infers schema and partitions, and writes table metadata into the Data Catalog. This is useful for learning, exploration, and early projects.
+```text
+Create a table name called curated.orders.
+The rows are not stored inside Glue.
+Read Parquet files from s3://de-lab/curated/orders_parquet/.
+Treat order_year and category as partition columns.
+Expose the columns order_id, customer_id, order_date, status, and amount to SQL tools.
+```
 
-Use crawlers carefully in production. If source files are messy or inconsistent, the crawler may infer a schema you did not expect.
+In real AWS, users commonly create this metadata using one of these controlled approaches:
 
-3. Create or update catalog tables from ETL code.
+- Athena SQL DDL, such as `CREATE EXTERNAL TABLE`.
+- Glue Data Catalog APIs, such as `create_table`.
+- Infrastructure-as-code, such as Terraform, CloudFormation, or CDK.
+- A deployment script owned by the data engineering team.
 
-Some pipelines write curated data and then update the Data Catalog table or partitions as part of the job. This is common when the pipeline owns both the data and the metadata.
+For a first data engineering job, it is enough to understand the SQL DDL version first. It is the clearest bridge from
+database knowledge to data lake metadata.
 
-### When To Use The Data Catalog
+### Self-Contained LocalStack Glue Catalog Lab
 
-Use the Glue Data Catalog when:
+This mini-lab creates both pieces needed for a Glue external table:
 
-- Data is stored in S3 and should be queried by Athena, Spark, EMR, Redshift Spectrum, or Lake Formation.
-- Multiple teams need one shared definition of the same dataset.
-- You want SQL users to query S3 files as tables.
-- You have partitioned data and want query engines to understand the partition columns.
-- You want a central place to document datasets, schemas, and table locations.
-- You want access control through Lake Formation or IAM-integrated AWS analytics tools.
+1. Actual Parquet data in LocalStack S3.
+2. Glue Catalog metadata that points to that S3 location.
 
-You may not need it when:
+Run these commands from your lab folder:
 
-- You are doing a tiny one-off local PySpark test.
-- Your application needs OLTP-style row reads/writes; use a database instead.
-- Your data is not meant to be discovered or queried by other AWS analytics tools.
-- You are reading a single file path directly in a simple script.
+```bash
+cd ~/spark-glue-local-lab
+source .venv/bin/activate
+```
+
+Start LocalStack:
+
+```bash
+localstack start -d
+localstack status services
+```
+
+Set local AWS variables for this terminal:
+
+```bash
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ENDPOINT_URL=http://localhost:4566
+```
+
+Create the S3 bucket:
+
+```bash
+awslocal s3 mb s3://de-lab
+```
+
+Create local sample input if you do not already have it:
+
+```bash
+mkdir -p data/input jobs
+
+cat > data/input/orders.csv <<'EOF'
+order_id,customer_id,order_date,status,category,amount
+1,C001,2026-01-01,COMPLETE,books,35.50
+2,C002,2026-01-01,COMPLETE,electronics,299.99
+3,C001,2026-01-02,CANCELLED,books,15.00
+4,C003,2026-01-02,COMPLETE,grocery,42.25
+5,C002,2026-01-03,COMPLETE,electronics,99.99
+6,C004,2026-01-03,RETURNED,grocery,18.75
+EOF
+```
+
+Upload raw CSV to LocalStack S3:
+
+```bash
+awslocal s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
+```
+
+Create a Spark job that reads raw CSV from LocalStack S3 and writes curated Parquet back to LocalStack S3:
+
+```bash
+cat > jobs/write_orders_parquet_to_localstack.py <<'EOF'
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+
+
+def main() -> None:
+    spark = (
+        SparkSession.builder
+        .appName("write-orders-parquet-to-localstack")
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:4566")
+        .config("spark.hadoop.fs.s3a.access.key", "test")
+        .config("spark.hadoop.fs.s3a.secret.key", "test")
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+        .getOrCreate()
+    )
+
+    orders = (
+        spark.read
+        .option("header", True)
+        .option("inferSchema", True)
+        .csv("s3a://de-lab/raw/orders/orders.csv")
+    )
+
+    curated = (
+        orders
+        .withColumn("order_date", F.to_date("order_date"))
+        .withColumn("amount", F.col("amount").cast("double"))
+        .withColumn("order_year", F.year("order_date"))
+    )
+
+    curated.write.mode("overwrite").partitionBy("order_year", "category").parquet(
+        "s3a://de-lab/curated/orders_parquet"
+    )
+
+    spark.read.parquet("s3a://de-lab/curated/orders_parquet").show(truncate=False)
+    spark.stop()
+
+
+if __name__ == "__main__":
+    main()
+EOF
+```
+
+Run the Spark job:
+
+```bash
+spark-submit \
+  --master "local[2]" \
+  --packages "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262" \
+  jobs/write_orders_parquet_to_localstack.py
+```
+
+Verify the Parquet files exist in LocalStack S3:
+
+```bash
+awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
+```
+
+Now create Glue Catalog metadata in LocalStack. First create the Glue database:
+
+```bash
+awslocal glue create-database \
+  --database-input '{"Name":"curated"}'
+```
+
+Then create a table definition file:
+
+```bash
+cat > /tmp/orders_glue_table.json <<'EOF'
+{
+  "Name": "orders",
+  "TableType": "EXTERNAL_TABLE",
+  "Parameters": {
+    "classification": "parquet",
+    "EXTERNAL": "TRUE"
+  },
+  "PartitionKeys": [
+    {"Name": "order_year", "Type": "int"},
+    {"Name": "category", "Type": "string"}
+  ],
+  "StorageDescriptor": {
+    "Location": "s3://de-lab/curated/orders_parquet/",
+    "InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+    "OutputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
+    "SerdeInfo": {
+      "SerializationLibrary": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+    },
+    "Columns": [
+      {"Name": "order_id", "Type": "int"},
+      {"Name": "customer_id", "Type": "string"},
+      {"Name": "order_date", "Type": "date"},
+      {"Name": "status", "Type": "string"},
+      {"Name": "amount", "Type": "double"}
+    ]
+  }
+}
+EOF
+```
+
+Create the table:
+
+```bash
+awslocal glue create-table \
+  --database-name curated \
+  --table-input file:///tmp/orders_glue_table.json
+```
+
+Verify the table metadata:
+
+```bash
+awslocal glue get-table \
+  --database-name curated \
+  --name orders
+```
+
+Important: `awslocal glue create-table` creates Glue Catalog metadata only. It does not create Parquet files. The files are created by the Spark job and live in LocalStack S3 at:
+
+```text
+s3://de-lab/curated/orders_parquet/
+```
+
+The relationship is:
+
+```text
+LocalStack S3:
+  s3://de-lab/curated/orders_parquet/
+  actual Parquet data files
+
+LocalStack Glue Data Catalog:
+  database: curated
+  table: orders
+  metadata pointing to the S3 location above
+```
+
+### When To Create The Table
+
+Create the Glue table when:
+
+- The curated S3 location is known.
+- The file format is known, such as Parquet or CSV.
+- The schema is stable enough to share with users.
+- The partition columns are decided.
+- You want Athena, Glue Spark, EMR, Redshift Spectrum, or Lake Formation to use the dataset by table name.
+
+Do not rush to create a catalog table for temporary experiment output. For quick local or development tests, reading
+directly from a path is fine:
+
+```python
+orders = spark.read.parquet("s3a://de-lab/curated/orders_parquet/")
+```
+
+Create a catalog table when the dataset becomes a shared, named, reusable data product.
+
+### Can More Than One Table Point To The Same Location?
+
+Technically, yes. You can create more than one Glue table pointing to the same S3 location.
+
+Example:
+
+```text
+curated.orders
+  location: s3://de-lab/curated/orders_parquet/
+
+analytics.orders_for_bi
+  location: s3://de-lab/curated/orders_parquet/
+```
+
+But use this carefully. Multiple tables over the same location can confuse users if the schemas, partition definitions,
+or permissions differ.
+
+Good reasons to create more than one table for the same location:
+
+- You are exposing the same dataset through different databases for permission boundaries.
+- You are testing a new schema definition before replacing the official table.
+- You need a temporary table name for migration or validation.
+
+Bad reasons:
+
+- Different teams independently create duplicate table names without coordination.
+- One table says the data is CSV and another says it is Parquet.
+- One table defines partitions and another does not.
+- One table has old columns and another has new columns over the same files.
+
+Beginner rule:
+
+```text
+Prefer one official Glue table per curated dataset location.
+Create extra tables for the same location only when there is a clear governance, testing, or migration reason.
+```
 
 ### Partitions In The Data Catalog
 
@@ -1170,14 +1444,32 @@ where order_year = 2026
   and category = 'books';
 ```
 
-the query engine can skip unrelated folders. This is called partition pruning. It reduces data scanned and usually improves performance and cost.
+the query engine can skip unrelated folders. This is called partition pruning. It reduces data scanned and usually
+improves performance and cost.
 
-New partition folders must be known to the catalog. You can add them by:
+New partition folders must be known to the catalog. Common controlled ways to add them are:
 
-- Running a crawler.
-- Running `MSCK REPAIR TABLE` in Athena for Hive-style partitions.
-- Adding partitions through Glue APIs or ETL code.
-- Using a table format such as Iceberg that manages metadata differently.
+- Add partitions through Glue APIs or ETL code.
+- Run `MSCK REPAIR TABLE` in Athena for Hive-style partition folders.
+- Use a table format such as Iceberg that manages table metadata differently.
+
+### When To Use Glue Data Catalog
+
+Use Glue Data Catalog when:
+
+- Data is stored in S3 and should be queried by Athena, Spark, EMR, Redshift Spectrum, or Lake Formation.
+- Multiple teams need one shared table definition for the same dataset.
+- You want SQL users to query S3 files as tables.
+- You have partitioned data and want query engines to understand the partition columns.
+- You want a central place to document dataset schema, file format, and S3 location.
+- You want access control through Lake Formation or IAM-integrated AWS analytics tools.
+
+You may not need it when:
+
+- You are doing a tiny one-off local PySpark test.
+- Your application needs OLTP-style row reads/writes; use a database instead.
+- Your data is not meant to be discovered or queried by other AWS analytics tools.
+- You are reading a single file path directly in a simple script.
 
 ### Data Catalog vs Actual Data
 
@@ -1202,16 +1494,12 @@ you have not copied the data into Glue. You only told AWS:
 "There is a table called curated.orders, and its files live at this S3 path."
 ```
 
-If the S3 files are deleted, the catalog table may still exist, but queries will fail or return no data.
-
-If the catalog table is deleted, the S3 files may still exist, but tools lose the convenient table definition.
-
 ### Interview Explanation
 
 Use this answer in interviews:
 
 ```text
-AWS Glue Data Catalog is a central metadata repository for data lake tables. It stores database names, table names, schemas, partitions, file formats, and S3 locations. It does not store the actual rows for normal S3-backed tables. Services like Athena, Glue Spark, EMR, Redshift Spectrum, and Lake Formation use it to discover and query the same datasets consistently.
+AWS Glue Data Catalog is a central metadata repository for data lake tables. For S3-backed external tables, it stores the database name, table name, schema, partition keys, file format, and S3 location. The actual rows remain in S3. Data is usually ingested into S3 first, then a Glue external table is created so Athena, Glue Spark, EMR, Redshift Spectrum, and Lake Formation can discover and query the same dataset consistently.
 ```
 
 ## 28. Can Glue Do Create, Read, Update, Delete?
@@ -1301,7 +1589,7 @@ Practice until you can do these without copying:
 - Explain why S3 files are not OLTP tables.
 - Simulate update/delete by rewriting data.
 - Use LocalStack S3 for local testing.
-- Explain Glue Jobs, Crawlers, Data Catalog, and Job Bookmarks.
+- Explain Glue Data Catalog, external tables, S3 locations, and partition metadata.
 
 End every local Spark script with:
 
