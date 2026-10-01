@@ -1,121 +1,153 @@
-# Mac Local Spark Submit Lab
+# Mac Local Spark, AWS Glue, and LocalStack Setup
 
-Step-by-step setup for running PySpark and `spark-submit` on macOS from this project:
+This guide helps SQL/database users run PySpark locally, practice AWS Glue-style ETL, and simulate S3 reads/writes with LocalStack.
 
-```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
-```
+Goal:
 
-This guide is written for interview preparation and local hands-on practice with CSV, JSON, and Parquet reads/writes.
+- Run `pyspark` and `spark-submit` on macOS.
+- Use Spark DataFrames with SQL-like operations.
+- Practice S3-style file work locally with LocalStack.
+- Understand where AWS Glue fits in real data engineering jobs.
 
-## Recommended Version Choice
+How to use this guide:
 
-For this repo and AWS Glue-style practice, use:
+1. Complete sections 1-10 first. That gives you Java, Python, PySpark, sample input files, and a working local Spark job.
+2. Then study `pyspark-101-examples.md` from this documentation folder while running its commands from `~/spark-glue-local-lab`.
+3. Complete the LocalStack sections only when you reach the LocalStack S3 examples in `pyspark-101-examples.md`.
 
-| Tool | Recommended local version | Why |
+LocalStack is optional for the first PySpark lessons. You can learn reads, filters, joins, aggregations, writes, partitions, and Parquet update-by-rewrite using only local files.
+
+## 1. Recommended Versions
+
+For Glue-oriented learning, use versions that stay close to AWS Glue 5.x.
+
+| Tool | Recommended | Why |
 |---|---:|---|
-| Java | 17 | Matches modern Spark and Glue 5.x local behavior |
-| Python | 3.11 | Good match for Glue 5.x and modern PySpark |
-| Spark / PySpark | 3.5.x | Closest practical match for AWS Glue 5.x labs |
+| Java | 17 | Good Spark 3.5.x choice |
+| Python | 3.11 | Matches Glue 5.x Python direction |
+| PySpark | 3.5.x | Closest practical local match for Glue 5.x |
+| Docker Desktop | Current stable | Required only for optional LocalStack S3 practice |
+| LocalStack | Current stable | Simulates AWS services locally |
 
-Apache Spark also has newer 4.x releases. As of September 2026, Apache Spark documentation lists Spark 4.2.0 as a stable release, running on Java 17/21/25 and Python 3.10+. AWS Glue 5.x, however, is Spark 3.5.x based, so Spark 3.5.x is the safer interview/practice default for Glue and EMR-adjacent examples.
+AWS Glue version 5.0 supports Spark 3.5.4 and Python 3.11. AWS announced Glue 5.1 with Spark 3.5.6 and Python 3.11. For local learning, either `pyspark==3.5.4` or `pyspark==3.5.6` is a good choice.
 
-**Python 3.11 vs 3.12 note:** use Python 3.11 for this lab. Python 3.12 is fine for many Python projects, but Python 3.11 is the better choice for Spark 3.5.x and AWS Glue 5.x alignment. This reduces version mismatch issues when you later compare local `spark-submit` behavior with Glue or EMR jobs.
+References:
 
-Useful references:
+- AWS Glue release notes: https://docs.aws.amazon.com/glue/latest/dg/release-notes.html
+- AWS Glue version support: https://docs.aws.amazon.com/glue/latest/dg/glue-version-support-policy.html
+- PySpark installation: https://spark.apache.org/docs/3.5.6/api/python/getting_started/install.html
+- LocalStack S3 docs: https://docs.localstack.cloud/aws/services/s3/
+- LocalStack Glue docs: https://docs.localstack.cloud/aws/services/glue/
 
-- Apache Spark downloads: https://spark.apache.org/downloads
-- Apache Spark 4.2.0 docs: https://spark.apache.org/docs/4.2.0/
-- AWS Glue versions: https://docs.aws.amazon.com/glue/latest/dg/release-notes.html
+## 2. Install Homebrew
 
-## 1. Install Homebrew
-
-Skip this if `brew --version` already works.
+Skip this if `brew --version` works.
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-Apple Silicon Macs usually need this in `~/.zshrc`:
+Apple Silicon:
 
 ```bash
-eval "$(/opt/homebrew/bin/brew shellenv)"
-```
-
-Intel Macs usually use:
-
-```bash
-eval "$(/usr/local/bin/brew shellenv)"
-```
-
-Reload your shell:
-
-```bash
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
 source ~/.zshrc
+```
+
+Intel Mac:
+
+```bash
+echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Verify:
+
+```bash
 brew --version
 ```
 
-## 2. Install Java 17
+## 3. Install Java 17
 
 ```bash
 brew install openjdk@17
 ```
 
-Add Java 17 to `~/.zshrc`.
-
-For Apple Silicon:
+Apple Silicon:
 
 ```bash
+cat >> ~/.zshrc <<'EOF'
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 export PATH="$JAVA_HOME/bin:$PATH"
+EOF
+source ~/.zshrc
 ```
 
-For Intel:
+Intel Mac:
 
 ```bash
+cat >> ~/.zshrc <<'EOF'
 export JAVA_HOME=/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 export PATH="$JAVA_HOME/bin:$PATH"
+EOF
+source ~/.zshrc
 ```
 
-Reload and verify:
+Verify:
 
 ```bash
-source ~/.zshrc
 java -version
-echo $JAVA_HOME
+echo "$JAVA_HOME"
 ```
 
 Expected: Java 17.
 
-## 3. Install Python 3.11
+## 4. Install Python 3.11
 
 ```bash
 brew install python@3.11
 python3.11 --version
 ```
 
-## 4. Create A Project Virtual Environment
+## 5. Create A Local Lab Folder
 
-Run these commands from the repo root:
+Use any folder you like. This guide uses:
 
 ```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
+mkdir -p ~/spark-glue-local-lab
+cd ~/spark-glue-local-lab
+```
+
+Create the working folders:
+
+```bash
+mkdir -p data/input data/output jobs warehouse
+```
+
+## 6. Create A Virtual Environment
+
+```bash
+cd ~/spark-glue-local-lab
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 ```
 
-Install PySpark and useful local development libraries:
+Install the libraries:
 
 ```bash
 python -m pip install \
-  --no-cache-dir \
-  --timeout 120 \
-  --retries 10 \
-  "pyspark==3.5.6" pandas pyarrow jupyterlab ipykernel
+  "pyspark==3.5.6" \
+  pandas \
+  pyarrow \
+  boto3 \
+  awscli-local \
+  localstack \
+  jupyterlab \
+  ipykernel
 ```
 
-Why `3.5.6`? AWS Glue 5.1 uses Spark 3.5.6. If you want Glue 5.0 alignment instead, use:
+If your target company uses Glue 5.0 specifically, use this instead:
 
 ```bash
 python -m pip install "pyspark==3.5.4"
@@ -126,181 +158,77 @@ Verify:
 ```bash
 python - <<'PY'
 import pyspark
-print("PySpark version:", pyspark.__version__)
+print("PySpark:", pyspark.__version__)
 PY
 ```
 
-## 5. Set Spark Environment Variables
+## 7. Set Spark Environment Variables
 
-When PySpark is installed with `pip`, Spark scripts live inside the virtual environment package. Add this to `~/.zshrc`:
+If you installed Spark through `pip install pyspark`, the Spark scripts live inside the virtual environment.
+
+Add this to `~/.zshrc`:
 
 ```bash
-export SPARK_HOME="/Users/paramraghavan/dev/sparksql-awsglue/.venv/lib/python3.11/site-packages/pyspark"
+cat >> ~/.zshrc <<'EOF'
+export SPARK_LAB_HOME="$HOME/spark-glue-local-lab"
+export SPARK_HOME="$SPARK_LAB_HOME/.venv/lib/python3.11/site-packages/pyspark"
 export PATH="$SPARK_HOME/bin:$PATH"
-export PYSPARK_PYTHON="/Users/paramraghavan/dev/sparksql-awsglue/.venv/bin/python"
-export PYSPARK_DRIVER_PYTHON="/Users/paramraghavan/dev/sparksql-awsglue/.venv/bin/python"
-```
-
-Reload:
-
-```bash
+export PYSPARK_PYTHON="$SPARK_LAB_HOME/.venv/bin/python"
+export PYSPARK_DRIVER_PYTHON="$SPARK_LAB_HOME/.venv/bin/python"
+EOF
 source ~/.zshrc
 ```
 
-Verify the commands:
+Verify:
 
 ```bash
+which pyspark
 which spark-submit
 spark-submit --version
-which pyspark
-pyspark --version
 ```
 
-Expected: `spark-submit` and `pyspark` resolve under:
-
-```text
-/Users/paramraghavan/dev/sparksql-awsglue/.venv/lib/python3.11/site-packages/pyspark/bin
-```
-
-## 6. Quick Spark Shell Test
+## 8. Run A PySpark Smoke Test
 
 ```bash
-pyspark --master "local[*]"
+pyspark --master "local[2]"
 ```
 
 Inside the PySpark shell:
 
 ```python
 spark.range(5).show()
+spark.sql("select current_date() as today").show()
 spark.stop()
 exit()
 ```
 
-`local[*]` means Spark uses all local CPU cores. For interview examples, `local[2]` is also useful because it makes parallelism easier to reason about.
+`local[2]` means Spark runs locally with two worker threads. `local[*]` uses all available cores.
 
-## 7. Smoke Test With A Small PySpark File
-
-Use this before the larger ETL example. It proves that Python, Java, PySpark, and `spark-submit` are all working together.
-
-Create the lab folders:
+## 9. Create First Input Files
 
 ```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
-mkdir -p local_spark_lab/input local_spark_lab/output local_spark_lab/jobs
-```
+cd ~/spark-glue-local-lab
+cat > data/input/orders.csv <<'EOF'
+order_id,customer_id,order_date,status,category,amount
+1,C001,2026-01-01,COMPLETE,books,35.50
+2,C002,2026-01-01,COMPLETE,electronics,299.99
+3,C001,2026-01-02,CANCELLED,books,15.00
+4,C003,2026-01-02,COMPLETE,grocery,42.25
+5,C002,2026-01-03,COMPLETE,electronics,99.99
+6,C004,2026-01-03,RETURNED,grocery,18.75
+EOF
 
-Create this file:
-
-```text
-/Users/paramraghavan/dev/sparksql-awsglue/local_spark_lab/jobs/smoke_test.py
-```
-
-```python
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
-
-
-def main() -> None:
-    spark = (
-        SparkSession.builder
-        .appName("local-spark-smoke-test")
-        .master("local[2]")
-        .config("spark.sql.shuffle.partitions", "2")
-        .getOrCreate()
-    )
-
-    data = [
-        ("books", 10.0),
-        ("books", 15.5),
-        ("grocery", 7.25),
-        ("electronics", 199.99),
-        ("electronics", 99.99),
-    ]
-
-    df = spark.createDataFrame(data, ["category", "amount"])
-
-    result = (
-        df.groupBy("category")
-        .agg(
-            F.count("*").alias("order_count"),
-            F.round(F.sum("amount"), 2).alias("total_amount"),
-        )
-        .orderBy("category")
-    )
-
-    print("Raw data")
-    df.show()
-
-    print("Aggregated result")
-    result.show()
-
-    print("Spark version:", spark.version)
-    print("Default parallelism:", spark.sparkContext.defaultParallelism)
-
-    spark.stop()
-
-
-if __name__ == "__main__":
-    main()
-```
-
-Run it:
-
-```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
-source .venv/bin/activate
-
-spark-submit \
-  --master "local[2]" \
-  --name "smoke-test" \
-  local_spark_lab/jobs/smoke_test.py
-```
-
-Expected output includes:
-
-```text
-Spark version: 3.5.x
-Default parallelism: 2
-```
-
-You should also see grouped totals for `books`, `electronics`, and `grocery`.
-
-## 8. Create Local Input Data
-
-Create a CSV file:
-
-```bash
-cat > local_spark_lab/input/orders.csv <<'EOF'
-order_id,customer_id,order_date,category,amount
-1,C001,2026-01-01,books,35.50
-2,C002,2026-01-01,electronics,299.99
-3,C001,2026-01-02,books,15.00
-4,C003,2026-01-02,grocery,42.25
-5,C002,2026-01-03,electronics,99.99
-6,C004,2026-01-03,grocery,18.75
+cat > data/input/customers.json <<'EOF'
+{"customer_id":"C001","customer_name":"Asha","state":"CA","segment":"retail"}
+{"customer_id":"C002","customer_name":"Ben","state":"NY","segment":"business"}
+{"customer_id":"C003","customer_name":"Cara","state":"TX","segment":"retail"}
+{"customer_id":"C004","customer_name":"Dev","state":"WA","segment":"retail"}
 EOF
 ```
 
-Create a JSON file:
+## 10. Create A Basic Spark Submit Job
 
-```bash
-cat > local_spark_lab/input/customers.json <<'EOF'
-{"customer_id":"C001","name":"Asha","state":"CA"}
-{"customer_id":"C002","name":"Ben","state":"NY"}
-{"customer_id":"C003","name":"Cara","state":"TX"}
-{"customer_id":"C004","name":"Dev","state":"WA"}
-EOF
-```
-
-## 9. Simple Read Transform Write Test
-
-This is the first full `spark-submit` test you should run after installation. It reads a CSV file, transforms the data, and writes both Parquet and CSV outputs.
-
-Create:
-
-```text
-/Users/paramraghavan/dev/sparksql-awsglue/local_spark_lab/jobs/read_transform_write.py
-```
+Create `jobs/orders_etl.py`:
 
 ```python
 from pathlib import Path
@@ -310,177 +238,15 @@ from pyspark.sql import functions as F
 
 
 def main() -> None:
-    project_root = Path(__file__).resolve().parents[2]
-    input_path = project_root / "local_spark_lab" / "input" / "orders.csv"
-    output_dir = project_root / "local_spark_lab" / "output" / "read_transform_write"
+    root = Path(__file__).resolve().parents[1]
+    input_dir = root / "data" / "input"
+    output_dir = root / "data" / "output" / "orders_etl"
 
     spark = (
         SparkSession.builder
-        .appName("read-transform-write-local")
+        .appName("orders-etl-local")
         .master("local[2]")
         .config("spark.sql.shuffle.partitions", "2")
-        .getOrCreate()
-    )
-
-    orders_df = (
-        spark.read
-        .option("header", True)
-        .option("inferSchema", True)
-        .csv(str(input_path))
-    )
-
-    transformed_df = (
-        orders_df
-        .withColumn("order_date", F.to_date("order_date"))
-        .withColumn("amount", F.col("amount").cast("double"))
-        .withColumn("order_year", F.year("order_date"))
-        .withColumn(
-            "amount_bucket",
-            F.when(F.col("amount") >= 100, F.lit("high"))
-            .when(F.col("amount") >= 25, F.lit("medium"))
-            .otherwise(F.lit("low")),
-        )
-        .select(
-            "order_id",
-            "customer_id",
-            "order_date",
-            "order_year",
-            "category",
-            "amount",
-            "amount_bucket",
-        )
-    )
-
-    summary_df = (
-        transformed_df
-        .groupBy("order_year", "category", "amount_bucket")
-        .agg(
-            F.count("*").alias("order_count"),
-            F.round(F.sum("amount"), 2).alias("total_amount"),
-        )
-        .orderBy("category", "amount_bucket")
-    )
-
-    print("Input CSV")
-    orders_df.show(truncate=False)
-    orders_df.printSchema()
-
-    print("Transformed DataFrame")
-    transformed_df.show(truncate=False)
-    transformed_df.printSchema()
-
-    print("Summary DataFrame")
-    summary_df.show(truncate=False)
-
-    (
-        transformed_df.write
-        .mode("overwrite")
-        .partitionBy("order_year", "category")
-        .parquet(str(output_dir / "orders_parquet"))
-    )
-
-    (
-        summary_df.coalesce(1).write
-        .mode("overwrite")
-        .option("header", True)
-        .csv(str(output_dir / "summary_csv"))
-    )
-
-    print(f"Wrote Parquet to: {output_dir / 'orders_parquet'}")
-    print(f"Wrote CSV to: {output_dir / 'summary_csv'}")
-
-    spark.stop()
-
-
-if __name__ == "__main__":
-    main()
-```
-
-Run with `spark-submit`:
-
-```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
-source .venv/bin/activate
-
-spark-submit \
-  --master "local[2]" \
-  --name "read-transform-write-local" \
-  local_spark_lab/jobs/read_transform_write.py
-```
-
-Verify files were written:
-
-```bash
-find local_spark_lab/output/read_transform_write -maxdepth 5 -type f | sort
-```
-
-Expected output paths:
-
-```text
-local_spark_lab/output/read_transform_write/orders_parquet/order_year=2026/category=books/...
-local_spark_lab/output/read_transform_write/orders_parquet/order_year=2026/category=electronics/...
-local_spark_lab/output/read_transform_write/orders_parquet/order_year=2026/category=grocery/...
-local_spark_lab/output/read_transform_write/summary_csv/part-....csv
-```
-
-Read the files back with a one-off PySpark command:
-
-```bash
-python - <<'PY'
-from pyspark.sql import SparkSession
-
-spark = SparkSession.builder.appName("verify-outputs").master("local[2]").getOrCreate()
-
-parquet_df = spark.read.parquet("local_spark_lab/output/read_transform_write/orders_parquet")
-csv_df = spark.read.option("header", True).csv("local_spark_lab/output/read_transform_write/summary_csv")
-
-print("Parquet output")
-parquet_df.show(truncate=False)
-parquet_df.printSchema()
-
-print("CSV summary output")
-csv_df.show(truncate=False)
-csv_df.printSchema()
-
-spark.stop()
-PY
-```
-
-Interview explanation:
-
-```text
-read.csv() reads the input file into a DataFrame.
-withColumn(), select(), and groupBy() are transformations.
-write.parquet() and write.csv() are actions because they trigger execution.
-partitionBy() writes Parquet into folder partitions for faster filtered reads later.
-coalesce(1) creates one CSV data file for local learning, but it is not ideal for large production data.
-```
-
-## 10. Create Your First Spark Submit Job
-
-Create:
-
-```text
-/Users/paramraghavan/dev/sparksql-awsglue/local_spark_lab/jobs/orders_etl.py
-```
-
-```python
-from pathlib import Path
-
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
-
-
-def main() -> None:
-    project_root = Path(__file__).resolve().parents[2]
-    input_dir = project_root / "local_spark_lab" / "input"
-    output_dir = project_root / "local_spark_lab" / "output"
-
-    spark = (
-        SparkSession.builder
-        .appName("local-orders-etl")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
         .getOrCreate()
     )
 
@@ -494,14 +260,18 @@ def main() -> None:
     customers = spark.read.json(str(input_dir / "customers.json"))
 
     enriched = (
-        orders.join(customers, on="customer_id", how="left")
+        orders
+        .join(customers, "customer_id", "left")
         .withColumn("order_date", F.to_date("order_date"))
         .withColumn("amount", F.col("amount").cast("double"))
         .withColumn("order_year", F.year("order_date"))
+        .withColumn("is_successful", F.col("status") == F.lit("COMPLETE"))
     )
 
-    category_summary = (
-        enriched.groupBy("state", "category")
+    summary = (
+        enriched
+        .where("is_successful")
+        .groupBy("state", "category")
         .agg(
             F.count("*").alias("order_count"),
             F.round(F.sum("amount"), 2).alias("total_amount"),
@@ -510,34 +280,19 @@ def main() -> None:
         .orderBy("state", "category")
     )
 
-    print("Input orders")
-    orders.show(truncate=False)
+    enriched.write.mode("overwrite").partitionBy("order_year", "category").parquet(
+        str(output_dir / "orders_parquet")
+    )
+
+    summary.coalesce(1).write.mode("overwrite").option("header", True).csv(
+        str(output_dir / "summary_csv")
+    )
 
     print("Enriched orders")
     enriched.show(truncate=False)
 
-    print("Category summary")
-    category_summary.show(truncate=False)
-
-    (
-        enriched.write
-        .mode("overwrite")
-        .partitionBy("order_year", "state")
-        .parquet(str(output_dir / "orders_enriched_parquet"))
-    )
-
-    (
-        category_summary.coalesce(1).write
-        .mode("overwrite")
-        .option("header", True)
-        .csv(str(output_dir / "category_summary_csv"))
-    )
-
-    (
-        category_summary.coalesce(1).write
-        .mode("overwrite")
-        .json(str(output_dir / "category_summary_json"))
-    )
+    print("Summary")
+    summary.show(truncate=False)
 
     spark.stop()
 
@@ -546,387 +301,298 @@ if __name__ == "__main__":
     main()
 ```
 
-## 11. Run With spark-submit
+Run it:
 
 ```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
+cd ~/spark-glue-local-lab
 source .venv/bin/activate
 
 spark-submit \
-  --master "local[*]" \
-  --name "orders-etl-local" \
-  local_spark_lab/jobs/orders_etl.py
-```
-
-Check outputs:
-
-```bash
-find local_spark_lab/output -maxdepth 4 -type f | sort
-```
-
-You should see:
-
-```text
-local_spark_lab/output/orders_enriched_parquet/...
-local_spark_lab/output/category_summary_csv/...
-local_spark_lab/output/category_summary_json/...
-```
-
-## 12. Read The Output Back
-
-Create:
-
-```text
-/Users/paramraghavan/dev/sparksql-awsglue/local_spark_lab/jobs/read_outputs.py
-```
-
-```python
-from pathlib import Path
-
-from pyspark.sql import SparkSession
-
-
-def main() -> None:
-    project_root = Path(__file__).resolve().parents[2]
-    output_dir = project_root / "local_spark_lab" / "output"
-
-    spark = (
-        SparkSession.builder
-        .appName("read-local-outputs")
-        .master("local[*]")
-        .getOrCreate()
-    )
-
-    parquet_df = spark.read.parquet(str(output_dir / "orders_enriched_parquet"))
-    csv_df = spark.read.option("header", True).csv(str(output_dir / "category_summary_csv"))
-    json_df = spark.read.json(str(output_dir / "category_summary_json"))
-
-    print("Parquet output")
-    parquet_df.printSchema()
-    parquet_df.show(truncate=False)
-
-    print("CSV output")
-    csv_df.printSchema()
-    csv_df.show(truncate=False)
-
-    print("JSON output")
-    json_df.printSchema()
-    json_df.show(truncate=False)
-
-    spark.stop()
-
-
-if __name__ == "__main__":
-    main()
-```
-
-Run:
-
-```bash
-spark-submit \
-  --master "local[*]" \
-  --name "read-local-outputs" \
-  local_spark_lab/jobs/read_outputs.py
-```
-
-## 13. Core Interview Concepts In This Example
-
-### Read APIs
-
-```python
-spark.read.option("header", True).option("inferSchema", True).csv(path)
-spark.read.json(path)
-spark.read.parquet(path)
-```
-
-### Transformations
-
-Transformations build a logical plan. They are lazy.
-
-```python
-select
-filter
-withColumn
-join
-groupBy
-orderBy
-repartition
-coalesce
-```
-
-### Actions
-
-Actions trigger execution.
-
-```python
-show
-count
-collect
-write
-take
-foreach
-```
-
-### Narrow vs Wide Transformations
-
-Narrow transformations usually avoid shuffle:
-
-```python
-select
-filter
-withColumn
-```
-
-Wide transformations usually create shuffle:
-
-```python
-groupBy
-join
-distinct
-repartition
-orderBy
-```
-
-Interview wording:
-
-> Spark is lazy. It builds a plan until an action is called. Wide transformations create shuffle boundaries, which split the job into stages.
-
-## 14. Useful spark-submit Options
-
-Local mode:
-
-```bash
-spark-submit \
-  --master "local[*]" \
-  --driver-memory 2g \
-  --conf spark.sql.shuffle.partitions=4 \
-  local_spark_lab/jobs/orders_etl.py
-```
-
-Verbose troubleshooting:
-
-```bash
-spark-submit \
   --master "local[2]" \
-  --verbose \
-  local_spark_lab/jobs/orders_etl.py
+  --name "orders-etl-local" \
+  jobs/orders_etl.py
 ```
 
-Pass job arguments:
-
-```bash
-spark-submit \
-  --master "local[*]" \
-  local_spark_lab/jobs/my_job.py \
-  --input local_spark_lab/input/orders.csv \
-  --output local_spark_lab/output/orders
-```
-
-## 15. Spark UI On Your Mac
-
-While a Spark job is running, open:
-
-```text
-http://localhost:4040
-```
-
-Important tabs:
-
-| Tab | What to inspect |
-|---|---|
-| Jobs | One action usually creates one job |
-| Stages | Shuffle boundaries and task counts |
-| SQL/DataFrame | Physical plan, scan, join, aggregate |
-| Executors | Memory, cores, task time |
-| Environment | Spark config used by the job |
-
-For small local jobs, the UI may disappear quickly after the job finishes. Add a temporary pause when teaching yourself:
+This first job does not use LocalStack. It writes to your local computer because the output path is built from:
 
 ```python
-input("Open http://localhost:4040, then press Enter to stop Spark...")
+output_dir = root / "data" / "output" / "orders_etl"
 ```
 
-Put it before `spark.stop()`.
+If your lab folder is `~/spark-glue-local-lab`, then the Parquet output is written to:
 
-## 16. Optional: Install Apache Spark With Homebrew
-
-The `pip install pyspark` approach is the cleanest for local PySpark interview practice. If you want a system-level Spark install:
-
-```bash
-brew install apache-spark
-brew info apache-spark
+```text
+~/spark-glue-local-lab/data/output/orders_etl/orders_parquet/
 ```
 
-Then set `SPARK_HOME` to the `libexec` path shown by Homebrew.
+The CSV summary is written to:
 
-Apple Silicon example:
-
-```bash
-export SPARK_HOME=/opt/homebrew/opt/apache-spark/libexec
-export PATH="$SPARK_HOME/bin:$PATH"
+```text
+~/spark-glue-local-lab/data/output/orders_etl/summary_csv/
 ```
 
-Intel example:
+Spark writes folders containing `part-*` files, not one single file. LocalStack starts later in this guide; LocalStack paths begin with `s3a://de-lab/...` or use `awslocal s3 ...`.
+
+Verify output:
 
 ```bash
-export SPARK_HOME=/usr/local/opt/apache-spark/libexec
-export PATH="$SPARK_HOME/bin:$PATH"
+find data/output/orders_etl -maxdepth 5 -type f | sort
+```
+
+## 11. Next Step: Study The PySpark 101 Examples
+
+At this point your local Spark setup is ready.
+
+Use this file next:
+
+```text
+/Users/paramraghavan/dev/sparksql-awsglue/help/quick101-spark/spark-modellers-101/pyspark-101-examples.md
+```
+
+Run the examples from your lab folder:
+
+```bash
+cd ~/spark-glue-local-lab
+source .venv/bin/activate
+```
+
+Start with the local file examples. Come back to the next sections in this setup guide when you need LocalStack S3.
+
+## 12. Optional: Install Docker Desktop For LocalStack
+
+LocalStack runs inside Docker, so Docker Desktop must be installed and running before you start LocalStack.
+
+Install Docker Desktop:
+
+```text
+https://www.docker.com/products/docker-desktop/
 ```
 
 Verify:
 
 ```bash
-spark-submit --version
+docker --version
+docker ps
 ```
 
-Note: Homebrew may install the latest Spark version, which can move ahead of AWS Glue/EMR runtimes. For Glue-style reproducibility, prefer the project virtual environment with a pinned PySpark version.
+If `docker ps` cannot connect to Docker, open Docker Desktop and wait until it finishes starting.
 
-## 17. Optional: JupyterLab With PySpark
+## 13. Optional: Start LocalStack
+
+Start Docker Desktop first.
+
+LocalStack is a local AWS simulator. For this lab, assume Docker is acting like a small local AWS account running on your laptop.
+
+When LocalStack starts, it runs inside Docker and exposes AWS-like services at:
+
+```text
+http://localhost:4566
+```
+
+In this guide:
+
+- `awslocal s3 ...` talks to LocalStack S3, not real AWS S3.
+- `s3a://de-lab/...` paths write to the LocalStack bucket named `de-lab`.
+- LocalStack data lives inside Docker-managed storage, not inside `data/output`.
+- Use `awslocal s3 ls ...` to inspect what Spark wrote to LocalStack.
+- Use `awslocal s3 cp ... --recursive` to download LocalStack output into your local project folder.
+
+Mental model:
+
+```text
+data/output/...       -> normal folder on your computer
+s3a://de-lab/...      -> fake/local S3 bucket running in Docker through LocalStack
+```
+
+Then run:
 
 ```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
-source .venv/bin/activate
-python -m ipykernel install --user --name sparksql-awsglue --display-name "sparksql-awsglue"
-jupyter lab
+localstack start -d
+localstack status services
 ```
 
-In a notebook:
-
-```python
-from pyspark.sql import SparkSession
-
-spark = (
-    SparkSession.builder
-    .appName("notebook-local-spark")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .getOrCreate()
-)
-
-df = spark.range(10)
-df.show()
-```
-
-## 18. Optional: Reading From S3 Locally
-
-For interview prep, local files are enough. For S3 practice, you need AWS credentials and compatible Hadoop AWS jars.
-
-With Spark 3.5.x / Hadoop 3.3.x style setups, the common packages are:
+Set local AWS environment variables:
 
 ```bash
-spark-submit \
-  --master "local[*]" \
-  --packages org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
-  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.profile.ProfileCredentialsProvider \
-  local_spark_lab/jobs/read_s3.py
-```
-
-Use an AWS profile:
-
-```bash
-export AWS_PROFILE=your-profile-name
-aws sts get-caller-identity
-```
-
-Example Spark read:
-
-```python
-df = spark.read.parquet("s3a://your-bucket/path/")
-df.show()
-```
-
-If your real target is AWS Glue 6.x or Spark 4.x, re-check S3 connector versions because Spark, Hadoop, and AWS SDK versions must be compatible.
-
-## 19. Common Errors And Fixes
-
-### `JAVA_HOME is not set`
-
-Fix:
-
-```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
-export PATH="$JAVA_HOME/bin:$PATH"
+cat >> ~/.zshrc <<'EOF'
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ENDPOINT_URL=http://localhost:4566
+EOF
 source ~/.zshrc
 ```
 
-Use the Intel path if your Homebrew is under `/usr/local`.
-
-### `UnsupportedClassVersionError`
-
-Cause: Java version mismatch.
-
-Fix:
+Create a bucket:
 
 ```bash
-java -version
-echo $JAVA_HOME
+awslocal s3 mb s3://de-lab
+awslocal s3 ls
 ```
 
-Use Java 17 for Spark 3.5.x and modern Glue-style work.
-
-### `ModuleNotFoundError: No module named pyspark`
-
-Cause: virtual environment is not active or `PYSPARK_PYTHON` points to another Python.
-
-Fix:
+Upload your input files:
 
 ```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
-source .venv/bin/activate
-python -m pip show pyspark
-echo $PYSPARK_PYTHON
+awslocal s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
+awslocal s3 cp data/input/customers.json s3://de-lab/raw/customers/customers.json
+awslocal s3 ls s3://de-lab/raw/ --recursive
 ```
 
-### `Python worker failed to connect back`
-
-Often caused by Python path mismatch.
-
-Fix:
+To download anything written to LocalStack S3 back to your local folder:
 
 ```bash
-export PYSPARK_PYTHON="/Users/paramraghavan/dev/sparksql-awsglue/.venv/bin/python"
-export PYSPARK_DRIVER_PYTHON="/Users/paramraghavan/dev/sparksql-awsglue/.venv/bin/python"
+mkdir -p data/downloaded/orders_parquet
+
+awslocal s3 cp \
+  s3://de-lab/curated/orders_parquet/ \
+  data/downloaded/orders_parquet/ \
+  --recursive
 ```
 
-### Port `4040` Is Already In Use
+## 14. Optional: Read And Write LocalStack S3 From Spark
 
-Spark will try `4041`, `4042`, and so on. Check terminal logs for the actual Spark UI URL.
+Spark needs Hadoop AWS libraries to read `s3a://` paths. The easiest local approach is to let Spark download them with `--packages`.
 
-### Output Folder Already Exists
-
-Use:
+Create `jobs/localstack_s3_etl.py`:
 
 ```python
-df.write.mode("overwrite").parquet(path)
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+
+
+def main() -> None:
+    spark = (
+        SparkSession.builder
+        .appName("localstack-s3-etl")
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:4566")
+        .config("spark.hadoop.fs.s3a.access.key", "test")
+        .config("spark.hadoop.fs.s3a.secret.key", "test")
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+        .getOrCreate()
+    )
+
+    orders = (
+        spark.read
+        .option("header", True)
+        .option("inferSchema", True)
+        .csv("s3a://de-lab/raw/orders/orders.csv")
+    )
+
+    curated = (
+        orders
+        .withColumn("order_date", F.to_date("order_date"))
+        .withColumn("amount", F.col("amount").cast("double"))
+        .withColumn("order_year", F.year("order_date"))
+        .where(F.col("status") == "COMPLETE")
+    )
+
+    curated.write.mode("overwrite").partitionBy("order_year", "category").parquet(
+        "s3a://de-lab/curated/orders_parquet"
+    )
+
+    curated.coalesce(1).write.mode("overwrite").option("header", True).csv(
+        "s3a://de-lab/curated/orders_csv"
+    )
+
+    spark.read.parquet("s3a://de-lab/curated/orders_parquet").show(truncate=False)
+    spark.stop()
+
+
+if __name__ == "__main__":
+    main()
 ```
 
-For interview answers, mention that production overwrite needs care because it can delete prior data.
-
-## 20. Clean Up Local Output
+Run it:
 
 ```bash
-cd /Users/paramraghavan/dev/sparksql-awsglue
-rm -rf local_spark_lab/output
-mkdir -p local_spark_lab/output
+spark-submit \
+  --master "local[2]" \
+  --packages "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262" \
+  jobs/localstack_s3_etl.py
 ```
 
-## 21. Practice Checklist
+Verify with LocalStack:
 
-Run each task with `spark-submit`:
+```bash
+awslocal s3 ls s3://de-lab/curated/ --recursive
+```
 
-- Read CSV with header and inferred schema.
-- Read newline-delimited JSON.
-- Write Parquet partitioned by one or two columns.
-- Read Parquet back and inspect schema.
-- Convert CSV to Parquet.
-- Convert Parquet to CSV.
-- Use `filter`, `select`, `withColumn`, `groupBy`, and `join`.
-- Explain which lines are transformations and which lines are actions.
-- Open Spark UI and identify jobs, stages, and tasks.
-- Change `spark.sql.shuffle.partitions` from `4` to `200` and explain what changes locally.
+## 15. Optional: Simulate Delete And Update On S3 Files
 
-## 22. Mental Model For Interviews
+S3 is object storage, not a database. Spark usually does not update one row in one CSV or Parquet file. Instead, it reads data, creates a new DataFrame, and writes replacement files.
 
-Use this simple explanation:
+Delete objects:
 
-> A Spark application starts a driver. The driver creates a SparkSession and builds a logical plan from DataFrame transformations. Nothing runs until an action is called. When an action runs, Spark optimizes the plan, creates jobs, splits jobs into stages at shuffle boundaries, and runs tasks across partitions. In local mode, my Mac acts as both driver and executor machine. In EMR or Glue, executors run across cluster workers.
+```bash
+awslocal s3 rm s3://de-lab/curated/orders_csv/ --recursive
+```
+
+Update data by rewrite:
+
+```python
+from pyspark.sql import functions as F
+
+df = spark.read.parquet("s3a://de-lab/curated/orders_parquet")
+
+updated = (
+    df
+    .withColumn(
+        "status",
+        F.when(F.col("order_id") == 2, F.lit("RETURNED")).otherwise(F.col("status")),
+    )
+)
+
+updated.write.mode("overwrite").partitionBy("order_year", "category").parquet(
+    "s3a://de-lab/curated/orders_parquet_updated"
+)
+```
+
+For production row-level `UPDATE`, `DELETE`, and `MERGE`, use a table format such as Apache Iceberg, Delta Lake, or Apache Hudi. AWS Glue works well with these table formats, but plain CSV and plain Parquet files in S3 do not behave like database tables.
+
+## 16. AWS Glue Data Catalog Pointer
+
+For this beginner path, focus on the AWS Glue Data Catalog first. It is the part SQL/database users most need to understand because it maps S3 data files to table metadata that tools such as Athena, Glue Spark, EMR, Redshift Spectrum, and Lake Formation can use.
+
+Detailed notes are in:
+
+```text
+pyspark-101-examples.md
+```
+
+Read the sections:
+
+- `AWS Glue Data Catalog`
+- `Can Glue Do Create, Read, Update, Delete?`
+
+## 17. Troubleshooting
+
+`Java gateway process exited`
+
+- Check `java -version`.
+- Check `echo "$JAVA_HOME"`.
+- Use Java 17 for this lab.
+
+`No FileSystem for scheme s3a`
+
+- Run `spark-submit` with the Hadoop AWS packages.
+- Confirm the package versions are compatible with your Spark Hadoop version.
+
+`Connection refused localhost:4566`
+
+- Start LocalStack: `localstack start -d`.
+- Check Docker Desktop is running.
+- Check `localstack status services`.
+
+`AccessDenied` or credential errors
+
+- For LocalStack use `AWS_ACCESS_KEY_ID=test` and `AWS_SECRET_ACCESS_KEY=test`.
+- Confirm `spark.hadoop.fs.s3a.access.key` and `spark.hadoop.fs.s3a.secret.key`.
+
+`CSV output has many part files`
+
+- Spark writes distributed output.
+- Use `coalesce(1)` only for tiny local examples.
+- In production, many partitioned files are normal, but too many tiny files should be compacted.
