@@ -1,0 +1,9 @@
+{
+  "supported_landings": [
+    {
+      "source_name": "orders",
+      "raw_key_prefix": "orders/",
+      "pipeline_config": "config/orders_pipeline.json"
+    }
+  ]
+}
