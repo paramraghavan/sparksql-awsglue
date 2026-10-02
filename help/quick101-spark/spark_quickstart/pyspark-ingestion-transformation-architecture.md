@@ -230,7 +230,23 @@ electronics,2026,1,2,399.98,199.99
 grocery,2026,1,1,42.25,42.25
 ```
 
-## 9. Configuration-Driven Design
+## 9. Incremental Load vs Full Load
+
+Most batch ingestion jobs use one of these two patterns.
+
+| Pattern | Example dataset | What happens |
+|---|---|---|
+| Incremental load | `orders` | Each file contains new records. The trusted baseline grows over time. |
+| Full load | `house_price_growth` | Each file contains the complete current table. The trusted baseline is replaced each run. |
+
+For the local demo:
+
+- `orders` uses `incremental_append_new_keys`. It appends new `order_id` values and skips keys already present in trusted.
+- `house_price_growth` uses `full_overwrite`. It replaces the trusted baseline every run because the file is treated as a complete snapshot.
+
+Important production note: plain Parquet in S3 does not behave like a database table. Incremental append handles new rows, but it does not truly update/delete/merge old rows. For row-level changes, production data lakes usually use Apache Iceberg, Apache Hudi, or Delta Lake.
+
+## 10. Configuration-Driven Design
 
 The future pipeline should be driven by configuration instead of hardcoding each source.
 
@@ -249,6 +265,9 @@ target:
   trusted_path: s3://company-trusted/orders/
   rejected_path: s3://company-rejected/orders/
   transformed_path: s3://company-transformed/orders_summary/
+
+load_strategy:
+  type: incremental_append_new_keys
 
 schema:
   columns:
@@ -297,7 +316,7 @@ transformation:
     - aggregate_by_category_month
 ```
 
-## 10. LocalStack Mapping For Local Practice
+## 11. LocalStack Mapping For Local Practice
 
 In local practice, Docker plus LocalStack acts like a small local AWS account.
 
@@ -316,7 +335,7 @@ The same architecture works locally:
 Raw LocalStack S3 -> PySpark DQ -> Trusted LocalStack S3 -> Optional transform -> Transformed LocalStack S3
 ```
 
-## 11. Review Questions Before Building
+## 12. Review Questions Before Building
 
 Before building the config-driven pipeline, confirm:
 

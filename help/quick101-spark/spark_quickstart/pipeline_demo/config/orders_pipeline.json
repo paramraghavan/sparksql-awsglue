@@ -13,6 +13,10 @@
     "rejected_path": "data/rejected/orders",
     "transformed_path": "data/transformed/orders_summary"
   },
+  "load_strategy": {
+    "type": "incremental_append_new_keys",
+    "description": "Append only business keys that are not already present in trusted baseline. For true update/delete/merge use Iceberg, Hudi, or Delta."
+  },
   "schema": {
     "columns": [
       {"name": "order_id", "type": "integer", "required": true},
@@ -36,6 +40,9 @@
       "status",
       "category",
       "amount"
+    ],
+    "derived_columns": [
+      {"name": "order_year", "expression": "year", "source": "order_date"}
     ],
     "partition_by": ["order_year", "category"]
   },

@@ -23,6 +23,8 @@ def load_json(path: Path) -> dict:
 
 
 def spark_submit_command(project_root: Path, job_name: str, args: list[str]) -> list[str]:
+    # Real SSM would execute a shell command on an EC2/EMR Spark host.
+    # USE_PYTHON_SUBMIT=1 keeps the local demo simple when spark-submit is not on PATH.
     if os.environ.get("USE_PYTHON_SUBMIT") == "1":
         print("[ssm] USE_PYTHON_SUBMIT=1; running PySpark job with python")
         return [sys.executable, str(project_root / "jobs" / job_name), *args]
@@ -55,6 +57,8 @@ def main() -> int:
     config_path = project_root / args.pipeline_config
     config = load_json(config_path)
 
+    # Ingestion always runs first. It owns schema validation, row-level DQ,
+    # rejected output, and writing the trusted baseline.
     ingestion_args = [
         "--pipeline-config",
         str(config_path),
@@ -70,10 +74,14 @@ def main() -> int:
         print("[ssm] ingestion failed or completed with DQ failure; transformation skipped")
         return ingestion_status
 
+    # Some datasets stop at trusted. Example: house_price_growth is a full-load
+    # trusted baseline and does not need a transformed aggregate in this demo.
     if not config.get("transformation", {}).get("enabled", False):
         print("[ssm] transformation disabled; pipeline complete after trusted output")
         return 0
 
+    # Transformation runs only after trusted data exists. This mirrors a common
+    # production pattern: raw-to-trusted first, trusted-to-business-output second.
     transform_args = [
         "--pipeline-config",
         str(config_path),

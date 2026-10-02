@@ -570,6 +570,8 @@ Save modes:
 | `error`     | Fail if output exists                 |
 | `ignore`    | Do nothing if output exists           |
 
+For a deeper beginner note on Parquet file format, file sizes, reads, troubleshooting slow jobs, partition updates, and lakehouse table formats, read `parquet-spark-performance-and-updates.md`.
+
 ## 18. Partitioning
 
 Partitioning creates folders such as:
@@ -845,6 +847,8 @@ Rules of thumb:
 
 Not every example in this guide uses LocalStack.
 
+All AWS-style examples in this guide are local AWS practice. They use Docker + LocalStack, not a real AWS account. Install Docker Desktop and start LocalStack before running any command that uses `awslocal` or any Spark path that starts with `s3a://de-lab/...`.
+
 There are two kinds of paths:
 
 | Path style                            | Where it writes                                    | Example                               |
@@ -883,6 +887,8 @@ LocalStack is used only when the path starts with `s3a://` or when commands use 
 
 LocalStack is a local AWS simulator. For this lab, assume Docker is acting like a small local AWS account running on
 your laptop.
+
+Docker is required because LocalStack runs as a container. Install Docker Desktop first, confirm `docker ps` works, then start LocalStack.
 
 When you start LocalStack, Docker runs a container that exposes AWS-like services on:
 
@@ -931,6 +937,9 @@ You do not browse to the Docker folder directly. You inspect LocalStack S3 using
 
 ```bash
 awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 ls s3://your-real-bucket/curated/orders_parquet/ --recursive
 ```
 
 To copy LocalStack output back to your project folder:
@@ -942,6 +951,12 @@ awslocal s3 cp \
   s3://de-lab/curated/orders_parquet/ \
   data/downloaded/orders_parquet/ \
   --recursive
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 cp \
+#   s3://your-real-bucket/curated/orders_parquet/ \
+#   data/downloaded/orders_parquet/ \
+#   --recursive
 ```
 
 This downloads from fake/local S3 to:
@@ -952,12 +967,18 @@ data/downloaded/orders_parquet/
 
 ## 26. LocalStack S3 End-To-End Example
 
+Prerequisite: Docker Desktop must be running, and LocalStack must be installed in your Python virtual environment. If you have not done that yet, use the LocalStack setup section in `setup-mac-local-spark.md` or `setup-windows-local-spark.md`.
+
 Start LocalStack:
 
 ```bash
 localstack start -d
 awslocal s3 mb s3://de-lab
 awslocal s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 mb s3://your-real-unique-bucket-name
+# aws s3 cp data/input/orders.csv s3://your-real-bucket/raw/orders/orders.csv
 ```
 
 Job:
@@ -1005,6 +1026,9 @@ Verify:
 
 ```bash
 awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 ls s3://your-real-bucket/curated/orders_parquet/ --recursive
 ```
 
 At this point, you have only created data files in LocalStack S3. You have not created a Glue table yet.
@@ -1169,6 +1193,8 @@ This mini-lab creates both pieces needed for a Glue external table:
 1. Actual Parquet data in LocalStack S3.
 2. Glue Catalog metadata that points to that S3 location.
 
+This lab uses LocalStack Glue and LocalStack S3 running inside Docker. It does not create anything in a real AWS account.
+
 Run these commands from your lab folder:
 
 ```bash
@@ -1196,6 +1222,9 @@ Create the S3 bucket:
 
 ```bash
 awslocal s3 mb s3://de-lab
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 mb s3://your-real-unique-bucket-name
 ```
 
 Create local sample input if you do not already have it:
@@ -1218,6 +1247,9 @@ Upload raw CSV to LocalStack S3:
 
 ```bash
 awslocal s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 cp data/input/orders.csv s3://your-real-bucket/raw/orders/orders.csv
 ```
 
 Create a Spark job that reads raw CSV from LocalStack S3 and writes curated Parquet back to LocalStack S3:
@@ -1282,6 +1314,9 @@ Verify the Parquet files exist in LocalStack S3:
 
 ```bash
 awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 ls s3://your-real-bucket/curated/orders_parquet/ --recursive
 ```
 
 Now create Glue Catalog metadata in LocalStack. First create the Glue database:
@@ -1289,6 +1324,10 @@ Now create Glue Catalog metadata in LocalStack. First create the Glue database:
 ```bash
 awslocal glue create-database \
   --database-input '{"Name":"curated"}'
+
+# Real AWS equivalent, shown for learning only:
+# aws glue create-database \
+#   --database-input '{"Name":"curated"}'
 ```
 
 Then create a table definition file:
@@ -1331,6 +1370,11 @@ Create the table:
 awslocal glue create-table \
   --database-name curated \
   --table-input file:///tmp/orders_glue_table.json
+
+# Real AWS equivalent, shown for learning only:
+# aws glue create-table \
+#   --database-name curated \
+#   --table-input file:///tmp/orders_glue_table.json
 ```
 
 Verify the table metadata:
@@ -1339,6 +1383,11 @@ Verify the table metadata:
 awslocal glue get-table \
   --database-name curated \
   --name orders
+
+# Real AWS equivalent, shown for learning only:
+# aws glue get-table \
+#   --database-name curated \
+#   --name orders
 ```
 
 Important: `awslocal glue create-table` creates Glue Catalog metadata only. It does not create Parquet files. The files are created by the Spark job and live in LocalStack S3 at:
@@ -1452,6 +1501,48 @@ New partition folders must be known to the catalog. Common controlled ways to ad
 - Add partitions through Glue APIs or ETL code.
 - Run `MSCK REPAIR TABLE` in Athena for Hive-style partition folders.
 - Use a table format such as Iceberg that manages table metadata differently.
+
+Beginner warning: creating a Glue table with partition keys does not automatically mean every future S3 partition folder is visible to query engines.
+
+Example:
+
+```text
+Glue table:
+  curated.orders
+  location: s3://de-lab/curated/orders_parquet/
+  partition keys: order_year, category
+
+Known catalog partitions:
+  order_year=2026/category=books
+  order_year=2026/category=grocery
+```
+
+Later, Spark writes a new folder:
+
+```text
+s3://de-lab/curated/orders_parquet/order_year=2027/category=books/
+```
+
+The files exist in S3, but Athena may not query that new partition until the catalog knows about it. A query like this may return no 2027 rows:
+
+```sql
+select *
+from curated.orders
+where order_year = 2027
+  and category = 'books';
+```
+
+Fix it by adding the partition through controlled ETL/catalog code, or by running a repair command for Hive-style folders:
+
+```sql
+MSCK REPAIR TABLE curated.orders;
+```
+
+The exact command depends on the query engine and table format. The important idea is:
+
+```text
+S3 folder exists does not always mean Glue partition metadata exists.
+```
 
 ### When To Use Glue Data Catalog
 

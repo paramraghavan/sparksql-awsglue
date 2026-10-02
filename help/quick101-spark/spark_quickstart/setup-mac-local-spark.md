@@ -17,6 +17,8 @@ How to use this guide:
 
 LocalStack is optional for the first PySpark lessons. You can learn reads, filters, joins, aggregations, writes, partitions, and Parquet update-by-rewrite using only local files.
 
+All AWS-style practice in this guide uses Docker + LocalStack. You do not need a real AWS account. Commands such as `awslocal s3 ...`, `awslocal glue ...`, and Spark paths such as `s3a://de-lab/...` talk to LocalStack running inside Docker.
+
 ## 1. Recommended Versions
 
 For Glue-oriented learning, use versions that stay close to AWS Glue 5.x.
@@ -346,7 +348,7 @@ At this point your local Spark setup is ready.
 Use this file next:
 
 ```text
-/Users/paramraghavan/dev/sparksql-awsglue/help/quick101-spark/spark-modellers-101/pyspark-101-examples.md
+/Users/paramraghavan/dev/sparksql-awsglue/help/quick101-spark/spark_quickstart/pyspark-101-examples.md
 ```
 
 Run the examples from your lab folder:
@@ -428,6 +430,10 @@ Create a bucket:
 ```bash
 awslocal s3 mb s3://de-lab
 awslocal s3 ls
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 mb s3://your-real-unique-bucket-name
+# aws s3 ls
 ```
 
 Upload your input files:
@@ -436,6 +442,11 @@ Upload your input files:
 awslocal s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
 awslocal s3 cp data/input/customers.json s3://de-lab/raw/customers/customers.json
 awslocal s3 ls s3://de-lab/raw/ --recursive
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 cp data/input/orders.csv s3://your-real-bucket/raw/orders/orders.csv
+# aws s3 cp data/input/customers.json s3://your-real-bucket/raw/customers/customers.json
+# aws s3 ls s3://your-real-bucket/raw/ --recursive
 ```
 
 To download anything written to LocalStack S3 back to your local folder:
@@ -447,6 +458,12 @@ awslocal s3 cp \
   s3://de-lab/curated/orders_parquet/ \
   data/downloaded/orders_parquet/ \
   --recursive
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 cp \
+#   s3://your-real-bucket/curated/orders_parquet/ \
+#   data/downloaded/orders_parquet/ \
+#   --recursive
 ```
 
 ## 14. Optional: Read And Write LocalStack S3 From Spark
@@ -518,6 +535,9 @@ Verify with LocalStack:
 
 ```bash
 awslocal s3 ls s3://de-lab/curated/ --recursive
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 ls s3://your-real-bucket/curated/ --recursive
 ```
 
 ## 15. Optional: Simulate Delete And Update On S3 Files
@@ -528,6 +548,9 @@ Delete objects:
 
 ```bash
 awslocal s3 rm s3://de-lab/curated/orders_csv/ --recursive
+
+# Real AWS equivalent, shown for learning only:
+# aws s3 rm s3://your-real-bucket/curated/orders_csv/ --recursive
 ```
 
 Update data by rewrite:

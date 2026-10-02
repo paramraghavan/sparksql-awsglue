@@ -14,16 +14,28 @@ It simulates:
 
 For the quickstart, local folders stand in for S3 buckets.
 
+This demo teaches two common ingestion patterns:
+
+| Dataset | Load pattern | Why |
+|---|---|---|
+| `orders` | Incremental append of new business keys | Transaction-like facts usually arrive in batches; the trusted baseline should grow over time |
+| `house_price_growth` | Full overwrite | Reference/snapshot data often arrives as the complete table each time; the trusted baseline is replaced |
+
+AWS note: this demo does not call real AWS. Local folders stand in for S3 so beginners can learn the orchestration pattern first. When you practice actual AWS-style S3 or Glue commands elsewhere in this quickstart, use Docker + LocalStack, not a real AWS account.
+
 ## Folder Map
 
 | Path | Purpose |
 |---|---|
 | `data/raw/orders/` | Raw landing zone |
+| `data/raw/house_price_growth/` | Raw landing zone for the full-load example |
 | `data/rejected/orders/` | DQ rejected records |
 | `data/trusted/orders/` | Trusted baseline output |
+| `data/trusted/house_price_growth/` | Trusted full-load baseline output |
 | `data/transformed/orders_summary/` | Transformed output |
 | `config/allowed_landings.json` | Lambda supported landing list |
 | `config/orders_pipeline.json` | Source-specific pipeline config |
+| `config/house_price_growth_pipeline.json` | Full-load source config |
 | `jobs/lambda_submitter.py` | Local Lambda stand-in |
 | `jobs/ssm_runner.py` | Local SSM command stand-in |
 | `jobs/ingest_with_dq.py` | PySpark DQ and trusted ingestion job |
@@ -38,7 +50,7 @@ This demo needs:
 - PySpark
 - A Python virtual environment
 
-LocalStack is not required for this demo because local folders stand in for S3 buckets.
+LocalStack is not required for this demo because local folders stand in for S3 buckets. For AWS-style examples using `awslocal`, `s3a://de-lab/...`, or Glue Catalog commands, install Docker Desktop and start LocalStack using the Mac or Windows setup guide.
 
 ### Option A: If You Already Completed The Spark Quickstart
 
@@ -178,7 +190,13 @@ If `python -c "import pyspark"` fails, the virtual environment is not ready. Rec
 ../setup-windows-local-spark.md
 ```
 
-## Run Happy Path
+## Important: What `--wait` Means
+
+Real AWS Lambda does not wait for Spark completion in this architecture. Lambda validates the landing key, submits the SSM command, logs the command id, and exits.
+
+The local demo uses `--wait` only so beginners can run one command and see the whole result in the terminal. Treat `--wait` as a local training shortcut, not as Lambda behavior.
+
+## Run Orders Initial Incremental Load
 
 This simulates a supported raw file landing:
 
@@ -194,12 +212,12 @@ python jobs/lambda_submitter.py \
 Expected behavior:
 
 1. Lambda validates `orders/orders_clean.csv` against `config/allowed_landings.json`.
-2. Lambda submits local SSM runner and exits.
+2. Lambda submits local SSM runner. With `--wait`, the local script waits only for demo readability.
 3. SSM runner runs the ingestion job.
 4. Ingestion DQ passes.
-5. Trusted Parquet is written to `data/trusted/orders`.
+5. New `order_id` values are appended to `data/trusted/orders`.
 6. Transformation is enabled in config.
-7. Transformed Parquet is written to `data/transformed/orders_summary`.
+7. The transform reads the trusted baseline and refreshes `data/transformed/orders_summary`.
 
 Inspect output:
 
@@ -219,6 +237,55 @@ spark.read.parquet("data/trusted/orders").show(truncate=False)
 spark.read.parquet("data/transformed/orders_summary").show(truncate=False)
 spark.stop()
 PY
+```
+
+## Run Orders Second Incremental Load
+
+This file has two new orders and one already-loaded `order_id`. The ingestion job appends only new business keys.
+
+```bash
+export USE_PYTHON_SUBMIT=1
+
+python jobs/lambda_submitter.py \
+  --bucket company-raw \
+  --key orders/orders_incremental.csv \
+  --wait
+```
+
+Expected behavior:
+
+1. `order_id` 7 and 8 are appended to trusted.
+2. `order_id` 2 is skipped because it already exists in the trusted baseline.
+3. The orders transform runs again and refreshes the aggregate output from the current trusted baseline.
+
+This is a beginner-friendly incremental pattern. It handles new rows, not updates to existing rows. In real projects, updates/deletes/merges usually use Apache Iceberg, Apache Hudi, or Delta Lake.
+
+## Run House Price Growth Full Load
+
+This simulates a snapshot/reference-style dataset where each landing file is the complete table.
+
+```bash
+export USE_PYTHON_SUBMIT=1
+
+python jobs/lambda_submitter.py \
+  --bucket company-raw \
+  --key house_price_growth/house_price_growth_2026.csv \
+  --wait
+```
+
+Expected behavior:
+
+1. Lambda validates `house_price_growth/house_price_growth_2026.csv`.
+2. SSM runs the same generic ingestion job.
+3. DQ passes.
+4. Trusted Parquet is written to `data/trusted/house_price_growth`.
+5. The trusted baseline is overwritten because this config uses `full_overwrite`.
+6. Transformation is skipped because `config/house_price_growth_pipeline.json` has `"enabled": false`.
+
+Inspect output:
+
+```bash
+find data/trusted/house_price_growth -maxdepth 5 -type f | sort
 ```
 
 ## Run DQ Failure Path
@@ -305,3 +372,15 @@ Expected behavior:
 | local `data/transformed` | transformed S3 bucket |
 
 In AWS, Lambda should still only validate and submit. It should not run Spark, run DQ, or wait for Spark completion.
+
+## Production Notes
+
+Incremental append of new keys is useful for learning and for simple insert-only facts. It is not a full database `MERGE`. If an existing order changes status or amount, this quickstart skips the duplicate key. Production pipelines commonly use one of these patterns:
+
+- append immutable events and derive current state later,
+- overwrite only affected partitions after validation,
+- use Apache Iceberg, Hudi, or Delta Lake for row-level update/delete/merge semantics.
+
+Full overwrite is common for small reference or snapshot datasets where the source sends the whole table every time. It is risky for large fact tables because a bad delivery can replace a good trusted baseline.
+
+Schema failures are different from row-level DQ failures. If required columns are missing, the ingestion job writes a small schema-failure artifact under `data/rejected/<source>/run_id=...` and stops. If individual rows fail DQ, the bad rows are written with a `dq_error` column.

@@ -32,8 +32,12 @@ def main() -> int:
     )
 
     try:
+        # Transformation reads from trusted, not raw. That keeps business logic
+        # separated from ingestion and DQ.
         trusted_df = spark.read.parquet(config["targets"]["trusted_path"])
 
+        # This example creates a consumption-ready aggregate. It is intentionally
+        # simple: completed orders only, amount buckets, grouped totals.
         transformed_df = (
             trusted_df
             .where(F.col("status") == "COMPLETE")
@@ -54,6 +58,9 @@ def main() -> int:
             .orderBy("category", "order_year", "order_month", "amount_bucket")
         )
 
+        # The orders transform is a full refresh of the aggregate output from
+        # the current trusted baseline. Incremental input does not always mean
+        # incremental transformed aggregates.
         writer = transformed_df.write.mode(config["transformation"].get("output_mode", "overwrite"))
         partition_by = config["transformation"].get("partition_by", [])
         if partition_by:
