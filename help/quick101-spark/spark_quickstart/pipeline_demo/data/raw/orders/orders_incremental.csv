@@ -1,4 +1,0 @@
-order_id,customer_id,order_date,status,category,amount
-7,C005,2026-01-04,COMPLETE,books,24.50
-8,C006,2026-01-04,COMPLETE,grocery,67.10
-2,C002,2026-01-01,COMPLETE,electronics,299.99
