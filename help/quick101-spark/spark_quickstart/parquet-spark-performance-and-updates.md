@@ -690,6 +690,62 @@ Use toPandas() only when the pandas DataFrame fits in driver memory.
 For exploration, prefer df.limit(1000).toPandas().
 ```
 
+### 11.1 pandas Join On Key vs PySpark Join On Key
+
+The code can look similar, but the execution is very different.
+
+pandas join:
+
+```python
+joined_pdf = orders_pdf.merge(customers_pdf, on="customer_id", how="inner")
+```
+
+PySpark join:
+
+```python
+joined_df = orders_df.join(customers_df, on="customer_id", how="inner")
+```
+
+Mental model:
+
+```text
+pandas DataFrame join:
+  Runs in one Python process, usually the driver or your laptop.
+  Both DataFrames must fit in that machine's memory.
+
+PySpark DataFrame join:
+  Runs across executors.
+  Spark may shuffle rows so the same customer_id values meet on the same partition.
+  The result stays distributed until an action runs.
+```
+
+Example:
+
+```python
+joined_df = orders_df.join(customers_df, "customer_id")
+joined_df.write.parquet("s3://bucket/curated/orders_with_customers/")
+```
+
+This can stay distributed from read to join to write.
+
+But this changes the execution model:
+
+```python
+joined_pdf = orders_df.join(customers_df, "customer_id").toPandas()
+```
+
+Spark performs the join across executors, then sends the full joined result to
+the driver as one pandas DataFrame. After that, all pandas operations run on the
+driver.
+
+Rule:
+
+```text
+Use pandas joins for small local data.
+Use PySpark joins for large data.
+Be careful with skewed join keys because one key with huge data can overload one Spark task.
+```
+
 ## 12. What If The Data Is Bigger Than Executor Memory?
 
 It depends on the operation.
