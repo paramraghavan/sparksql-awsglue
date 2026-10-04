@@ -26,6 +26,7 @@
       - group by, join, agg, repartition etc
 - Actions
   - read, write, collect, take , count
+  > read looks like is lazy, only gets triggred when perform .show() /.count(), etc..
 
 ## Jobs, Stages , Read/Write Exchange buffer, Tasks
 

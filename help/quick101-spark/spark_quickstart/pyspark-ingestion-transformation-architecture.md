@@ -124,7 +124,108 @@ sequenceDiagram
 
 Important implementation note: Lambda is only the submitter and basic landing-key validator. It should not run Spark, should not run DQ, and should not wait for the Spark job. The SSM command or shell script on the Spark host is responsible for running `spark-submit`, waiting for completion, and returning the final command status.
 
-## 4. Bucket Roles
+## 4. How The S3 Object Key Is Passed To Spark
+
+The S3 event contains the bucket and object key. Lambda uses those values to
+build the Spark input path.
+
+Example S3 event shape:
+
+```json
+{
+  "Records": [
+    {
+      "s3": {
+        "bucket": { "name": "company-raw" },
+        "object": { "key": "orders/2026/01/orders_20260101.csv" }
+      }
+    }
+  ]
+}
+```
+
+Lambda extracts:
+
+```text
+bucket = company-raw
+key    = orders/2026/01/orders_20260101.csv
+```
+
+Then Lambda builds:
+
+```text
+input_path = s3://company-raw/orders/2026/01/orders_20260101.csv
+```
+
+The first folder in the key can be used to identify the dataset:
+
+```text
+orders/2026/01/orders_20260101.csv -> dataset = orders
+```
+
+Then Lambda sends an SSM command similar to:
+
+```bash
+spark-submit jobs/ingest.py \
+  --dataset orders \
+  --input s3://company-raw/orders/2026/01/orders_20260101.csv \
+  --trusted-output s3://company-trusted/orders/ \
+  --rejected-output s3://company-rejected/orders/
+```
+
+In production, Lambda should return after SSM accepts the command:
+
+```json
+{
+  "status": "accepted",
+  "ssm_command_id": "command-123",
+  "input": "s3://company-raw/orders/2026/01/orders_20260101.csv"
+}
+```
+
+Lambda should not poll SSM until the job finishes. The Spark job may run longer
+than Lambda's 15-minute limit. Completion tracking should happen through SSM
+command status, CloudWatch logs, Spark logs, and success/failure markers in S3.
+
+Minimal Lambda submitter logic:
+
+```python
+from urllib.parse import unquote_plus
+import boto3
+
+ssm = boto3.client("ssm")
+
+
+def handler(event, context):
+    record = event["Records"][0]
+    bucket = record["s3"]["bucket"]["name"]
+    key = unquote_plus(record["s3"]["object"]["key"])
+
+    dataset = key.split("/", 1)[0]
+    input_path = f"s3://{bucket}/{key}"
+
+    command = (
+        "spark-submit jobs/ingest.py "
+        f"--dataset {dataset} "
+        f"--input {input_path} "
+        f"--trusted-output s3://company-trusted/{dataset}/ "
+        f"--rejected-output s3://company-rejected/{dataset}/"
+    )
+
+    response = ssm.send_command(
+        InstanceIds=["i-spark-edge-node"],
+        DocumentName="AWS-RunShellScript",
+        Parameters={"commands": [command]},
+    )
+
+    return {
+        "status": "accepted",
+        "ssm_command_id": response["Command"]["CommandId"],
+        "input": input_path,
+    }
+```
+
+## 5. Bucket Roles
 
 | Zone | Example S3 path | Purpose |
 |---|---|---|
@@ -135,7 +236,7 @@ Important implementation note: Lambda is only the submitter and basic landing-ke
 
 The trusted bucket is the baseline bucket. It should contain clean data with standardized columns and data types, but without heavy business-specific transformation.
 
-## 5. Logical Processing Flow
+## 6. Logical Processing Flow
 
 1. Files land in the raw S3 bucket.
 2. A PySpark ingestion job reads raw files.
@@ -146,7 +247,113 @@ The trusted bucket is the baseline bucket. It should contain clean data with sta
 7. If transformation is enabled, PySpark reads trusted data, applies business transformations, and writes to the transformed bucket.
 8. Glue Data Catalog tables can be created over trusted and transformed locations.
 
-## 6. Example Data Quality Rules
+## 7. How Spark Actually Reads Data
+
+Spark DataFrames are lazy. This line does not immediately read the whole file
+into memory:
+
+```python
+df = spark.read.parquet("s3://company-raw/orders/")
+```
+
+It creates a logical plan that says: "when an action runs, read this data."
+
+Examples of transformations that stay lazy:
+
+```python
+df = spark.read.parquet("s3://company-raw/orders/")
+selected = df.select("order_id", "customer_id", "amount")
+filtered = selected.filter("amount >= 0")
+```
+
+Examples of actions that make Spark execute the plan:
+
+```python
+filtered.count()
+filtered.show()
+filtered.write.parquet("s3://company-trusted/orders/")
+filtered.collect()
+filtered.toPandas()
+```
+
+### What Happens During `count()`
+
+When you run:
+
+```python
+df.count()
+```
+
+Spark must count all relevant rows. For Parquet input, Spark creates scan tasks
+from the files and file splits, then schedules those tasks across executor
+cores.
+
+If you have:
+
+```text
+100 Parquet files
+4 executors
+4 cores per executor
+```
+
+Spark can run roughly:
+
+```text
+4 executors x 4 cores = 16 tasks at the same time
+```
+
+It does not mean Spark reads only 4 files total. It means Spark processes a
+limited number of tasks concurrently, then schedules the next tasks as executor
+cores become free.
+
+Mental model:
+
+```text
+count() reads all relevant data logically,
+but physically reads it in parallel batches based on available executor cores.
+```
+
+For Parquet, Spark may use metadata and column pruning where possible, but you
+should still treat `count()` as a real distributed action that scans the
+dataset enough to compute the result.
+
+### Why `collect()` Is Dangerous
+
+This warning applies to a PySpark DataFrame:
+
+```python
+rows = df.collect()
+```
+
+`collect()` brings all rows from Spark executors back to the driver Python
+process as a local list of `Row` objects. If the dataset is large, the driver
+can run out of memory.
+
+This is also dangerous:
+
+```python
+pandas_df = df.toPandas()
+```
+
+`toPandas()` collects all Spark rows to the driver and converts them into a
+pandas DataFrame. Use it only for small results.
+
+Safer patterns:
+
+```python
+df.show(20)                 # small display sample
+df.limit(100).collect()     # small local sample
+df.count()                  # distributed count, only final number returns
+df.write.parquet(path)      # distributed write
+```
+
+Rule of thumb:
+
+```text
+Use collect() only when the result is small enough to fit comfortably in driver memory.
+```
+
+## 8. Example Data Quality Rules
 
 For a beginner-friendly pipeline, start with simple rules.
 
@@ -177,7 +384,7 @@ order_id,customer_id,order_date,status,category,amount,dq_error
 8,,2026-01-05,COMPLETE,grocery,12.50,missing_customer_id
 ```
 
-## 7. Interested Columns For Trusted Zone
+## 9. Interested Columns For Trusted Zone
 
 The trusted zone should keep only the columns the data platform wants to standardize and support.
 
@@ -209,7 +416,7 @@ Example standardization:
 | `source_file` | string |
 | `run_id` | string |
 
-## 8. Optional Transformation
+## 10. Optional Transformation
 
 Transformation should run only when enabled in configuration.
 
@@ -230,7 +437,7 @@ electronics,2026,1,2,399.98,199.99
 grocery,2026,1,1,42.25,42.25
 ```
 
-## 9. Incremental Load vs Full Load
+## 11. Incremental Load vs Full Load
 
 Most batch ingestion jobs use one of these two patterns.
 
@@ -246,7 +453,7 @@ For the local demo:
 
 Important production note: plain Parquet in S3 does not behave like a database table. Incremental append handles new rows, but it does not truly update/delete/merge old rows. For row-level changes, production data lakes usually use Apache Iceberg, Apache Hudi, or Delta Lake.
 
-## 10. Configuration-Driven Design
+## 12. Configuration-Driven Design
 
 The future pipeline should be driven by configuration instead of hardcoding each source.
 
@@ -316,7 +523,7 @@ transformation:
     - aggregate_by_category_month
 ```
 
-## 11. LocalStack Mapping For Local Practice
+## 13. LocalStack Mapping For Local Practice
 
 In local practice, Docker plus LocalStack acts like a small local AWS account.
 
@@ -335,7 +542,7 @@ The same architecture works locally:
 Raw LocalStack S3 -> PySpark DQ -> Trusted LocalStack S3 -> Optional transform -> Transformed LocalStack S3
 ```
 
-## 12. Review Questions Before Building
+## 14. Review Questions Before Building
 
 Before building the config-driven pipeline, confirm:
 
