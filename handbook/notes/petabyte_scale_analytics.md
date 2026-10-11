@@ -1,926 +1,813 @@
-# Big Data Expert Analysis: Messagebird 1PB Monthly Processing
+# Petabyte-Scale RTBF Updates
 
-## Scenario Overview
+This note explains how to perform monthly RTBF, or right to be forgotten, updates over petabyte-scale analytical data. The focus is a three-year sliding window with about 5 to 10 datasets, stored today in S3, totaling about 1 PB.
 
-**Scale:**
+RTBF in this context means:
 
-```
-Time period: 3 years (1097 days)
-Early years (2021): 300-400 GB/day
-Recent years (2023): 1 TB/day
-Total data: ~750 TB - 1 PB
+- Redacting selected columns, such as phone, email, name, address, or device identifiers.
+- Masking or tokenizing personal fields.
+- Marking some rows as logically deleted because the customer is no longer active.
+- Rarely physically purging rows when law, contract, or retention rules require it.
 
-Monthly requirement: Process ~30 TB/month (2024 estimate)
-Archive requirement: Store 1PB historically
-
-This is PETABYTE-scale analytics
-```
-
----
-
-## What This Means
-
-### Data Volume Context
-
-```
-1 PB = 1,000 TB = 1,000,000 GB = 1 Billion GB
-
-To put in perspective:
-├─ All of Google's indexed web: ~100 PB
-├─ Netflix streaming data: ~100 PB
-├─ Messagebird 3-year archive: 1 PB
-└─ AWS stores: 100+ PB daily
-
-This is LARGE but manageable with proper architecture
-```
-
----
-
-## The Challenge
-
-### Why This Is Hard
-
-```
-STORAGE CHALLENGE:
-├─ Can't fit in single database
-├─ Can't afford to store everything hot
-├─ Need tiering strategy (hot/warm/cold)
-└─ Cost management critical
-
-PROCESSING CHALLENGE:
-├─ Monthly jobs must process 30 TB
-├─ 30 TB raw data = 100+ TB after transformations
-├─ Can't process sequentially (would take weeks)
-└─ Need parallel distributed processing
-
-QUERY CHALLENGE:
-├─ Users want to query 1 PB instantly
-├─ Traditional databases timeout
-├─ Need columnar + indexing + partitioning
-└─ Some queries acceptable at 30+ seconds
-
-COST CHALLENGE:
-├─ Storage: $0.02-0.05/GB/month
-├─ 1 PB = 1000 TB = $20K-50K/month storage alone!
-├─ Processing: EMR/Spark can be $5-10K/month
-└─ Total: $25K-60K/month (must optimize!)
-```
-
----
-
-## Architecture Decision: How to Store & Process?
-
-### Option 1: Pure Data Warehouse (Snowflake/BigQuery)
-
-```
-Architecture:
-├─ Upload 30 TB monthly to Snowflake
-├─ Snowflake stores as compressed parquet
-├─ Query via SQL interface
-└─ Auto-scales for analysis
-
-Pros:
-✓ Simple (upload and query)
-✓ Automatic optimization
-✓ Fast queries (10-60 seconds)
-✓ Multi-user access
-✓ Built-in transformations
-
-Cons:
-✗ EXPENSIVE: 1 PB storage × $0.05/month = $50K/month
-✗ Query costs add up quickly
-✗ Overkill for archive data (mostly not queried)
-✗ $600K+/year just for storage
-
-Cost breakdown:
-├─ Storage: 1 PB = $50K/month
-├─ Compute (queries): $10K/month average
-├─ Total: $60K/month = $720K/year
-
-Use case: Only if all data needs to be hot/queryable
-```
-
-### Option 2: Hybrid - Tiered Storage (RECOMMENDED)
-
-```
-Architecture:
-┌─ HOT TIER (Last 30-90 days): Snowflake
-│  └─ Keep recent data hot for queries
-│  └─ Cost: 100 TB × $0.05 = $5K/month
-│
-├─ WARM TIER (Last 1 year): S3 + Glue + Redshift Spectrum/Athena
-│  └─ Query partitioned Parquet in S3 through shared Glue tables
-│  └─ Cost: 400 TB × $0.023 = $9K/month
-│
-└─ COLD TIER (Archive, 1+ year old): Glacier
-   └─ Restore to queryable S3 storage before Spectrum/Athena/Spark reads it
-   └─ Cost: 600 TB × $0.004 = $2.4K/month
-
-Total: $16.4K/month vs $60K/month ✅
-Savings: 73% reduction!
-```
-
-### Option 3: DIY Data Lake with S3, Glue, EMR, and Redshift Spectrum
-
-```
-Architecture:
-├─ Store raw and curated data in S3 as partitioned Parquet
-├─ Use AWS Glue Data Catalog as the table/metastore layer
-├─ Process monthly data with the available EMR Spark cluster
-├─ If no EMR exists, use Glue ETL or EMR Serverless for Spark processing
-├─ Query S3 data from Redshift using Redshift Spectrum external tables
-├─ Optional: use Athena for ad hoc SQL directly on S3
-└─ Dashboards query Redshift views or cached summary tables
-
-Pros:
-✓ Uses existing AWS components: S3, Glue, EMR, Redshift Spectrum
-✓ Cheapest at scale when queries are optimized
-✓ Full control
-✓ Can optimize per use case
-✓ Open lake layout with Parquet + partitions
-
-Cons:
-✗ Need ops expertise
-✗ Requires custom ETL
-✗ Redshift Spectrum can be slow/expensive if partitions are poor
-✗ Need careful file sizing, partitioning, and Glue catalog hygiene
-✗ Complex compared with fully managed warehouse
-
-Cost breakdown:
-├─ S3 storage (1 PB): $20K/month
-├─ EMR for monthly processing: $3-5K if cluster is reused/on-demand
-├─ No-EMR alternative: Glue ETL or EMR Serverless pay-per-job
-├─ Glue Catalog/crawlers: low cost, mostly metadata operations
-├─ Redshift Spectrum: existing Redshift cluster + S3 scan cost
-├─ Optional Athena ad hoc queries: pay per scanned TB
-├─ Personnel: $15K/month (1 engineer)
-└─ Total: depends on query volume, but avoids storing all data hot
-
-Best fit when you already have EMR and Redshift available. If there is no EMR cluster, keep the same S3 + Glue + Spectrum lake design and replace EMR Spark with Glue ETL or EMR Serverless.
-Without EMR, Redshift Spectrum still runs from your Redshift cluster/serverless workgroup, not from EMR. Redshift provisioned cluster is the traditional model where we 
-manage nodes and capacity. Redshift Serverless is the managed model where AWS handles capacity and we pay based on workload. Both provide Redshift SQL, and both can query 
-external S3 data using Glue Catalog external schemas.
-```
-
-Simple DIY flow:
+The monthly process handles the full retained window:
 
 ```text
-S3 raw zone
-  -> EMR Spark monthly ETL
-     or Glue ETL / EMR Serverless when no EMR cluster exists
-  -> S3 curated zone, partitioned by dt/month/customer/region as needed
-  -> Glue Data Catalog external tables
-  -> Redshift Spectrum external schema
-  -> Redshift SQL/views/dashboards
+Window size:      3 years, about 1,097 days
+Data size:        about 1 PB total
+Datasets:         about 5 to 10 S3 datasets
+Monthly pattern:  add current month, expire oldest month
+RTBF cadence:     run once per month
+Primary actions:  redact, mask, logical delete
+Rare action:      physical purge
 ```
 
-Key design rule: Redshift Spectrum is only efficient when data is Parquet, compressed, reasonably sized, and
-partition-pruned. Avoid scanning the full 1 PB for normal dashboards.
+---
 
-No-EMR decision:
+## Short Recommendation
+
+Best default solution for cost, ease of use, and maintainability:
 
 ```text
-If an EMR cluster exists:
-├─ Use EMR Spark for large monthly transformations
-├─ Good for heavy joins, full-history backfills, custom Spark tuning
-└─ Best when the team already operates EMR
+Use S3 as the durable source of truth.
+Store lake data as Iceberg or Hudi tables, not plain loose Parquet if RTBF is common.
+Use EMR Spark or EMR Serverless Spark for the monthly RTBF update job.
+Use Glue Catalog for table metadata.
+Use Athena or Redshift Spectrum for verification and ad hoc reads.
+Use Redshift, Snowflake, or StarRocks only as serving/query layers where needed.
+```
 
-If no EMR cluster exists:
-├─ Use Glue ETL for managed Spark jobs and simple operations
-├─ Use EMR Serverless for Spark without managing clusters
-├─ Use Athena CTAS/INSERT for lightweight SQL transformations only
-└─ Avoid Redshift Spectrum as the transformation engine; use it mainly for SQL reads over curated S3 data
+In simple terms:
+
+```text
+S3 + Iceberg/Hudi + Glue + EMR Spark
+  -> best core architecture for monthly RTBF over 1 PB
+
+Snowflake or StarRocks
+  -> good serving/query engines
+  -> not the cheapest place to store and rewrite the full 1 PB every month
+
+Redshift + Glue/Spectrum
+  -> good for querying S3 and BI marts
+  -> not the best engine for rewriting 1 PB of lake data
+```
+
+If choosing only one main processing engine for the monthly RTBF operation, choose **EMR Spark over S3 lake tables**.
+
+---
+
+## Why EMR Spark Is the Best Default
+
+RTBF over 1 PB is a large batch data engineering problem. Spark is designed for this kind of distributed file/table processing.
+
+Use EMR Spark when:
+
+- The data already lives in S3.
+- There are multiple datasets.
+- The job runs monthly.
+- The operation is mostly row/column updates, redaction, masking, and logical deletes.
+- Cost matters.
+- You need control over partitions, files, table formats, and retries.
+
+Recommended layout:
+
+```text
+S3 lake
+  -> raw zone, optional immutable source
+  -> curated zone, Iceberg/Hudi tables
+  -> redacted zone or updated table snapshots
+
+Glue Catalog
+  -> table metadata
+  -> partitions and schemas
+
+EMR Spark
+  -> monthly RTBF batch
+  -> redaction/masking/deletion logic
+  -> compaction
+  -> snapshot publishing
+
+Athena / Redshift Spectrum
+  -> verification queries
+  -> historical reads
+
+Redshift / Snowflake / StarRocks
+  -> hot serving tables, summaries, dashboards
 ```
 
 ---
 
-## Recommended Architecture for Messagebird
+## Monthly RTBF Flow
 
-### The Optimal Solution: Smart Tiering
+The monthly job should not be a random collection of scripts. Treat it as a controlled batch with an auditable request set.
 
-```
-┌────────────────────────────────────────────────────────┐
-│ MESSAGEBIRD 1PB MONTHLY PROCESSING ARCHITECTURE        │
-└────────────────────────────────────────────────────────┘
+```text
+1. Freeze the monthly RTBF batch
+   -> collect approved customer requests, legal rules, and business rules
+   -> assign a batch id, for example rtbf_batch=2026-10
+   -> normalize keys: customer_id, account_id, phone_hash, email_hash, device_id
 
-INGESTION LAYER:
-┌─────────────────────────────────────────────────────┐
-│ Daily files land in S3 (1 TB/day recent)            │
-├─────────────────────────────────────────────────────┤
-│ ├─ Raw: s3://raw-data/2024/01/15/data.csv          │
-│ ├─ Format: CSV/Parquet (compressed)                │
-│ └─ Partitioned: By date, region, source            │
-└─────────────────────────────────────────────────────┘
+2. Classify the action
+   -> redact selected columns
+   -> mask selected columns
+   -> set is_deleted=true
+   -> physically purge only when required
 
-TRANSFORMATION LAYER:
-┌─────────────────────────────────────────────────────┐
-│ Monthly batch ETL (via EMR + Spark)                 │
-├─────────────────────────────────────────────────────┤
-│ ├─ Trigger: CloudWatch rule (1st of month)        │
-│ ├─ Process: 30 TB raw → 50 TB processed            │
-│ ├─ Duration: 4-6 hours (parallel processing)       │
-│ ├─ Cost: $2-3K per run                             │
-│ └─ Output: Partitioned parquet to S3               │
-└─────────────────────────────────────────────────────┘
+3. Process the three-year window
+   -> read affected datasets
+   -> apply RTBF rules
+   -> update Iceberg/Hudi tables or rewrite affected partitions
+   -> compact files if needed
 
-STORAGE LAYER (TIERED):
-┌─────────────────────────────────────────────────────┐
-│ HOT (Last 30 days): Snowflake                       │
-│ ├─ Size: 30 TB compressed                          │
-│ ├─ Cost: $1.5K/month                               │
-│ ├─ Query: <10 seconds (live dashboards)            │
-│ └─ Use: Real-time analytics, reports               │
-├─────────────────────────────────────────────────────┤
-│ WARM (Last 1 year): S3 + Glue + Redshift Spectrum │
-│ ├─ Size: 400 TB                                    │
-│ ├─ Cost: $9K/month                                 │
-│ ├─ Query: 30-120 seconds when partition-pruned    │
-│ └─ Use: Historical analysis, compliance, reports   │
-├─────────────────────────────────────────────────────┤
-│ COLD (1+ year old): Glacier                        │
-│ ├─ Size: 600 TB                                    │
-│ ├─ Cost: $2.4K/month                               │
-│ ├─ Query: Requires restore (minutes to hours)      │
-│ └─ Use: Archive, compliance, rare deep analysis    │
-└─────────────────────────────────────────────────────┘
+4. Refresh serving layers
+   -> update StarRocks tables if used
+   -> update Snowflake tables if used
+   -> update Redshift marts/materialized views if used
 
-ANALYTICS LAYER:
-┌─────────────────────────────────────────────────────┐
-│ Dashboards                                          │
-│ ├─ Real-time: Query Snowflake (HOT)               │
-│ ├─ Daily: Query Redshift Spectrum via Glue (WARM) │
-│ ├─ Ad hoc: Query Athena on the same Glue tables   │
-│ ├─ Monthly: Run Spark jobs on full history         │
-│ └─ Response: <10s for recent, 30-120s for older   │
-└─────────────────────────────────────────────────────┘
+5. Rebuild summaries
+   -> last 90 days can stay detailed and hot
+   -> older data can be stored as monthly/customer/product summaries
+   -> rebuild only summaries affected by the RTBF batch
 
-TOTAL COST:
-├─ Snowflake (HOT): $1.5K/month
-├─ S3 storage (WARM + COLD): $11.4K/month
-├─ Redshift Spectrum/Athena scans: $2K/month
-├─ EMR monthly processing: $3K (1 job)
-├─ Personnel: $10K/month (½ engineer on ops)
-└─ TOTAL: $27.9K/month = $335K/year
+6. Verify and audit
+   -> query lake tables, Athena, Redshift, Snowflake, and StarRocks as applicable
+   -> confirm redacted fields are gone
+   -> confirm logically deleted customers are hidden
+   -> store counts, hashes, batch id, and completion status
 ```
 
 ---
 
-## Monthly Processing Strategy
+## Redaction vs Logical Delete vs Purge
 
-### The Monthly ETL Job
+Do not physically delete everything by default. Most RTBF and business-rule cases are easier and cheaper as redaction or logical deletion.
 
-```
-TRIGGER:
-└─ CloudWatch rule: 1st of month @ 2 AM
+```text
+Redaction
+  -> replace sensitive column values with null, masked value, or token
+  -> keeps non-personal analytical facts usable
+  -> best for reporting continuity
 
-INPUTS:
-├─ Source: Raw daily files (30 TB) in S3
-├─ Format: CSV/Parquet
-├─ Partitioning: date/region/source
-└─ Location: s3://raw-data/2024/01/*/
+Logical delete
+  -> keep the row but set is_deleted=true or deleted_at=batch_time
+  -> dashboards and downstream jobs filter it out
+  -> useful when the row must not appear but audit counts matter
 
-PROCESSING (via Spark on EMR):
-┌─────────────────────────────────────────────┐
-│ Step 1: Read all 30 TB (parallel)           │
-├─────────────────────────────────────────────┤
-│ Spark configuration:
-│ ├─ Nodes: 50 executors (r5.4xlarge)
-│ ├─ Memory per node: 128 GB
-│ ├─ Total cluster memory: 6.4 TB
-│ └─ Cost: $1500 (1-2 hours at this scale)
-│
-│ Read strategy:
-│ ├─ Partition pruning: Read only Jan 2024
-│ ├─ Schema inference: Auto-detect types
-│ └─ Parallel reads: 50+ concurrent readers
-└─────────────────────────────────────────────┘
-
-Step 2: Transform (2-3 hours)
-├─ Deduplication: Remove duplicate records
-├─ Data quality: Validate schema, ranges
-├─ Enrichment: Add lookups (regions, types)
-├─ Aggregations: Sum costs, count events
-└─ Partitioning: By date/region for queries
-
-Step 3: Write to S3 (1-2 hours)
-├─ Format: Parquet (columnar, compressed)
-├─ Compression: Snappy (60-70% reduction)
-├─ 30 TB → 10-15 TB compressed
-├─ Partitioning: By date/region
-├─ Output location: s3://processed-data/2024/01/
-└─ S3 write cost: Included in EMR
-
-Step 4: Update metadata
-├─ Glue Catalog partitions: register new S3 data
-├─ Redshift Spectrum: external tables see new Glue partitions
-├─ Snowflake: Refresh HOT data (sync)
-├─ DynamoDB: Update processing status
-└─ Notify: Send completion alert
-
-OUTPUTS:
-├─ Processed data: 10-15 TB (S3)
-├─ Logs: Spark job logs (S3)
-├─ Metrics: Processing time, records processed
-└─ Status: COMPLETED/FAILED
-
-TOTAL TIME: 4-6 hours
-TOTAL COST: $2-3K per run
+Physical purge
+  -> remove matching rows from the lake and serving systems
+  -> highest operational cost
+  -> use when law, contract, or retention policy requires removal
 ```
 
-### Optimization: Incremental vs Full
+Example:
 
-```
-FULL MONTHLY REPROCESS (What you need):
-├─ Input: All raw files for the month (30 TB)
-├─ Output: Complete month of processed data
-├─ Frequency: 1st of month
-├─ Time: 4-6 hours
-├─ Cost: $3K per job
-└─ Benefit: Complete refresh, catch any issues
+```text
+Customer left the business:
+  -> set is_deleted=true in customer/profile tables
+  -> remove customer from active dashboards
+  -> keep non-personal aggregated financial facts if allowed
 
-DAILY INCREMENTAL (Alternative):
-├─ Input: Daily file (1 TB)
-├─ Output: Incrementally updated partitions
-├─ Frequency: Daily @ 2 AM
-├─ Time: 15-20 minutes
-├─ Cost: $300 per job
-└─ Benefit: Faster updates, catch errors early
-
-RECOMMENDED HYBRID:
-├─ Daily incremental: Catch errors early
-├─ Monthly full reprocess: Validation & corrections
-├─ Monthly cost: 30 × $300 + $3K = $12K
-└─ Benefit: Best of both worlds
+Privacy request:
+  -> redact name, phone, email, address, device ids
+  -> mask customer identifiers where required
+  -> purge only datasets where policy requires full removal
 ```
 
 ---
 
-## Query Patterns & Performance
+## Handling Old S3 Files, Versions, and Prefixes
 
-### Typical Queries on 1 PB Archive
+For RTBF, deleting or rewriting only the latest visible dataset is not enough. Old S3 files can still exist in previous prefixes, noncurrent S3 object versions, lakehouse snapshots, backup locations, or downstream serving layers.
 
-```
-QUERY 1: "Total revenue by customer, last month"
-├─ Data scanned: 30 TB (just last month)
-├─ WHERE: date BETWEEN 2024-01-01 AND 2024-01-31
-├─ Layer: Snowflake (HOT)
-├─ Response time: <5 seconds ✅
-├─ Cost: $0.01
+Important S3 detail:
 
-QUERY 2: "Average SMS cost by region, last year"
-├─ Data scanned: 400 TB (full year)
-├─ WHERE: date BETWEEN 2023-01-01 AND 2023-12-31
-├─ Layer: Redshift Spectrum over Glue table (WARM)
-├─ Response time: 60-120 seconds
-├─ Cost: depends on bytes scanned; reduce with partition pruning
-
-QUERY 3: "Trend analysis, all 3 years"
-├─ Data scanned: 1 PB (full archive)
-├─ WHERE: date >= 2021-01-01
-├─ Layer: Spark job (COLD → warm temp)
-├─ Response time: 10-15 minutes
-├─ Cost: $5-10 (run Spark cluster 10 min)
-
-QUERY 4: "Find anomalies (ML on full data)"
-├─ Data: 1 PB historical
-├─ Layer: Spark + scikit-learn
-├─ Response time: 30-60 minutes
-├─ Cost: $20-30 (large Spark cluster)
+```text
+S3 does not have real folders.
+An S3 prefix is just part of the object key.
+There is no atomic "rename prefix" operation.
 ```
 
-### Optimization Techniques
+So "quarantine the old prefix" usually does **not** mean renaming a folder. It means one of these patterns:
 
+```text
+Preferred:
+  stop referencing the old prefix
+  switch readers to the clean prefix
+  block normal access to the old prefix
+  automatically delete the old prefix after the safety window
+
+Optional but expensive:
+  copy old objects to _quarantine/...
+  delete old active objects
+  treat this as a physical move, because S3 move = copy + delete
+
+Alternative:
+  tag old objects as quarantined
+  use lifecycle rules by tag to delete them automatically
 ```
-TECHNIQUE 1: Partitioning
-├─ Partition by: date, region, customer_segment
-├─ Benefit: Query prunes 80-90% of data
-├─ Example: Query Jan 2024 only → skip other years
-└─ Impact: 120s → 10s query time
 
-TECHNIQUE 2: Columnar Storage
-├─ Format: Parquet (not CSV)
-├─ Benefit: Only read needed columns
-├─ Example: SELECT region, SUM(cost)
-│           → only read 2 columns, skip others
-└─ Impact: 100% → 5% data read
+Use this rule of thumb:
 
-TECHNIQUE 3: Compression
-├─ Parquet + Snappy: 60-70% reduction
-├─ 1 PB raw → 300-400 TB compressed
-├─ Cost reduction: $20K/month → $6K/month
-└─ Impact: Huge cost savings
+```text
+Do not update S3 files in place.
+Write clean files to a new prefix.
+Switch readers to the clean prefix.
+Quarantine old data logically unless physical movement is required.
+Use S3 Lifecycle or a purge job for automatic deletion.
+Purge old current objects, noncurrent versions, and stale metadata after the safety window.
+```
 
-TECHNIQUE 4: Indexes/Statistics
-├─ Glue partitions/projection: Avoid scanning irrelevant S3 prefixes
-├─ Bloom filters: Skip rows quickly
-├─ Statistics: Table sizes, min/max values
-└─ Impact: 120s → 30s for common queries
+Recommended workflow:
 
-TECHNIQUE 5: Caching
-├─ Cache frequent queries in memory
-├─ Snowflake caching: Automatic
-├─ Redis: For top 100 dashboards
-└─ Impact: 100s → <1s for cached queries
+```text
+1. Identify affected files and partitions
+   -> find all S3 prefixes, table snapshots, and downstream copies containing the subject
+
+2. Rewrite clean data to a new prefix
+   -> exclude or redact the RTBF subject
+   -> write immutable Parquet/Iceberg/Hudi output
+
+3. Switch readers atomically
+   -> update Iceberg/Hudi snapshot, Glue table location, manifest, or pipeline config
+   -> make Athena, Spark, Snowflake, Redshift Spectrum, and serving layers read only clean data
+
+4. Quarantine old data
+   -> usually do not rename or move the S3 prefix
+   -> remove old references from active catalogs
+   -> deny normal analytics access to the old prefix
+   -> optionally tag old objects as quarantined
+   -> optionally keep old files for 7 days for rollback if policy allows
+
+5. Final purge
+   -> delete current objects
+   -> delete noncurrent object versions if S3 Versioning is enabled
+   -> remove expired delete markers
+   -> expire old Iceberg/Hudi snapshots that still reference old files
+
+6. Verify and audit
+   -> use S3 Inventory, ListObjectVersions, table metadata, and query checks
+   -> record request id, batch id, old prefix, new prefix, purge time, and verification result
+```
+
+Example prefix pattern:
+
+```text
+Old active prefix:
+s3://company-lake/curated/orders/date=2026-10-10/
+
+Clean rewritten prefix:
+s3://company-lake/curated/orders_rtbf/run_id=rtbf_2026_10/date=2026-10-10/
+
+Quarantine prefix:
+s3://company-lake/_quarantine/rtbf/orders/run_id=rtbf_2026_10/date=2026-10-10/
+```
+
+Use the quarantine prefix only when you truly need to physically group old files under `_quarantine/`. At petabyte scale, copying old objects to a quarantine prefix can be expensive, slow, and unnecessary. The cheaper pattern is:
+
+```text
+old prefix remains physically where it is
+catalog/table pointer moves to the clean prefix
+IAM blocks normal reads from the old prefix
+lifecycle or purge job deletes the old prefix after 7 days
+```
+
+Seven-day safety window pattern:
+
+```text
+Day 0:
+  rewrite clean data
+  publish clean table snapshot/pointer
+  remove old prefix from active reads
+  register old prefix for purge
+  optionally tag old objects with rtbf_status=quarantine
+
+Days 1-7:
+  monitor downstream jobs
+  allow controlled rollback only through restricted admin process
+  keep old prefix inaccessible to normal analytics users
+
+Day 7:
+  lifecycle or purge job deletes old current objects
+  purge noncurrent S3 versions
+  remove expired delete markers
+  expire old lakehouse snapshots
+  store audit proof
+```
+
+Important S3 Versioning detail:
+
+```text
+In a versioned S3 bucket, a normal delete can create a delete marker.
+Older object versions may still exist.
+For RTBF purge, configure lifecycle rules or an explicit purge job for noncurrent versions.
+```
+
+Automatic deletion options:
+
+```text
+Option A: Lifecycle by quarantine prefix
+  Prefix: _quarantine/rtbf/
+  Expire current versions: 7 days
+  Permanently delete noncurrent versions: 7 days
+  Delete expired delete markers: enabled
+
+Option B: Lifecycle by old data prefix
+  Prefix: curated/orders/date=2026-10-10/
+  Expire current versions: 7 days
+  Permanently delete noncurrent versions: 7 days
+  Delete expired delete markers: enabled
+
+Option C: Lifecycle by object tag
+  Tag: rtbf_status=quarantine
+  Tag: purge_after=2026-10-18
+  Expire current versions according to lifecycle policy
+  Permanently delete noncurrent versions according to lifecycle policy
+```
+
+A purge-control table is useful for audit and automation:
+
+```text
+rtbf_batch_id
+dataset_name
+old_prefix
+new_prefix
+quarantine_started_at
+purge_after_at
+quarantine_mode       -- pointer_only, tag_only, physical_move
+purge_status          -- pending, running, complete, failed
+verification_status   -- pending, passed, failed
+```
+
+If S3 Object Lock, legal hold, or compliance-mode retention is enabled, the files might not be deletable until the retention period expires. That is a compliance and retention-policy decision, not just a Spark/S3 engineering issue.
+
+Lakehouse table formats also need cleanup:
+
+```text
+Iceberg:
+  -> publish clean snapshot
+  -> expire old snapshots after allowed rollback window
+  -> remove orphan files after snapshots no longer reference them
+
+Hudi:
+  -> commit clean write/delete
+  -> run cleaner according to retention policy
+  -> verify old file slices are no longer retained beyond the safety window
+
+Plain Parquet:
+  -> switch Glue/Athena/Snowflake/Redshift Spectrum pointers to clean prefix
+  -> remove old prefix from active readers
+  -> optionally tag old objects or copy to quarantine prefix
+  -> lifecycle/purge old versions
+```
+
+Checklist:
+
+- [ ] Find every active and backup prefix containing the subject.
+- [ ] Rewrite clean files to a new prefix.
+- [ ] Publish clean table/catalog pointer.
+- [ ] Remove old prefix from active readers.
+- [ ] Choose quarantine mode: pointer-only, tag-only, or physical copy+delete.
+- [ ] Deny normal analytics access to old/quarantined data.
+- [ ] Create lifecycle rules or purge jobs for old prefixes/tags.
+- [ ] Purge current and noncurrent S3 object versions.
+- [ ] Remove expired delete markers.
+- [ ] Expire old Iceberg/Hudi snapshots.
+- [ ] Verify with S3 Inventory or object-version listing.
+- [ ] Store audit evidence for the RTBF request.
+
+---
+
+## Best Table Format
+
+Plain Parquet works, but it is harder to maintain when updates and deletes are repeated every month.
+
+Better choices:
+
+```text
+Apache Iceberg
+  -> strong option for S3 lakehouse tables
+  -> supports snapshots, deletes, updates/merge patterns through Spark
+  -> works with Glue Catalog and many query engines
+  -> good for monthly RTBF with audit and rollback
+
+Apache Hudi
+  -> strong option for upserts and incremental processing
+  -> good when record-level changes are common
+  -> more operational choices to understand
+
+Plain Parquet
+  -> cheapest and simplest file format
+  -> but updates require partition rewrites
+  -> acceptable if RTBF volume is small and monthly rewrite is manageable
+```
+
+Recommended:
+
+```text
+Use Iceberg if starting fresh or modernizing the lake.
+Use Hudi if upserts/deletes are frequent and the team already knows Hudi.
+Use plain Parquet only if the process is simple and mostly partition rewrites.
+```
+
+Important limitation:
+
+```text
+Iceberg/Hudi reduce operational pain.
+They do not remove the physical cost of changing data that must be rewritten.
+```
+
+Impact-size guide:
+
+```text
+Small RTBF impact
+  -> a few customers or records touch a limited number of files/partitions
+  -> Iceberg/Hudi are very useful
+  -> update/delete/redact only affected files or table snapshots
+
+Medium RTBF impact
+  -> many customers across many months, but not every file
+  -> Iceberg/Hudi still help with metadata, snapshots, rollback, and publishing
+  -> Spark may still rewrite many files or partitions
+
+Large RTBF impact
+  -> almost every file or almost every row changes
+  -> treat it as a controlled full rebuild
+  -> Spark reads the old table, applies RTBF rules, and writes a new clean snapshot
+  -> Iceberg/Hudi help with atomic publish and rollback, but cost is close to full rewrite
+```
+
+Examples:
+
+```text
+Good Iceberg/Hudi win:
+  1,000 customers need redaction across a 1 PB lake.
+  Only files/partitions containing those customers need updates.
+
+Full-rewrite case:
+  A business rule says redact one column for every row in every dataset.
+  That physically changes almost all files, so the monthly job is close to a 1 PB rewrite.
 ```
 
 ---
 
-## Cost Optimization Strategy
+## Option Comparison
 
-### Current Naive Cost (If All in Snowflake)
+### Option 1: EMR Spark over S3
 
-```
-1 PB in Snowflake:
-├─ Storage: 1 PB × $0.05/month = $50K/month
-├─ Queries: ~100 queries/day @ $0.01/query avg = $3K/month
-├─ Total: $53K/month = $636K/year
+This is the best default for the monthly RTBF job.
 
-This is TOO EXPENSIVE!
-```
-
-### Optimized Cost (Recommended)
-
-```
-Tiered approach (as described above):
-├─ HOT (30 days, Snowflake): $1.5K/month
-├─ WARM (1 year, S3 + Glue + Redshift Spectrum): $9K/month
-├─ COLD (Archive, Glacier): $2.4K/month
-├─ Processing: $3K/month (monthly job)
-├─ Caching layer: $1K/month
-└─ Total: $16.9K/month = $203K/year
-
-SAVINGS: $433K/year (68% reduction!)
+```text
+Architecture:
+  S3 Iceberg/Hudi/Parquet
+    -> Glue Catalog
+    -> EMR Spark monthly RTBF job
+    -> cleaned table snapshots in S3
+    -> Athena/Spectrum verification
+    -> optional serving refresh to Redshift/Snowflake/StarRocks
 ```
 
-### Cost Breakdown by Use Case
+Pros:
 
+- Best cost profile for 1 PB lake processing.
+- Keeps S3 as durable source of truth.
+- Handles 5 to 10 datasets naturally.
+- Good for redaction, masking, logical deletes, and rare purges.
+- Open architecture with less vendor lock-in.
+- Easy to keep backup/history through table snapshots and S3 versioning/lifecycle.
+
+Cons:
+
+- Requires Spark engineering skill.
+- Needs careful partitioning, compaction, retries, and monitoring.
+- Plain Parquet rewrites can be expensive if partitions are poorly designed.
+
+Best use:
+
+```text
+Monthly RTBF over full 3-year S3 data window.
+Large table rewrites or Iceberg/Hudi updates.
+Batch compliance processing.
 ```
-USE CASE 1: "Show dashboard with last 30 days"
-├─ Query: Snowflake (HOT data)
-├─ Cost: $0.10 per query (very cheap)
-├─ Time: <10 seconds
-└─ Frequency: Every user refresh
 
-USE CASE 2: "Monthly revenue report"
-├─ Query: Mix of Snowflake + Redshift Spectrum over Glue tables
-├─ Cost: $0.50-1.00 per query
-├─ Time: 30-60 seconds
-└─ Frequency: 5 times/month
+Verdict:
 
-USE CASE 3: "Annual analysis"
-├─ Query: Spark job on full data
-├─ Cost: $20-30 per query
-├─ Time: 10-30 minutes
-└─ Frequency: Quarterly
-
-USE CASE 4: "Deep historical dive (rare)"
-├─ Query: Glacier + Spark (requires restore)
-├─ Cost: $50-100 per query
-├─ Time: Hours
-└─ Frequency: 1-2 times/year
+```text
+Best overall choice for cost + control + maintainability.
 ```
 
 ---
 
-## Implementation Roadmap
+### Option 2: Snowflake
 
-### Phase 1: Set Up Tiered Storage (Month 1)
+Snowflake is easy to use, but storing and updating the full 1 PB in Snowflake every month can be expensive.
 
-```
-Week 1:
-├─ Set up S3 lifecycle policies
-│  ├─ Move data >30 days old to S3 (warm)
-│  ├─ Move data >1 year old to Glacier (cold)
-│  └─ Cost: $0 (just configuration)
-│
-├─ Configure Glue Catalog + Redshift Spectrum for S3 queries
-│  ├─ Create Glue external tables over curated Parquet
-│  ├─ Create Redshift external schema pointing to Glue
-│  ├─ Add partition repair/projection strategy
-│  └─ Cost: Glue metadata is low; Spectrum cost depends on scanned data
-│
-├─ Optional: configure Athena for ad hoc S3 queries
-│  ├─ Reuse the same Glue Catalog tables
-│  └─ Use workgroups to control scan cost
-│
-└─ Snowflake setup for HOT data
-   ├─ Create optimized schema
-   ├─ Load last 30 days
-   └─ Cost: $1.5K/month
+Two possible Snowflake patterns:
 
-Week 2-3:
-├─ Build data pipeline
-│  ├─ ETL: Ingest daily files
-│  ├─ Transformation: Clean, enrich
-│  └─ Output: Partitioned parquet
-│
-├─ Set up monitoring
-│  ├─ CloudWatch alarms
-│  ├─ Data quality checks
-│  └─ Cost: $100/month
+```text
+Pattern A: Snowflake as primary store
+  -> load all 1 PB into Snowflake
+  -> run RTBF updates/deletes in Snowflake
+  -> use S3 only as backup/export
 
-Week 4:
-├─ Test queries
-├─ Train users
-└─ Go live!
+Pattern B: S3 as primary store, Snowflake as serving/query layer
+  -> keep full 1 PB in S3
+  -> process RTBF in EMR Spark
+  -> refresh only hot/query tables in Snowflake
 ```
 
-### Phase 2: Optimize Monthly Processing (Month 2-3)
+Pros:
 
-```
-├─ Build Spark job for monthly reprocessing
-├─ Implement incremental loads
-├─ Add data quality checks
-├─ Automate via Step Functions
-└─ Validate accuracy
+- Very easy SQL experience.
+- Strong governance and access controls.
+- Good for analyst productivity.
+- Updates/deletes are simpler from the user perspective.
+
+Cons:
+
+- Full 1 PB storage plus monthly update compute can be expensive.
+- Large updates can rewrite micro-partitions internally and consume warehouse credits.
+- If S3 remains only backup, the operational source of truth moves into Snowflake.
+- Less cost-efficient than Spark/S3 for full-window lake rewrites.
+
+Best use:
+
+```text
+Hot or warm serving tables.
+Curated marts.
+Analytics where ease of SQL is worth the cost.
 ```
 
-### Phase 3: Add Analytics & Caching (Month 4)
+Verdict:
 
-```
-├─ Add Redis cache for hot queries
-├─ Build dashboards
-├─ Implement ML models
-└─ Optimize slow queries
+```text
+Use Snowflake for serving and analytics.
+Avoid making it the only engine for monthly 1 PB RTBF unless budget and simplicity matter more than cost.
 ```
 
 ---
 
-## Key Decisions & Trade-offs
+### Option 3: StarRocks
 
-### Decision 1: Raw Format (CSV vs Parquet)
+StarRocks is strong for fast analytical serving and mutable tables, but it is usually not the cheapest system for storing all historical raw detail if S3 can do that.
 
-```
-CSV (current):
-├─ Pros: Human-readable, standard
-├─ Cons: Large (1 TB raw = 1 TB stored)
-├─ Cost: High storage
-└─ Processing time: Slow (text parsing)
+Two possible StarRocks patterns:
 
-RECOMMENDATION: Convert to Parquet
-├─ Pros: Compressed (60-70% reduction)
-├─ Cons: Binary format (need tools)
-├─ Cost: Save 30 TB × $0.023 = $690/month
-└─ Time savings: Parse speed 10x faster
+```text
+Pattern A: StarRocks as primary analytical store
+  -> load detailed data into StarRocks
+  -> update/delete/mask rows there
+  -> keep S3 as backup
 
-Action: Convert on next monthly run
-Savings: $8K/year storage + faster processing
+Pattern B: S3 as primary lake, StarRocks as hot serving layer
+  -> process full RTBF in S3 with EMR Spark
+  -> load last 90 days or summaries into StarRocks
+  -> apply fast serving updates in StarRocks
 ```
 
-### Decision 2: Query And Processing Engine
+Pros:
 
-```
-SNOWFLAKE:
-├─ Best for: Recent hot data (last 30 days)
-├─ Speed: <10 seconds
-├─ Cost: Expensive but predictable
-└─ Use: Live dashboards
+- Excellent dashboard/query performance.
+- Good for high-concurrency analytics.
+- Supports mutable serving patterns such as primary-key/update style tables.
+- Useful when RTBF must become visible quickly in user-facing analytics.
 
-ATHENA:
-├─ Best for: Recent warm data (last 1 year)
-├─ Speed: 30-120 seconds
-├─ Cost: Pay-per-scan (fair pricing)
-└─ Use: Ad hoc historical analysis on Glue Catalog tables
+Cons:
 
-REDSHIFT SPECTRUM:
-├─ Best for: SQL access from existing Redshift to S3 data
-├─ Speed: Good when partition-pruned; poor for full 1 PB scans
-├─ Cost: Existing Redshift cluster + Spectrum scanned data
-└─ Use: Dashboards, joins with Redshift tables, curated historical queries
+- Operating another distributed database adds maintenance.
+- Storing the full 1 PB there may be more expensive than S3.
+- S3 backup still needs its own RTBF cleanup if it contains personal data.
+- Not the best default for full historical lake rewrite.
 
-GLUE CATALOG:
-├─ Best for: Shared metadata layer over S3 Parquet
-├─ Speed: Not a query engine
-├─ Cost: Low metadata/crawler cost
-└─ Use: Common table definitions for EMR, Athena, and Redshift Spectrum
+Best use:
 
-GLUE ETL / EMR SERVERLESS:
-├─ Best for: Spark processing when there is no EMR cluster
-├─ Speed: Good for batch ETL; startup and job tuning matter
-├─ Cost: Pay per job/resources used
-└─ Use: Monthly transforms, backfills, compaction, and Parquet conversion
-
-RECOMMENDATION: Use the right engine per workload
-├─ Snowflake: HOT queries (50%)
-├─ Redshift Spectrum + Glue: WARM/COLD curated S3 queries (40%)
-├─ Athena: Ad hoc S3 exploration (5%)
-├─ EMR Spark if available: Heavy monthly transformations and full-history processing
-└─ Glue ETL or EMR Serverless if no EMR cluster exists: Managed Spark processing
+```text
+Last 90 days of hot detail.
+Customer/profile serving tables.
+Fast dashboards.
+Precomputed summaries.
+Fast visibility of redaction/deletion results.
 ```
 
-### Decision 3: Processing Frequency (Daily vs Monthly)
+Verdict:
 
-```
-CURRENT (Monthly):
-├─ Frequency: 1st of month
-├─ Data quality: Issues found late
-├─ Cost: $3K per run
-└─ Problem: 30 days of errors possible
-
-RECOMMENDED (Hybrid):
-├─ Daily incremental: $300/day
-├─ Monthly validation: $3K (full reprocess)
-├─ Total: $12K/month
-├─ Benefit: Errors caught within 24 hours
-└─ ROI: Better quality > $3K extra cost
-
-Action: Implement daily incremental loads
+```text
+Use StarRocks as a serving layer, not the main monthly 1 PB processing engine.
 ```
 
 ---
 
-## Sample Code: Monthly Processing Job
+### Option 4: Redshift, Glue, and Spectrum
 
-### Spark Job (Python)
+Glue and Redshift Spectrum are useful for metadata and querying S3, but Spectrum is not a replacement for Spark.
 
-```python
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
-import sys
+Important:
 
-spark = SparkSession.builder
-.appName("Messagebird-Monthly-ETL")
-.getOrCreate()
+```text
+Glue Catalog
+  -> metadata layer, not a processing engine
 
-sc = spark.sparkContext
+Redshift Spectrum
+  -> query S3 external tables from Redshift
+  -> uses AWS-managed Spectrum workers
+  -> does not use your EMR cluster
 
-# STEP 1: Read raw data (30 TB for 1 month)
-print("Reading raw data from S3...")
-df_raw = spark.read
-.option("header", "true")
-.csv("s3://raw-data/2024/01/*/data.csv")
-
-print(f"Records read: {df_raw.count():,}")
-
-# STEP 2: Transform
-print("Transforming data...")
-
-df_transformed = df_raw
-.filter(col("amount") > 0)
-.filter(col("customer_id").isNotNull())
-.withColumn("year", year(col("date")))
-.withColumn("month", month(col("date")))
-.withColumn("region", upper(col("region")))
-.dropDuplicates(["transaction_id"])
-
-# STEP 3: Aggregations
-print("Aggregating by region...")
-
-df_agg = df_transformed
-.groupBy("date", "region", "event_type")
-.agg(
-    count("*").alias("event_count"),
-    sum("amount").alias("total_cost"),
-    avg("amount").alias("avg_cost")
-)
-
-# STEP 4: Write to S3 (partitioned, compressed)
-print("Writing to S3...")
-
-df_agg.repartition("date", "region")
-.write
-.mode("overwrite")
-.format("parquet")
-.option("compression", "snappy")
-.partitionBy("date", "region")
-.save("s3://processed-data/2024/01/")
-
-print("ETL Complete!")
-print(f"Application ID: {sc.applicationId}")
+Redshift managed tables
+  -> data stored inside Redshift
+  -> queries run on Redshift provisioned nodes or Redshift Serverless RPUs
 ```
 
-### Step Function Definition (Orchestration)
+Pros:
 
-```json
-{
-  "Comment": "Messagebird Monthly ETL Pipeline",
-  "StartAt": "CheckDataReady",
-  "States": {
-    "CheckDataReady": {
-      "Type": "Task",
-      "Resource": "arn:aws:lambda:region:account:function:check-daily-files",
-      "Next": "IsDataComplete"
-    },
-    "IsDataComplete": {
-      "Type": "Choice",
-      "Choices": [
-        {
-          "Variable": "$.complete_days",
-          "NumericEquals": 30,
-          "Next": "StartEMRCluster"
-        }
-      ],
-      "Default": "WaitAndRetry"
-    },
-    "StartEMRCluster": {
-      "Type": "Task",
-      "Resource": "arn:aws:elasticmapreduce:region:account:cluster",
-      "Parameters": {
-        "ReleaseLabel": "emr-7.0.0",
-        "Instances": {
-          "MasterInstanceType": "m5.4xlarge",
-          "SlaveInstanceType": "m5.4xlarge",
-          "InstanceCount": 50
-        }
-      },
-      "Next": "SubmitSparkJob"
-    },
-    "SubmitSparkJob": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
-      "Parameters": {
-        "ClusterId.$": "$.ClusterId",
-        "Step": {
-          "Name": "Spark-ETL",
-          "ActionOnFailure": "CONTINUE",
-          "HadoopJarStep": {
-            "Jar": "command-runner.jar",
-            "Args": [
-              "spark-submit",
-              "s3://code-bucket/etl.py"
-            ]
-          }
-        }
-      },
-      "Next": "CheckJobStatus"
-    },
-    "CheckJobStatus": {
-      "Type": "Choice",
-      "Choices": [
-        {
-          "Variable": "$.StepStatus.State",
-          "StringEquals": "COMPLETED",
-          "Next": "UpdateGluePartitions"
-        }
-      ],
-      "Default": "JobFailed"
-    },
-    "UpdateGluePartitions": {
-      "Type": "Task",
-      "Resource": "arn:aws:lambda:region:account:function:update-partitions",
-      "Next": "NotifySuccess"
-    },
-    "NotifySuccess": {
-      "Type": "Task",
-      "Resource": "arn:aws:sns:region:account:topic/etl-success",
-      "End": true
-    },
-    "JobFailed": {
-      "Type": "Task",
-      "Resource": "arn:aws:sns:region:account:topic/etl-failure",
-      "End": true
-    },
-    "WaitAndRetry": {
-      "Type": "Wait",
-      "Seconds": 86400,
-      "Next": "CheckDataReady"
-    }
-  }
-}
+- Good fit if the team already uses Redshift for BI.
+- Spectrum can query cleaned S3 data without loading all history into Redshift.
+- Glue Catalog provides shared metadata for Athena, Spectrum, Spark, and Glue.
+
+Cons:
+
+- Spectrum is for querying, not heavy monthly table rewrites.
+- Large updates in Redshift managed tables are not ideal for the full 1 PB history.
+- Redshift can become expensive if used as both storage and processing layer for all history.
+
+Best use:
+
+```text
+BI marts and dashboards.
+Materialized views and hot aggregates.
+Verification queries over S3 external tables.
+Joining Redshift dimensions with S3 historical facts.
+```
+
+Verdict:
+
+```text
+Use Glue + Spectrum + Redshift for query and serving.
+Use EMR Spark for the monthly RTBF processing.
 ```
 
 ---
 
-## Monitoring & Alerts
+## Best Architecture
 
-### Key Metrics
+Recommended architecture for your case:
 
-```
-1. Processing Time:
-   ├─ Alert if > 8 hours (should be 4-6h)
-   └─ Action: Increase cluster size
+```text
+Source of truth:
+  S3 lake with Iceberg or Hudi tables
 
-2. Data Quality:
-   ├─ Alert if > 5% records fail validation
-   └─ Action: Investigate source data
+Metadata:
+  Glue Catalog
 
-3. Cost Trends:
-   ├─ Alert if costs spike 20% month-over-month
-   └─ Action: Review query patterns
+Monthly RTBF processing:
+  EMR Spark or EMR Serverless Spark
 
-4. Query Performance:
-   ├─ Alert if p95 latency > 120 seconds
-   └─ Action: Optimize or add cache
+Verification:
+  Athena and/or Redshift Spectrum
 
-5. Storage Growth:
-   ├─ Alert if storage grows >10% monthly
-   └─ Action: Review compression, retention
+Hot serving:
+  StarRocks, Redshift, or Snowflake for last 90 days and summaries
+
+Backup/archive:
+  S3 versioning, table snapshots, lifecycle policies, Glacier where appropriate
 ```
 
----
+Data flow:
 
-## Summary: Expert Recommendations
-
-### For Messagebird's 1PB Scale
-
-```
-✅ DO THIS:
-├─ Use tiered storage (Snowflake + S3/Glue/Redshift Spectrum + Glacier)
-├─ Convert CSV to Parquet (save 30TB storage)
-├─ Implement daily incremental loads
-├─ Partition by date and region
-├─ Cache hot dashboards
-└─ Monthly validation runs
-
-❌ AVOID:
-├─ Storing all 1 PB in Snowflake (costs $600K/year)
-├─ Querying full history for every dashboard
-├─ Keeping CSV format (too large)
-├─ Only monthly processing (errors found late)
-└─ Using single query engine for all workloads
-
-💰 COST OPTIMIZATION:
-├─ Start: $60K/month (if all in Snowflake)
-├─ Optimized: $17K/month (tiered)
-├─ Savings: 68% = $516K/year!
-
-⏱️  PERFORMANCE TARGETS:
-├─ Live dashboards: <10 seconds (Snowflake)
-├─ Historical queries: 30-120 seconds (Redshift Spectrum with pruning)
-├─ Batch analysis: 10-30 minutes (Spark)
-├─ Deep archive: Hours (Glacier + Spark)
-
-🚀 IMPLEMENTATION:
-├─ Phase 1 (Week 1-4): Tiered storage setup
-├─ Phase 2 (Week 5-8): Monthly processing automation
-├─ Phase 3 (Week 9-12): Analytics & caching
-└─ ROI: Realized immediately (cost + speed improvements)
+```text
+Monthly RTBF request batch
+  -> normalized redaction/deletion keyset
+  -> EMR Spark reads 5 to 10 lake tables
+  -> apply redaction, masking, logical delete, rare purge
+  -> write new Iceberg/Hudi snapshots or rewritten partitions
+  -> refresh Glue metadata
+  -> refresh hot serving tables and summaries
+  -> verify in Athena/Spectrum/Snowflake/StarRocks/Redshift
+  -> publish audit report
 ```
 
 ---
 
-## As An Expert Big Data Trainer
+## Hot 90 Days plus Historical Summaries
 
-### Key Lessons for Your Team
+This pattern gives a good balance between cost and performance.
 
-```
-LESSON 1: Data Volume Matters
-└─ 1 PB is massive but manageable
-   Requires different thinking than 1 GB or 1 TB
+```text
+Last 90 days:
+  -> detailed data in StarRocks, Redshift, or Snowflake
+  -> fast dashboard queries
+  -> fast RTBF visibility
 
-LESSON 2: Tiering is Essential
-└─ Don't treat all data equally
-   Hot (frequent) → expensive fast storage
-   Warm (occasional) → moderate cost, moderate speed
-   Cold (rare) → cheap, slow
-
-LESSON 3: Cost is Architecture Decision
-└─ Wrong architecture = $600K/year
-   Right architecture = $200K/year
-   Choice of tools = 3x cost difference!
-
-LESSON 4: Partitioning is Your Best Friend
-└─ Partition by: date (must), region (recommended)
-   Benefit: Avoid scanning full 1 PB when querying 30 days
-   Impact: 120 seconds → 10 seconds query time
-
-LESSON 5: Format Matters
-└─ CSV (1 PB) vs Parquet (300-400 TB)
-   Difference: 3x storage cost
-   Benefit: Faster parsing, compression
-
-LESSON 6: Processing Strategy
-└─ Monthly (late detection) vs Daily (early detection)
-   Cost difference: $3K/month
-   Value: Faster error detection
-   ROI: Usually worth it
-
-LESSON 7: Right Tool for Right Job
-└─ Don't use expensive tool (Snowflake) for all queries
-   Match tool to workload:
-   ├─ Snowflake: Hot, frequent queries
-   ├─ Redshift Spectrum: Warm S3 data via Glue tables
-   ├─ Athena: Optional ad hoc S3 exploration
-   ├─ EMR Spark: Heavy transformation and batch analysis
-   └─ Result: Optimal cost + performance
+Older than 90 days:
+  -> detailed data remains in S3 lake
+  -> monthly/customer/product summaries loaded into serving engine
+  -> raw detail queried only when needed
 ```
 
-### Training Checklist
+Dashboard example:
 
+```text
+Dashboard result =
+  last 90 days detail from hot serving table
+  +
+  older history from precomputed monthly summaries
 ```
-Understanding (Week 1):
-☐ Understand data volume (1 PB = 1000 TB)
-☐ Know cost implications ($20K-600K/month range)
-☐ Learn tiering strategy
-☐ Study partitioning benefits
 
-Implementation (Week 2-3):
-☐ Set up S3 lifecycle policies
-☐ Configure Glue Catalog and Redshift Spectrum
-☐ Optionally configure Athena for ad hoc SQL
-☐ Choose processing engine: existing EMR, Glue ETL, or EMR Serverless
-☐ Deploy Snowflake
-☐ Build ETL pipeline
+RTBF impact:
 
-Operations (Week 4-8):
-☐ Monitor processing jobs
-☐ Optimize slow queries
-☐ Manage costs
-☐ Handle failures
+```text
+If RTBF affects last 90 days:
+  -> update hot detail table
+  -> rebuild recent summaries
 
-Advanced (Week 9+):
-☐ ML on full data
-☐ Anomaly detection
-☐ Custom analytics
-☐ Real-time integration (Flink!)
+If RTBF affects older data:
+  -> update S3 lake table
+  -> rebuild affected monthly summaries
+  -> refresh serving copy
 ```
+
+---
+
+## Processing the Full Three-Year Window Monthly
+
+If policy says the monthly RTBF job must process the full retained window, design it so the full scan is controlled and auditable.
+
+```text
+1. Add current month to the window.
+2. Expire oldest month from the window.
+3. Read RTBF keyset and rules for the month.
+4. Process all retained months across 5 to 10 datasets.
+5. Rewrite only changed partitions when possible.
+6. Rebuild affected summaries.
+7. Verify redaction/deletion results.
+8. Publish audit report.
+```
+
+Optimization:
+
+```text
+Full-window evaluation does not always mean full-window rewrite.
+
+Scan or validate the full retained window if required.
+Rewrite only the partitions, files, or table snapshots that actually changed.
+```
+
+For 1 PB, this distinction is important. A monthly full read may be acceptable with a tuned Spark cluster. A monthly full rewrite of 1 PB should be avoided unless the business or legal requirement truly demands it.
+
+Decision rule:
+
+```text
+If RTBF changes a small portion of files:
+  -> use Iceberg/Hudi update/delete/merge patterns
+  -> rewrite only affected files or partitions
+
+If RTBF changes most files:
+  -> use Spark as a full rebuild job
+  -> write a new clean table snapshot
+  -> use Iceberg/Hudi for atomic publish, audit, and rollback
+```
+
+---
+
+## Cost and Maintenance Ranking
+
+For the monthly 1 PB RTBF update itself:
+
+| Rank | Option | Cost | Ease | Maintenance | Recommendation |
+|---:|---|---|---|---|---|
+| 1 | EMR Spark + S3 Iceberg/Hudi + Glue | Best | Medium | Medium | Best default |
+| 2 | EMR Serverless or Glue ETL + S3 | Good | Easier | Lower | Good if jobs fit managed limits |
+| 3 | Snowflake primary store | High | Easiest | Low | Use if simplicity beats cost |
+| 4 | StarRocks primary store | Medium/High | Medium | Medium/High | Better as serving layer |
+| 5 | Redshift/Spectrum as processor | Medium/High | Medium | Medium | Use for query, not main RTBF rewrite |
+
+Best practical combination:
+
+```text
+Core RTBF:
+  EMR Spark + S3 Iceberg/Hudi + Glue
+
+Query verification:
+  Athena or Redshift Spectrum
+
+Hot analytics:
+  StarRocks or Redshift or Snowflake
+
+Backup:
+  S3 snapshots, lifecycle policies, Glacier
+```
+
+---
+
+## Final Recommendation
+
+For your monthly RTBF workload over 1 PB and 5 to 10 datasets, use:
+
+```text
+S3 as source of truth
+Iceberg or Hudi table format for update/delete support
+Glue Catalog for metadata
+EMR Spark for monthly RTBF processing
+Athena/Redshift Spectrum for verification
+StarRocks, Snowflake, or Redshift only for hot serving and summaries
+S3 snapshots/lifecycle policies for backup and retention
+```
+
+Do not make Snowflake or StarRocks the only copy just to avoid S3 processing unless the team intentionally accepts higher storage/compute cost for simpler operations. S3 is still the best long-term storage layer for 1 PB. EMR Spark is the best default engine for monthly petabyte-scale RTBF updates.
