@@ -143,6 +143,40 @@ Large dataset
   -> results written or returned
 ```
 
+### Visual Fundamentals
+
+These diagrams are pulled from the repository README and are useful for quickly explaining the core Big Data mental model in interviews.
+
+**Spark driver, executors, tasks, and slots**
+
+![Spark driver and executors](https://user-images.githubusercontent.com/52529498/125184695-e88d3880-e1ed-11eb-9d07-5f7b97c18d94.png)
+
+Use this picture to explain that the driver plans the work, executors run tasks, and data is processed in parallel across partitions.
+
+**EMR/Spark cluster shape**
+
+![Amazon EMR cluster](../../img_5.png)
+
+Use this picture to connect Spark concepts to AWS: a managed/master node coordinates the cluster, and core/task nodes provide distributed compute capacity.
+
+**Columnar storage for analytical workloads**
+
+![Columnar storage example](../../img_1.png)
+
+Use this picture to explain why Parquet/ORC-style columnar storage is efficient for analytics: queries can scan only the columns they need, which reduces I/O.
+
+**Wide transformation: shuffle required**
+
+![Wide transformation](https://user-images.githubusercontent.com/52529498/128626899-bd3061ae-f551-4b05-a05b-0d49bd552683.png)
+
+Wide transformations such as `groupBy`, `join`, `distinct`, `orderBy`, and `repartition` usually require data movement across the cluster.
+
+**Narrow transformation: no shuffle**
+
+![Narrow transformation](https://user-images.githubusercontent.com/52529498/128626719-cf37b126-c772-41f0-946c-0948ed8b4ffe.png)
+
+Narrow transformations such as `filter`, `select`, and many `withColumn` operations can process each partition independently.
+
 ### Horizontal vs Vertical Scaling
 
 | Scaling type | Meaning | Big Data relevance |
@@ -1024,13 +1058,168 @@ Spark, Trino, Athena, Flink, etc.
 | Aspect | Data Lake | Data Warehouse | Lakehouse |
 |---|---|---|---|
 | Storage | Object storage (cheap, scalable) | Proprietary (expensive per GB) | Object storage |
-| Format | Any (files, blobs) | Optimized binary (propietary) | Standardized (Parquet, ORC) |
+| Format | Any (files, blobs) | Optimized binary (proprietary) | Standardized (Parquet, ORC) |
 | Transactions | None or limited | Full ACID | Full ACID via metadata layer |
 | Schema | Flexible, often inferred | Strict enforcement | Enforced and evolvable |
 | Query engines | Limited, often one vendor | SQL, but locked-in | SQL, Python, R; multiple engines |
 | Update capability | Batch rewrites | Row-level updates | Row-level updates via table format |
 | Time travel | Manual or custom | Limited | Built-in via metadata snapshots |
 | Typical cost | ~$23/TB/year (S3) | $1000+/TB/year | ~$23/TB/year + compute |
+
+### Example: Converting an Existing Data Lake Dataset to a Lakehouse
+
+Assume the current platform is a data lake on S3. Orders are stored as plain Parquet files:
+
+```text
+s3://company-data-lake/raw/orders/
+  ├── order_date=2026-07-01/part-0001.parquet
+  ├── order_date=2026-07-02/part-0001.parquet
+  └── order_date=2026-07-03/part-0001.parquet
+```
+
+This works as a data lake, but it has common problems:
+
+- No ACID transaction log.
+- No safe `UPDATE`, `DELETE`, or `MERGE`.
+- Readers can see partial data if a write fails.
+- Schema changes are hard to control.
+- Rollback and time travel require custom processes.
+
+To convert this dataset to a lakehouse, keep the data in S3 but rewrite or register it as an Apache Iceberg table. Iceberg adds table metadata, snapshots, schema evolution, partition information, and transaction support on top of Parquet files.
+
+#### Step 1: Configure Spark for Iceberg with AWS Glue Catalog
+
+```python
+from pyspark.sql import SparkSession
+
+spark = (
+    SparkSession.builder
+    .appName("migrate-orders-to-iceberg")
+    .config(
+        "spark.sql.extensions",
+        "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtension"
+    )
+    .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog")
+    .config("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog")
+    .config("spark.sql.catalog.glue_catalog.warehouse", "s3://company-lakehouse/warehouse/")
+    .config("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+    .getOrCreate()
+)
+```
+
+#### Step 2: Read the Existing Data Lake Dataset
+
+```python
+orders_lake_path = "s3://company-data-lake/raw/orders/"
+
+orders_df = spark.read.parquet(orders_lake_path)
+
+orders_df.printSchema()
+orders_df.show(5, truncate=False)
+```
+
+Example columns:
+
+```text
+order_id, customer_id, order_ts, order_date, amount, status, updated_at
+```
+
+At this point, the data is still plain Parquet. Spark can read it, but the table does not yet have lakehouse behavior.
+
+#### Step 3: Create an Iceberg Database and Table
+
+```python
+spark.sql("CREATE DATABASE IF NOT EXISTS glue_catalog.silver")
+
+spark.sql("""
+    CREATE TABLE IF NOT EXISTS glue_catalog.silver.orders (
+        order_id STRING,
+        customer_id STRING,
+        order_ts TIMESTAMP,
+        order_date DATE,
+        amount DECIMAL(10,2),
+        status STRING,
+        updated_at TIMESTAMP
+    )
+    USING iceberg
+    PARTITIONED BY (days(order_date))
+    LOCATION 's3://company-lakehouse/warehouse/silver/orders'
+""")
+```
+
+The important change is not just the file format. The table now has Iceberg metadata, so engines such as Spark, Athena, and Trino can read a consistent table snapshot.
+
+#### Step 4: Load the Existing Parquet Data into Iceberg
+
+```python
+from pyspark.sql import functions as F
+
+clean_orders_df = (
+    orders_df
+    .filter(F.col("order_id").isNotNull())
+    .filter(F.col("customer_id").isNotNull())
+    .withColumn("order_ts", F.to_timestamp("order_ts"))
+    .withColumn("order_date", F.to_date("order_date"))
+    .withColumn("amount", F.col("amount").cast("decimal(10,2)"))
+    .withColumn("updated_at", F.to_timestamp("updated_at"))
+)
+
+(
+    clean_orders_df.writeTo("glue_catalog.silver.orders")
+    .append()
+)
+```
+
+This creates an Iceberg snapshot. New readers see either the old table state or the new table state, not a half-written directory.
+
+#### Step 5: Use Lakehouse Operations
+
+Now the same dataset supports warehouse-like operations.
+
+```sql
+-- Update late-arriving status changes
+MERGE INTO glue_catalog.silver.orders AS target
+USING glue_catalog.bronze.order_updates AS source
+ON target.order_id = source.order_id
+WHEN MATCHED AND source.updated_at > target.updated_at THEN
+  UPDATE SET
+    status = source.status,
+    updated_at = source.updated_at
+WHEN NOT MATCHED THEN
+  INSERT *
+```
+
+```sql
+-- Query a consistent table
+SELECT order_date, status, COUNT(*) AS order_count, SUM(amount) AS revenue
+FROM glue_catalog.silver.orders
+GROUP BY order_date, status;
+```
+
+#### Step 6: Validate Before Switching Consumers
+
+```python
+source_count = spark.read.parquet(orders_lake_path).count()
+target_count = spark.table("glue_catalog.silver.orders").count()
+
+print(f"source_count={source_count}, target_count={target_count}")
+
+spark.sql("""
+    SELECT order_date, COUNT(*) AS row_count, SUM(amount) AS revenue
+    FROM glue_catalog.silver.orders
+    GROUP BY order_date
+    ORDER BY order_date
+""").show()
+```
+
+After validation, dashboards and downstream jobs can move from the old Parquet path to the Iceberg table name:
+
+```text
+Before: spark.read.parquet("s3://company-data-lake/raw/orders/")
+After:  spark.table("glue_catalog.silver.orders")
+```
+
+**Interview Tip**: "To convert a data lake dataset to a lakehouse, I do not move away from S3. I keep object storage, create an Iceberg table in Glue Catalog, load the existing Parquet data, validate row counts and business totals, then switch consumers from path-based reads to catalog-based table reads. The key improvement is that the dataset now has ACID snapshots, schema evolution, partition metadata, and safe MERGE operations."
 
 ### Core Lakehouse Concepts
 
