@@ -17,11 +17,15 @@ raw files -> PySpark DQ -> trusted baseline data -> optional transformations -> 
    - Start with local files.
    - Learn DataFrame operations by mapping them to SQL.
    - Practice Parquet, partitioning, joins, window functions, DQ, and update-by-rewrite.
-3. Use `setup-jupyter-remote-access.md` if you want notebook access from another computer on your home network.
-4. Read `pyspark-ingestion-transformation-architecture.md`.
+3. Complete the [Spark UI and History Server lab](spark-ui-history-server-lab.md).
+   - Run slow, straggler, and failed jobs; compare the live UI with recorded history.
+   - Learn when to use the YARN ResourceManager UI on a cluster.
+   - For a full Hadoop cluster, follow the [self-contained Hadoop/YARN setup](setup-hadoop-yarn-local-lab.md) using WSL2 or a macOS Linux VM.
+4. Use `setup-jupyter-remote-access.md` if you want notebook access from another computer on your home network.
+5. Read `pyspark-ingestion-transformation-architecture.md`.
    - This explains raw, rejected, trusted, transformed, Lambda, SSM, Spark jobs, and Glue Data Catalog.
-5. Run `pipeline_demo/README.md`.
-   - This is the runnable local demo of the architecture.
+6. Run [the config-driven CSV example](etl_config_driven/README.md).
+   - This is a plain-Python example of configuration and DQ; it does not run a Spark pipeline.
 
 ## AWS Practice Uses Docker And LocalStack
 
@@ -49,7 +53,7 @@ Install Docker before running LocalStack sections:
 - Mac: see `setup-mac-local-spark.md`, sections `Optional: Install Docker Desktop For LocalStack` and `Optional: Start LocalStack`.
 - Windows: see `setup-windows-local-spark.md`, sections `Optional: Install Docker Desktop For LocalStack` and `Optional: Start LocalStack`.
 
-Only the first local PySpark lessons and `pipeline_demo/` can run without LocalStack because they use local folders to stand in for S3.
+The local-file PySpark lessons, monitoring lab, and config-driven CSV example run without LocalStack.
 
 ## What Each File Is For
 
@@ -58,11 +62,14 @@ Only the first local PySpark lessons and `pipeline_demo/` can run without LocalS
 | `setup-mac-local-spark.md` | Install Java, Python, PySpark, LocalStack, and run a first local Spark job on macOS |
 | `setup-windows-local-spark.md` | Same setup path for Windows and PowerShell |
 | `setup-jupyter-remote-access.md` | Install JupyterLab first, then Jupyter Notebook if needed, and access it from another PC with a password |
+| [spark-ui-history-server-lab.md](spark-ui-history-server-lab.md) | macOS/Windows monitoring commands, bounded slow/failure exercises, and YARN access |
+| [setup-hadoop-yarn-local-lab.md](setup-hadoop-yarn-local-lab.md) | Complete single-node Linux Hadoop/YARN installation for WSL2/macOS VMs, Spark submission, and monitoring |
+| [monitoring_lab.py](monitoring_lab.py) | Runnable local Spark teaching scenarios with event logging |
 | `pyspark-101-examples.md` | Main PySpark study guide for SQL/database users |
 | `spark-new-user-use-cases.md` | How to approach simple ingestion and large SQL-style join transformations in PySpark |
 | `parquet-spark-performance-and-updates.md` | Separate note on Parquet, Spark file sizing, reads, slow jobs, partition updates, and Delta/Iceberg/Hudi concepts |
 | `pyspark-ingestion-transformation-architecture.md` | Architecture diagrams and concepts for ingestion, DQ, trusted, transformed, Lambda, SSM, and Glue |
-| `pipeline_demo/` | Config-driven runnable demo with local folders standing in for S3 buckets |
+| `etl_config_driven/` | Runnable plain-Python CSV example of configuration and DQ |
 
 ## Learning Outcomes
 

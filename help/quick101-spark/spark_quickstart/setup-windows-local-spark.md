@@ -628,3 +628,9 @@ Read the sections:
 PowerShell script activation is blocked
 
 - Run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`.
+
+## 18. Practice Spark Monitoring and Job Diagnosis
+
+Follow the [Spark UI, History Server, and YARN teaching lab](spark-ui-history-server-lab.md). It includes commands for this OS, a runnable local script, and slow/straggler/failure exercises. The Spark UI shows live execution; the History Server preserves recorded execution after shutdown. YARN access requires a separate Hadoop cluster. No LocalStack is needed for this lab.
+
+For a separate Hadoop cluster, follow the [self-contained Hadoop/YARN installation lab](setup-hadoop-yarn-local-lab.md), including Linux setup, configuration, and Spark-on-YARN submission.

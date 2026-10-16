@@ -1,121 +1,81 @@
-# PySpark, Spark SQL, AWS Glue, and Big Data Tutorial Guide
+# PySpark, Spark SQL, AWS Glue, and Big Data Interview Guide
 
-This is a standalone tutorial and desk reference for PySpark, Spark SQL, AWS Glue, and Big Data engineering. It is designed for day-to-day development, interview preparation, and production troubleshooting.
+A practical reference for interview preparation
 
 ## How to Use This Guide
 
-- For a quick coding refresher: sections 4, 5, 6, 7, 12, 18, 19, 20, 27, and 28.
-- For fundamentals: sections 1, 2, 3, 8, and 9.
-- For performance work: sections 7, 8, 10, 14, 15, 16, 17, and 25.
-- For AWS Glue: sections 10, 11, 13, and 25.
-- For lakehouse architecture and transactional data lakes: sections 32 and 33.
-- For interviews: sections 26, 27, 28, and 29.
-- For streaming and real-time: sections 38 and 39.
-- For data quality and operations: sections 40, 41, and 42.
-- For ML at scale and architecture: sections 43 and 44.
+| Experience / goal | Focus | Be ready to show |
+| --- | --- | --- |
+| 6–18 months | 1–8, 20–21, 25, 36 | Correct transformations, schema/null handling, joins and deterministic results. |
+| 2–4 years | 7–23, 32–38, 46 | Execution cost, skew, idempotency, table formats and pipeline recovery. |
+| 5–8+ years | 22, 28, 31.5–35, 38–42, 48–52 | Trade-offs, measured incidents, consistency boundaries, migration, governance and cost. |
+| Phone screen | 27 and 30 | A 30–60 second definition, example and one important limitation. |
+| Online test | 4–8, 20–23 and 36 | Required function interface, exact columns/types/grain, null/tie behavior, expected output. |
+| Onsite / system design | 28, 31.5–35, 38 and 52 | Clarify requirements, draw boundaries, explain failure/replay and validate your choices. |
 
-Callouts:
+Experience ranges are study routes, not requirements tied to years. Topics 43–45 and 47 are optional unless the role involves ML, platform ownership, serving or graphs.
 
-- **Interview Tip**: phrasing useful in interviews.
-- **Performance Tip**: optimization guidance.
-- **Warning**: common trap or production risk.
-- **Production Practice**: recommended real-world approach.
+**Job slow, stuck or crashed?** Start with the [recovery runbook in section 48](#48-production-debugging-and-deep-optimization); section 34 is the UI reference.
 
-## Scope & Coverage: What This Guide Covers
+**Runtime:** Core examples use broadly available Spark 3.5+ APIs, with version-specific features called out. Glue 4.0 runs an older Spark; check section 46 before copying code. Spark 4 changes defaults such as ANSI behavior. Delta/Iceberg/Hudi and cloud connectors require compatible libraries, startup configuration and permissions. Snippets are not all standalone programs; section 4 supplies shared local data and imports.
 
-### IN SCOPE (Big Data Engineering)
-
-This guide focuses on **big data engineering** at scale:
-
-✅ **Spark Fundamentals** - Core concepts, architecture, execution model
-✅ **PySpark & Spark SQL** - DataFrame API, SQL, transformations, actions
-✅ **Batch ETL Pipelines** - Large-scale data processing (100GB to petabytes)
-✅ **Real-Time Streaming** - Kafka, Kinesis, watermarks, stateful processing
-✅ **Lakehouse Architecture** - Delta Lake, Hudi, Iceberg, medallion patterns
-✅ **AWS Big Data Services** - Glue, Kinesis, EMR, Athena, S3, EventBridge
-✅ **Production Operations** - Troubleshooting, performance tuning, observability
-✅ **Data Platform Architecture** - Data mesh, pipeline design, governance
-✅ **Data Quality & Observability** - Validation, SLAs, monitoring
-✅ **Security & Compliance** - Encryption, access control, audit logging
-✅ **Cost Optimization** - Right-sizing, query optimization, resource management
-✅ **Distributed Machine Learning** - Spark MLlib, feature engineering at scale
-
-### WHO SHOULD USE THIS GUIDE
-
-✅ **Data Engineers** - Building and maintaining data pipelines
-✅ **Apache Spark Developers** - Writing PySpark applications
-✅ **AWS Glue Users** - Building ETL jobs on AWS
-✅ **Platform Engineers** - Designing data platform architecture
-✅ **Interview Candidates** - Preparing for data engineering roles
-✅ **DevOps/SRE** - Operating data systems at scale
-✅ **Analytics Engineers** - Building data models with Spark
-
-### LEARNING PATHS BY ROLE
-
-**Beginner Data Engineer:**
-→ Sections 1-3 (fundamentals) → 4-6 (PySpark basics) → 11-13 (Glue) → 22 (incremental patterns)
-
-**Intermediate Spark Developer:**
-→ Sections 7-10 (optimization) → 16-17 (performance) → 31-33 (lakehouse) → 38-39 (streaming)
-
-**Advanced Big Data Architect:**
-→ Sections 34-37 (debugging) → 40-44 (operations, architecture) → 45-51 (patterns, challenges)
+**Answer pattern:** State the data grain and assumptions → choose an operation → explain shuffle/memory → discuss failure or edge cases → verify the result. Prefer built-ins and test nulls, duplicate keys, empty inputs, tied timestamps and retry behavior. Do not promise exact task/file counts or percentage speedups without measurements.
 
 ## Table of Contents
 
-1. [Big Data Fundamentals](#1-big-data-fundamentals)
-2. [Apache Spark Fundamentals](#2-apache-spark-fundamentals)
-3. [PySpark Fundamentals](#3-pyspark-fundamentals)
-4. [PySpark Desk Reference](#4-pyspark-desk-reference)
-5. [Spark SQL Tutorial](#5-spark-sql-tutorial)
-6. [DataFrame Transformations and Actions](#6-dataframe-transformations-and-actions)
-7. [Joins in PySpark](#7-joins-in-pyspark)
-8. [Partitioning and Shuffling](#8-partitioning-and-shuffling)
-9. [Spark Execution and Query Plans](#9-spark-execution-and-query-plans)
-10. [Spark Internals](#10-spark-internals)
-11. [AWS Glue Fundamentals](#11-aws-glue-fundamentals)
-12. [DynamicFrames and DataFrames](#12-dynamicframes-and-dataframes)
-13. [Reading and Writing Data](#13-reading-and-writing-data)
-14. [Data Quality and Validation](#14-data-quality-and-validation)
-15. [Error Handling and Logging](#15-error-handling-and-logging)
-16. [Spark Performance Tuning](#16-spark-performance-tuning)
-17. [Data Skew](#17-data-skew)
-18. [Caching and Persistence](#18-caching-and-persistence)
-19. [UDFs and Built-In Functions](#19-udfs-and-built-in-functions)
-20. [Window Functions](#20-window-functions)
-21. [Deduplication Patterns](#21-deduplication-patterns)
-22. [Incremental and Idempotent Processing](#22-incremental-and-idempotent-processing)
-23. [Testing PySpark Applications](#23-testing-pyspark-applications)
-24. [Production Project Structure](#24-production-project-structure)
-25. [Common PySpark Mistakes](#25-common-pyspark-mistakes)
-26. [Troubleshooting Guide](#26-troubleshooting-guide)
-27. [Interview Questions and Answers](#27-interview-questions-and-answers)
-28. [Scenario-Based Interview Practice](#28-scenario-based-interview-practice)
-29. [Frequently Used PySpark Code Snippets](#29-frequently-used-pyspark-code-snippets)
-30. [Quick Revision Sheets](#30-quick-revision-sheets)
-31. [Final Study Checklist](#31-final-study-checklist)
-31.5. [Lakehouse Architecture Fundamentals](#315-lakehouse-architecture-fundamentals)
-32. [Transactional Parquet with Delta Lake, Apache Hudi, and Apache Iceberg](#32-transactional-parquet-with-delta-lake-apache-hudi-and-apache-iceberg)
-33. [Medallion Architecture](#33-medallion-architecture)
-34. [Spark UI and Production Troubleshooting](#34-spark-ui-and-production-troubleshooting)
-35. [Explain Plan Practice](#35-explain-plan-practice)
-36. [Common Coding Interview Exercises](#36-common-coding-interview-exercises)
-37. [General Performance Anti-Patterns](#37-general-performance-anti-patterns)
-38. [Spark Structured Streaming](#38-spark-structured-streaming)
-39. [Real-Time AWS Data Pipelines](#39-real-time-aws-data-pipelines)
-40. [Data Quality, Observability, and SLAs](#40-data-quality-observability-and-slas)
-41. [Data Security and Compliance](#41-data-security-and-compliance)
-42. [Cost Optimization for Data Pipelines](#42-cost-optimization-for-data-pipelines)
-52. [Lakehouse Implementation & Operations Guide](#52-lakehouse-implementation--operations-guide)
-43. [Spark MLlib and Distributed Feature Engineering](#43-spark-mllib-and-distributed-feature-engineering)
-44. [Data Mesh Architecture for Big Data Platforms](#44-data-mesh-architecture-for-big-data-platforms)
-45. [Data APIs and Real-Time Serving](#45-data-apis-and-real-time-serving)
-46. [Advanced AWS Glue Patterns](#46-advanced-aws-glue-patterns)
-47. [Graph Processing and Network Analysis](#47-graph-processing-and-network-analysis)
-48. [Production Debugging and Deep Optimization](#48-production-debugging-and-deep-optimization)
-49. [Common Big Data Architecture Patterns](#49-common-big-data-architecture-patterns)
-50. [Handling Scale, Skew, and Performance Challenges](#50-handling-scale-skew-and-performance-challenges)
-51. [Modern Big Data Stack Integration](#51-modern-big-data-stack-integration)
+- [1. Big Data Fundamentals](#1-big-data-fundamentals)
+- [2. Apache Spark Fundamentals](#2-apache-spark-fundamentals)
+- [3. PySpark Fundamentals](#3-pyspark-fundamentals)
+- [4. PySpark Desk Reference](#4-pyspark-desk-reference)
+- [5. Spark SQL Tutorial](#5-spark-sql-tutorial)
+- [6. DataFrame Transformations and Actions](#6-dataframe-transformations-and-actions)
+- [7. Joins in PySpark](#7-joins-in-pyspark)
+- [8. Partitioning and Shuffling](#8-partitioning-and-shuffling)
+- [9. Spark Execution and Query Plans](#9-spark-execution-and-query-plans)
+- [10. Spark Internals](#10-spark-internals)
+- [11. AWS Glue Fundamentals](#11-aws-glue-fundamentals)
+- [12. DynamicFrames and DataFrames](#12-dynamicframes-and-dataframes)
+- [13. Reading and Writing Data](#13-reading-and-writing-data)
+- [14. Data Quality and Validation](#14-data-quality-and-validation)
+- [15. Error Handling and Logging](#15-error-handling-and-logging)
+- [16. Spark Performance Tuning](#16-spark-performance-tuning)
+- [17. Data Skew](#17-data-skew)
+- [18. Caching and Persistence](#18-caching-and-persistence)
+- [19. UDFs and Built-In Functions](#19-udfs-and-built-in-functions)
+- [20. Window Functions](#20-window-functions)
+- [21. Deduplication Patterns](#21-deduplication-patterns)
+- [22. Incremental and Idempotent Processing](#22-incremental-and-idempotent-processing)
+- [23. Testing PySpark Applications](#23-testing-pyspark-applications)
+- [24. Production Project Structure](#24-production-project-structure)
+- [25. Common PySpark Mistakes](#25-common-pyspark-mistakes)
+- [26. Troubleshooting Guide](#26-troubleshooting-guide)
+- [27. Interview Questions and Answers](#27-interview-questions-and-answers)
+- [28. Scenario-Based Interview Practice](#28-scenario-based-interview-practice)
+- [29. Frequently Used PySpark Code Snippets](#29-frequently-used-pyspark-code-snippets)
+- [30. Quick Revision Sheets](#30-quick-revision-sheets)
+- [31. Final Study Checklist](#31-final-study-checklist)
+- [31.5. Lakehouse Architecture Fundamentals](#315-lakehouse-architecture-fundamentals)
+- [32. Transactional Parquet with Delta Lake, Apache Hudi, and Apache Iceberg](#32-transactional-parquet-with-delta-lake-apache-hudi-and-apache-iceberg)
+- [33. Medallion Architecture](#33-medallion-architecture)
+- [34. Spark UI and Production Troubleshooting](#34-spark-ui-and-production-troubleshooting)
+- [35. Explain Plan Practice](#35-explain-plan-practice)
+- [36. Common Coding Interview Exercises](#36-common-coding-interview-exercises)
+- [37. General Performance Anti-Patterns](#37-general-performance-anti-patterns)
+- [38. Spark Structured Streaming](#38-spark-structured-streaming)
+- [39. Real-Time AWS Data Pipelines](#39-real-time-aws-data-pipelines)
+- [40. Data Quality, Observability, and SLAs](#40-data-quality-observability-and-slas)
+- [41. Data Security and Compliance](#41-data-security-and-compliance)
+- [42. Cost Optimization for Data Pipelines](#42-cost-optimization-for-data-pipelines)
+- [43. Spark MLlib and Distributed Feature Engineering](#43-spark-mllib-and-distributed-feature-engineering)
+- [44. Data Mesh Architecture for Big Data Platforms](#44-data-mesh-architecture-for-big-data-platforms)
+- [45. Data APIs and Real-Time Serving](#45-data-apis-and-real-time-serving)
+- [46. Advanced AWS Glue Patterns](#46-advanced-aws-glue-patterns)
+- [47. Graph Processing and Network Analysis](#47-graph-processing-and-network-analysis)
+- [48. Production Debugging and Deep Optimization](#48-production-debugging-and-deep-optimization)
+- [49. Common Big Data Architecture Patterns](#49-common-big-data-architecture-patterns)
+- [50. Handling Scale, Skew, and Performance Challenges](#50-handling-scale-skew-and-performance-challenges)
+- [51. Modern Big Data Stack Integration](#51-modern-big-data-stack-integration)
+- [52. Lakehouse Implementation & Operations Guide](#52-lakehouse-implementation--operations-guide)
 
 ## 1. Big Data Fundamentals
 
@@ -206,7 +166,7 @@ OLTP systems support transactions. OLAP systems support analytical queries, scan
 
 **Interview Tip**
 
-Say: "Spark is a distributed compute engine. It is usually paired with storage systems such as S3, HDFS, ADLS, GCS, Hive, Glue Catalog, or lakehouse table formats."
+Say: "Spark is a distributed compute engine. S3/HDFS/ADLS/GCS store bytes; Parquet defines file encoding; Delta/Hudi/Iceberg define table state; Glue Catalog stores catalog entries. Those are different layers."
 
 ## 2. Apache Spark Fundamentals
 
@@ -252,12 +212,12 @@ filtered_df.count()                                           # action
 
 ### Narrow vs Wide Transformations
 
-Narrow transformations do not require data movement. Wide transformations require shuffle.
+A narrow dependency lets each output partition depend on at most one input partition. A wide dependency can require redistribution across partitions. A join does not always cause a large shuffle: broadcast joins and compatible existing partitioning can avoid it.
 
 Examples:
 
 - Narrow: `select`, `filter`, `withColumn`
-- Wide: `join`, `groupBy`, `distinct`, `orderBy`, `repartition`
+- Usually shuffle-producing: aggregations, `distinct`, `orderBy`, `repartition`, and large joins. Check the physical plan rather than assuming every occurrence shuffles.
 
 ### Shuffle
 
@@ -269,7 +229,7 @@ If a Spark job is slow, first look for large shuffles, skewed tasks, memory spil
 
 ### Lineage and Fault Recovery
 
-Spark tracks lineage so it can recompute lost partitions after failure. Long lineage can make retries expensive; checkpointing can truncate lineage.
+Spark tracks lineage so lost partitions can be recomputed if inputs remain available. It cannot recover deleted source files or automatically undo external side effects. Cache speeds reuse; a durable checkpoint or write/read boundary can truncate lineage. One action can launch multiple jobs, and AQE can alter stage boundaries.
 
 ## 3. PySpark Fundamentals
 
@@ -328,166 +288,122 @@ df2 = df.withColumn("load_ts", F.current_timestamp())
 spark.conf.set("spark.sql.adaptive.enabled", "true")
 ```
 
+### pandas vs PySpark vs pandas API on Spark
+
+| API | Execution and memory | Choose when |
+| --- | --- | --- |
+| pandas `DataFrame` | Usually eager, in one Python process | Data and working copies comfortably fit in local memory; local analysis. |
+| PySpark `DataFrame` | Distributed, lazy query plan | Large scans, joins, aggregations, or a distributed pipeline. |
+| pandas API on Spark (`pyspark.pandas`) | pandas-like API backed by Spark | Migrating familiar pandas operations; still inspect distributed costs. |
+
+PySpark has no pandas-style row index or guaranteed row order. Spark joins follow SQL null semantics; pandas merge can match null keys. Check types, timestamps, nulls, and ordering when converting.
+
+```python
+import pandas as pd
+
+
+pdf = pd.DataFrame({"id": [1, 2], "amount": [10.0, 20.0]})
+sdf = spark.createDataFrame(pdf)  # Tiny local input copied into Spark.
+
+# Only collect a bounded, small result for local analysis.
+small_pdf = sdf.select("id", "amount").orderBy("id").limit(10).toPandas()
+assert small_pdf["amount"].sum() == 30.0
+```
+
+`toPandas()` collects all selected rows to driver memory. Arrow can speed transfer, but does not remove that limit. `limit(10)` bounds row count, not the size of an individual row. `mapInPandas` and pandas UDFs run Python logic on workers; they are not the same as collecting the whole DataFrame. [Arrow/pandas reference](https://spark.apache.org/docs/3.5.7/api/python/user_guide/sql/arrow_pandas.html)
+
+
 ## 4. PySpark Desk Reference
 
-### Imports
+### Local setup and shared practice data
+
+Run this setup once before the core examples. They use `spark`, `F`, `Window`, and `orders` from here. Cloud/table-format examples state their extra prerequisites; snippets using names such as `fact` or `dim` assume your input DataFrames exist.
 
 ```python
 from pyspark.sql import SparkSession, Window
 from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, StringType, IntegerType,
-    LongType, DoubleType, DateType, TimestampType
-)
+from pyspark.sql.types import NumericType, StructType, StructField, StringType
+
+
+spark = (SparkSession.builder.master("local[2]")
+         .appName("interview-practice").getOrCreate())
+spark.conf.set("spark.sql.session.timeZone", "UTC")
+
+orders = spark.createDataFrame([
+    (1, "C1", "100.00", "NEW",  "2026-01-01 09:00:00", 1),
+    (1, "C1", "120.00", "PAID", "2026-01-01 10:00:00", 2),
+    (2, "C1", None,     None,   "2026-01-01 11:00:00", 1),
+    (3, "C2", "50.00",  "PAID", "2026-01-02 09:00:00", 1),
+    (4, None, "70.00",  "NEW",  "2026-01-02 10:00:00", 1),
+], "order_id long, customer_id string, amount string, status string, updated_at string, event_seq long")
+orders = (orders.withColumn("amount", F.col("amount").cast("decimal(10,2)"))
+          .withColumn("updated_at", F.to_timestamp("updated_at"))
+          .withColumn("order_date", F.to_date("updated_at")))
 ```
 
-### SparkSession
+The duplicate order 1 represents two versions; aggregate all rows only when that is the intended grain. Use section 21 to keep its latest state first.
+
+### Inspect schema, transform, and aggregate
 
 ```python
-spark = (
-    SparkSession.builder
-    .appName("pyspark-desk-reference")
-    .config("spark.sql.adaptive.enabled", "true")
-    .getOrCreate()
-)
+orders.printSchema()
+print(orders.columns)  # Python list of column names.
+numeric_cols = [field.name for field in orders.schema.fields
+                if isinstance(field.dataType, NumericType)]
+# Includes decimal types; their dtype strings contain precision and scale.
+
+paid_totals = (orders.filter(F.col("status") == "PAID")
+               .groupBy("customer_id")
+               .agg(F.sum("amount").alias("total")))
+paid_totals.orderBy("customer_id").show()
+# C1 -> 120.00; C2 -> 50.00
 ```
 
-### Explicit Schema
-
-```python
-schema = StructType([
-    StructField("id", LongType(), False),
-    StructField("status", StringType(), True),
-    StructField("amount", DoubleType(), True),
-    StructField("event_ts", TimestampType(), True),
-])
-```
-
-### Inspect Columns and Data Types
-
-```python
-# Column names as a Python list
-columns = df.columns
-
-# Data types as a list of tuples: [("id", "bigint"), ("status", "string")]
-dtypes = df.dtypes
-
-# Tree view of the schema
-df.printSchema()
-
-# Full StructType schema object
-schema = df.schema
-
-# Iterate through fields with name, data type, and nullable flag
-for field in df.schema.fields:
-    print(field.name, field.dataType, field.nullable)
-
-# Select columns by data type
-string_cols = [name for name, dtype in df.dtypes if dtype == "string"]
-numeric_cols = [
-    name for name, dtype in df.dtypes
-    if dtype in ("int", "bigint", "double", "float", "decimal")
-]
-```
-
-**Interview Tip**: Use `df.printSchema()` for human-readable inspection, `df.dtypes` for quick checks, and `df.schema.fields` when code needs to programmatically inspect names, types, and nullability.
-
-### Reading Files
-
-```python
-csv_df = spark.read.option("header", True).schema(schema).csv("s3://bucket/input/")
-json_df = spark.read.schema(schema).json("s3://bucket/json/")
-parquet_df = spark.read.parquet("s3://bucket/parquet/")
-orc_df = spark.read.orc("s3://bucket/orc/")
-```
-
-### Common Transformation Pattern
-
-```python
-result_df = (
-    input_df
-    .filter(F.col("status") == "ACTIVE")
-    .withColumn("amount", F.col("amount").cast("double"))
-    .groupBy("customer_id")
-    .agg(
-        F.sum("amount").alias("total_amount"),
-        F.count("*").alias("transaction_count"),
-    )
-)
-```
-
-### Nulls, Strings, Dates
-
-```python
-clean_df = (
-    df.withColumn("name", F.upper(F.trim("name")))
-      .withColumn("amount", F.coalesce("amount", F.lit(0.0)))
-      .withColumn("event_date", F.to_date("event_ts"))
-)
-```
-
-### Joins
-
-```python
-joined_df = fact_df.join(F.broadcast(dim_df), "customer_id", "left")
-```
-
-### Window Function
-
-```python
-w = Window.partitionBy("customer_id").orderBy(F.col("event_ts").desc())
-latest_df = df.withColumn("rn", F.row_number().over(w)).filter("rn = 1").drop("rn")
-```
-
-### Write Partitioned Parquet
-
-```python
-(
-    result_df
-    .repartition("business_date")
-    .write
-    .mode("overwrite")
-    .partitionBy("business_date")
-    .parquet("s3://bucket/curated/table/")
-)
-```
+For file inputs: `spark.read.schema(schema).json(path)`, `.csv(path, header=True)`, or `.parquet(path)`. Parquet stores its schema; JSON/CSV production inputs generally need an explicit schema and malformed-record policy. Use `DecimalType` for money with a defined precision/scale; binary floating-point is approximate.
 
 ## 5. Spark SQL Tutorial
 
-### Temporary Views
+### Use SQL on a PySpark DataFrame
+
+A temporary view gives SQL a name for a DataFrame; it does not copy, cache, or persist the data. `spark.sql()` returns another lazy Spark DataFrame for SELECT queries.
 
 ```python
-df.createOrReplaceTempView("orders")
+orders.createOrReplaceTempView("orders")
+
+sql_totals = spark.sql("""
+    SELECT customer_id, SUM(amount) AS total
+    FROM orders
+    WHERE status = 'PAID'
+    GROUP BY customer_id
+""")
+sql_totals.orderBy("customer_id").show()
+# C1 -> 120.00; C2 -> 50.00
+
+api_totals = (orders.filter(F.col("status") == "PAID")
+              .groupBy("customer_id").agg(F.sum("amount").alias("total")))
 ```
 
-### Query
+SQL and DataFrame expressions use the same Spark SQL optimizer. Equivalent queries can produce the same plan; Python syntax alone does not make one faster. You can mix them in one pipeline.
+
+### CTE and deterministic latest row
 
 ```python
-spark.sql("""
-select customer_id, count(*) as order_count, sum(amount) as total_amount
-from orders
-where status = 'ACTIVE'
-group by customer_id
-""").show()
+sql_latest = spark.sql("""
+    WITH ranked AS (
+        SELECT *, ROW_NUMBER() OVER (
+            PARTITION BY order_id
+            ORDER BY updated_at DESC NULLS LAST, event_seq DESC
+        ) AS rn
+        FROM orders
+    )
+    SELECT order_id, customer_id, amount, status, updated_at, event_seq, order_date
+    FROM ranked WHERE rn = 1
+""")
 ```
 
-### CTE and Window
+`event_seq` is a source ordering field that breaks timestamp ties in this example. A local temp view is scoped to its SparkSession. A global temp view is under `global_temp` and lasts for the Spark application; neither is a durable table.
 
-```sql
-with ranked as (
-  select
-    *,
-    row_number() over (partition by customer_id order by event_ts desc) as rn
-  from orders
-)
-select *
-from ranked
-where rn = 1
-```
-
-### DataFrame API vs SQL
-
-Use DataFrame API for reusable Python transformations. Use Spark SQL for analyst-friendly business logic and complex SQL expressions.
+**Interview traps:** `WHERE` filters rows before grouping; `HAVING` filters aggregates. `COUNT(*)` counts rows, `COUNT(amount)` skips null amounts. SELECT queries need `ORDER BY` for guaranteed ordering. Avoid building SQL with untrusted string interpolation. DML such as `MERGE` depends on the target provider; a view over plain Parquet does not add transactions.
 
 ## 6. DataFrame Transformations and Actions
 
@@ -498,16 +414,18 @@ Use DataFrame API for reusable Python transformations. Use Spark SQL for analyst
 | `withColumn` | Transformation | Usually narrow | Usually no |
 | `drop` | Transformation | Narrow | No |
 | `distinct` | Transformation | Wide | Yes |
-| `groupBy` | Transformation | Wide | Yes |
+| `groupBy(...).agg(...)` | Transformation | Usually wide | Usually; partial aggregation may happen first |
 | `join` | Transformation | Usually wide | Usually yes |
 | `orderBy` | Transformation | Wide | Yes |
 | `repartition` | Transformation | Wide | Yes |
-| `coalesce` | Transformation | Usually narrow | Usually no |
+| `coalesce(n)` | Transformation | Narrow for DataFrame API | Reduces partitions without a full shuffle |
 | `count` | Action | N/A | Executes plan |
 | `collect` | Action | N/A | Executes and returns to driver |
 | `show` | Action | N/A | Executes limited result |
 | `take` | Action | N/A | Executes limited result |
 | `write` | Action | N/A | Executes and writes |
+
+`groupBy()` alone returns a GroupedData object; call an aggregation to produce a DataFrame. This table is a rule of thumb: Catalyst/AQE may remove or reuse exchanges. `show()` limits returned rows but its upstream aggregation/join can still scan a large dataset.
 
 ## 7. Joins in PySpark
 
@@ -548,33 +466,77 @@ left.groupBy("id").count().filter("count > 1").orderBy(F.desc("count")).show(20)
 right.groupBy("id").count().filter("count > 1").orderBy(F.desc("count")).show(20)
 ```
 
+### Null keys, duplicates, and filter placement
+
+- Two rows for a key on the left and three on the right produce six inner-join rows for that key. Deduplicate only when the business rule identifies which row to keep.
+- Equality joins do not match NULL to NULL. Use `l.key.eqNullSafe(r.key)` (SQL `<=>`) only when null keys should match. Left anti joins keep unmatched left rows, including null keys under normal equality.
+- A right-side filter after a left join can discard unmatched rows and make the result behave like an inner join. Filter the right input first or put that condition in `ON` to preserve left rows.
+- Semi/anti joins return left columns; duplicate right keys do not multiply left rows, so `distinct()` on the right is not required for correctness.
+- Broadcast must fit in executor memory after expansion, not just look small as compressed Parquet. A broadcast hint can create OOM or timeout; inspect the plan and metrics.
+
+```python
+left = spark.createDataFrame([(1,), (None,)], "id long")
+right = spark.createDataFrame([(1,), (None,)], "id long")
+assert left.join(right, "id", "inner").count() == 1
+assert left.alias("l").join(
+    right.alias("r"), F.col("l.id").eqNullSafe(F.col("r.id")), "inner"
+).count() == 2
+```
+
+[Reference: Spark null semantics](https://spark.apache.org/docs/3.5.7/sql-ref-null-semantics.html)
+
+
+### Plan a multi-table SQL migration before coding
+
+The quickstart's loan-score example adds a useful habit: write the output contract first, then protect it through each join.
+
+| Decision | Example |
+| --- | --- |
+| Output grain | One row per `(loan_id, as_of_date)`. |
+| Driving input | Loan snapshot for the requested date, including loans without pricing. |
+| Lookup grain | One selected pricing version per `(loan_id, as_of_date)`. |
+| Join contract | Left join on BOTH keys; expect the driving row count only if the lookup key is unique. |
+| Missing values | Keep an explicit missing-pricing flag; missing is not automatically zero. |
+| Verification | Compare keys, row multiplicities, null counts and score totals with the known SQL, then scale. |
+
+Example failure: joining two dates of pricing on loan_id alone can multiply rows and leak future prices into an earlier score. Adding distinct() afterward can hide the symptom without fixing the business rule. Begin with one complete date/key slice, retaining matching lookup rows; independent random samples can miss or invent join issues. Use full-data reconciliation before publication.
+
+[Practice: large-table join planning](../../help/quick101-spark/spark_quickstart/spark-new-user-use-cases.md#before-you-write-pyspark-analysis-checklist).
+
 ## 8. Partitioning and Shuffling
 
-### Different Meanings of Partition
+### Runtime partitions are different from storage partitions
 
-| Partition type | Meaning |
-|---|---|
-| Spark partition | Runtime slice of a DataFrame/RDD |
-| Input partition | Split created from source files |
-| Output partition | Task/file produced during write |
-| Table/S3 partition | Directory layout such as `date=2026-07-16` |
-| Glue partition | Catalog metadata pointing to partition locations |
-| Shuffle partition | Partition created during shuffle |
+A Spark partition is a unit of distributed work. A directory such as `order_date=2026-01-01` is a storage layout. `write.partitionBy("order_date")` creates that layout; it does not promise one output file per date. A task may write multiple files, and multiple tasks may write to the same date.
 
-### Commands
+### `coalesce` vs `repartition`
 
-```python
-df.rdd.getNumPartitions()
-df.repartition(800, "customer_id")
-df.coalesce(100)
-df.write.partitionBy("business_date").parquet(path)
-```
-
-### Shuffle Partitions
+| Operation | Shuffle? | Use when | Trade-off |
+| --- | --- | --- | --- |
+| `df.coalesce(n)` | No full shuffle | Reduce partitions after a filter shrinks the data | Can leave uneven partitions or reduce upstream parallelism; cannot increase the current count. |
+| `df.repartition(n)` | Yes | Increase parallelism or redistribute uneven data | Shuffle costs network/disk/CPU; no guarantee every partition is equal. |
+| `df.repartition(n, "key")` | Yes, hash by key | Group matching keys for downstream work | A hot key still goes to one partition; this does not fix key skew. |
+| `df.repartitionByRange(n, "key")` | Yes, range-based | Divide an ordered key space | Does not guarantee row order within partitions. |
+| `F.coalesce(a, b)` | Not a partition operation | Pick the first non-null column value | Unrelated to `DataFrame.coalesce(n)`. |
 
 ```python
-spark.conf.set("spark.sql.shuffle.partitions", "800")
+base = spark.range(100).repartition(8)
+smaller = base.filter("id < 10").coalesce(2)
+redistributed = base.repartition(12, "id")
+
+assert smaller.rdd.getNumPartitions() == 2
+assert redistributed.rdd.getNumPartitions() == 12
 ```
+
+`.rdd` is for classic Spark; Spark Connect does not expose every RDD API. The example does not demonstrate a performance win on only 100 rows.
+
+**Decision example:** After a large filter, reduce 1,000 partitions to a measured, smaller count with `coalesce` if balance is acceptable. For a large join with too few oversized partitions, use an appropriate shuffle partition count or repartition and inspect the plan. Do not add a redundant shuffle when the join will do one anyway.
+
+Avoid `coalesce(1)` for large exports. It funnels work into one task and is not a general solution to small files. Catalyst can combine adjacent partition operations; inspect the executed plan rather than assuming every intermediate count is preserved. Partition counts control tasks, not exact file size. Estimate from observed bytes and benchmark; do not memorize a universal value such as 200 or 800.
+
+`spark.sql.shuffle.partitions` sets the initial/default count for many SQL shuffles. AQE can coalesce shuffle partitions and, for supported joins, split skewed work. Table partition pruning, runtime distribution, and AQE are separate concepts.
+
+References: [`coalesce`](https://spark.apache.org/docs/3.5.7/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.coalesce.html), [`repartition`](https://spark.apache.org/docs/3.5.7/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.repartition.html).
 
 ## 9. Spark Execution and Query Plans
 
@@ -607,7 +569,7 @@ Tungsten improves memory and CPU efficiency using binary row formats and code ge
 
 ### Py4J and Python Workers
 
-PySpark uses Py4J to communicate with the JVM. Python UDFs require data movement between JVM and Python workers.
+In classic PySpark, Python builds plans through Py4J and the JVM; Spark Connect uses a client/server protocol instead. Built-in SQL expressions generally execute in the engine, not once per row in Python. Python UDFs execute in Python workers and add serialization/conversion costs.
 
 ### Arrow
 
@@ -646,6 +608,9 @@ Core concepts:
 | Databricks | Managed lakehouse and collaborative Spark |
 | Lambda | Short event-driven tasks, not large Spark ETL |
 
+**Bookmark distinction:** A Glue bookmark tracks supported source progress for a job; it does not deduplicate target rows or make multiple writes atomic. Use stable transformation contexts and commit job state only after success. Resetting bookmarks can replay data, so the sink must handle retries/reprocessing. Catalog metadata and Lake Formation permissions are separate from the data files and table-format transaction metadata.
+
+
 ## 12. DynamicFrames and DataFrames
 
 ```python
@@ -659,59 +624,45 @@ DynamicFrames are useful for messy semi-structured data and Glue transforms. Dat
 
 ## 13. Reading and Writing Data
 
-### Production Read
+### Read schema, write mode, and overwrite scope
 
 ```python
-df = (
-    spark.read
-    .schema(schema)
-    .option("mode", "PERMISSIVE")
-    .json("s3://bucket/raw/events/")
-)
+# schema and input_path describe your source; output_path is a separate destination.
+source_df = spark.read.schema(schema).option("mode", "PERMISSIVE").json(input_path)
+(source_df.write.mode("append").partitionBy("business_date")
+ .parquet(output_path))
 ```
 
-### CSV
+| Mode | Meaning | Common trap |
+| --- | --- | --- |
+| `append` | Add data files | Retrying the same batch can duplicate rows. |
+| `overwrite` | Replace data under the provider's overwrite rules | Can replace the whole dataset; scope depends on provider/options. |
+| `errorifexists` | Fail when destination exists | Useful to avoid accidental replacement. |
+| `ignore` | Skip when destination exists | Does not validate that the existing output is correct. |
 
-```python
-df = (
-    spark.read
-    .option("header", True)
-    .option("delimiter", ",")
-    .schema(schema)
-    .csv("s3://bucket/input/")
-)
-```
+Dynamic partition overwrite replaces partitions present in the output, not every partition you intended to touch. If a delete removes every row from a partition, that partition is absent from the output and may remain unchanged. Use a transactional DELETE or explicit publication strategy instead.
 
-### Write
+Do not lazily read a Parquet path and overwrite that same path in one pipeline: Spark may delete files it still needs to read. Write to a distinct staging/version path, validate, and publish through a coordinated catalog/pointer change. Object-store directory rename is not a general atomic transaction. See section 32 for a safe local demonstration.
 
-```python
-(
-    df.write
-    .mode("overwrite")
-    .option("compression", "snappy")
-    .partitionBy("business_date")
-    .parquet("s3://bucket/curated/table/")
-)
-```
+CSV/JSON permissive parsing is not data validation. Preserve malformed payloads in an explicit corrupt-record column or quarantine route, and check required fields after parsing. Casting malformed data can raise under ANSI mode; confirm the runtime's settings and use supported tolerant parsing functions deliberately.
 
 ## 14. Data Quality and Validation
 
+Measure required-column nulls together rather than launching one full scan per column. A small aggregate row is appropriate to collect to the driver.
+
 ```python
-required = ["id", "business_date"]
-
-for column_name in required:
-    null_count = df.filter(F.col(column_name).isNull()).count()
-    print(column_name, null_count)
-
-duplicate_keys = df.groupBy("id").count().filter(F.col("count") > 1)
-
-profile = df.agg(
-    F.count("*").alias("row_count"),
-    F.countDistinct("id").alias("distinct_ids"),
-    F.min("business_date").alias("min_date"),
-    F.max("business_date").alias("max_date"),
-)
+required = ["order_id", "customer_id", "amount"]
+profile = orders.agg(
+    F.count("*").alias("rows"),
+    *[F.count(F.when(F.col(name).isNull(), 1)).alias(f"{name}_nulls")
+      for name in required],
+).first().asDict()
+assert profile["rows"] == 5
+assert profile["customer_id_nulls"] == 1
+assert profile["amount_nulls"] == 1
 ```
+
+Also check duplicate business keys, allowed values, ranges, referential integrity, and freshness. A declared nullable=False schema is not a complete ingestion quality policy. Decide whether a failed rule blocks the batch, quarantines rows, or only alerts. For empty input, explicitly decide whether a quality ratio is undefined, acceptable, or a failure.
 
 ## 15. Error Handling and Logging
 
@@ -735,29 +686,24 @@ Guidelines:
 
 ## 16. Spark Performance Tuning
 
-Checklist:
+Tune from evidence, not a list of magic settings:
 
-- Filter early.
-- Select only required columns.
-- Use built-in functions.
-- Avoid driver-side operations.
-- Reduce shuffles.
-- Broadcast small dimensions.
-- Tune `spark.sql.shuffle.partitions`.
-- Enable AQE.
-- Address skew.
-- Use Parquet or ORC.
-- Compact small files.
-- Cache only reused DataFrames.
-- Unpersist cached DataFrames.
-- Use explicit schemas.
+1. Confirm the required output grain and join cardinality. Correctness comes first.
+2. Compare input bytes/file counts with the previous good run.
+3. Inspect the executed SQL plan and slow stage: scan, shuffle, skew, spill, CPU, or external I/O?
+4. Reduce scanned columns/partitions; replace avoidable UDFs and unnecessary actions.
+5. Choose a join strategy and partition sizing that fit actual data; verify AQE's final plan.
+6. Measure runtime, cost, and output equivalence after one change.
 
 ```python
 spark.conf.set("spark.sql.adaptive.enabled", "true")
 spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
 spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
-spark.conf.set("spark.sql.shuffle.partitions", "800")
 ```
+
+Availability and defaults vary by version and managed service. AQE is not a blanket fix and batch AQE settings should not be assumed to optimize stateful streaming queries.
+
+**Senior follow-up:** Catalyst often pushes a filter through a simple projection or `withColumn` automatically. Reordering equivalent lines does not prove a performance improvement. Compare plans and metrics; a selective partition predicate, different join strategy, or avoided Python UDF can make a real difference.
 
 ## 17. Data Skew
 
@@ -777,88 +723,131 @@ Fixes:
 - Split heavy hitters.
 - Repartition by a better key.
 
+Repartitioning by the same skewed key does not split that key. Salting requires a correctness-preserving rewrite on both sides of a join, or a two-stage aggregation; adding random keys on only one join side loses matches. Section 50 shows a two-stage sum.
+
 ## 18. Caching and Persistence
 
-```python
-from pyspark import StorageLevel
+`cache()`/`persist()` mark a DataFrame for reuse; they do not materialize it until an action runs. `cache()` is shorthand for a default storage level (DataFrames use MEMORY_AND_DISK_DESER in Spark 3.5); `persist(level)` lets you choose. This is Spark partition caching, not Python's `functools.cache`.
 
-reused = expensive_df.persist(StorageLevel.MEMORY_AND_DISK)
-reused.count()
-reused.unpersist()
+```python
+reused = orders.filter(F.col("customer_id").isNotNull()).cache()
+try:
+    reused.count()  # Optional materialization, worthwhile only if reuse justifies it.
+    paid_count = reused.filter(F.col("status") == "PAID").count()
+    totals = reused.groupBy("customer_id").agg(F.sum("amount").alias("total"))
+    totals.show()  # Consume before unpersisting.
+finally:
+    reused.unpersist()
 ```
 
-Cache only when the DataFrame is reused and recomputation is expensive.
+Cache when reuse and recomputation cost outweigh storage, serialization, and eviction costs. There is no rule that every DataFrame used three times should be cached. Cache is not a durable checkpoint and does not make a multi-step pipeline transactional. Inspect the Storage tab and InMemoryTableScan; unpersist when finished.
 
 ## 19. UDFs and Built-In Functions
 
-Prefer built-in functions:
+Prefer SQL built-ins because Spark understands their expressions and can optimize their execution.
 
 ```python
-df2 = df.withColumn("clean_code", F.upper(F.trim("code")))
+clean = orders.withColumn("status_clean", F.upper(F.trim("status")))
 ```
 
-Use Python UDFs only when Spark SQL functions cannot express the logic.
+| Option | Execution | Use |
+| --- | --- | --- |
+| SQL built-in / higher-order function | Engine expression | First choice; includes arrays/maps, dates, strings, JSON. |
+| Python scalar UDF | Python worker; often row-oriented | Logic that cannot be expressed with built-ins. |
+| pandas UDF / mapInPandas | Python worker with Arrow batches | Vectorized Python libraries; watch batch/group memory. |
+
+Pandas UDFs are not automatically faster than built-ins. A grouped pandas operation can load an entire large/skewed group into one worker. Avoid network requests and non-idempotent side effects per row: Spark can retry tasks and execute the same effect again.
+
+Broadcasting a small Python lookup object (`sc.broadcast`) and hinting a DataFrame broadcast join (`F.broadcast`) are different tools. Prefer joining a lookup DataFrame when the logic is relational.
 
 ## 20. Window Functions
 
-```python
-w = Window.partitionBy("customer_id").orderBy("event_ts")
+Specify both ordering and frame semantics. A running total over rows is different from a range over equal ordering values.
 
-result = (
-    df.withColumn("rn", F.row_number().over(w))
-      .withColumn("rank", F.rank().over(w))
-      .withColumn("dense_rank", F.dense_rank().over(w))
-      .withColumn("prev_amount", F.lag("amount").over(w))
-      .withColumn("running_total", F.sum("amount").over(w))
-)
+```python
+w = Window.partitionBy("customer_id").orderBy("updated_at", "order_id", "event_seq")
+row_frame = w.rowsBetween(Window.unboundedPreceding, Window.currentRow)
+result = (orders.withColumn("rn", F.row_number().over(w))
+          .withColumn("previous_amount", F.lag("amount").over(w))
+          .withColumn("running_total", F.sum("amount").over(row_frame)))
 ```
+
+| Function / frame | Ties and meaning |
+| --- | --- |
+| `row_number` | One position per row; needs a total order for a reproducible winner. |
+| `rank` | Tied values share a rank; gaps follow ties (1, 1, 3). |
+| `dense_rank` | Tied values share a rank; no gaps (1, 1, 2). |
+| `rowsBetween(-6, 0)` | Current row and six preceding rows; not seven calendar days. |
+| Default ordered aggregate frame | Generally RANGE from unbounded preceding to current row; peers share the same boundary. |
+
+For top three rows, use row_number with a tie-breaker. For top three distinct scores including ties, use dense_rank ordered only by score. Do not add a unique ID to the ranking order if ties are supposed to share a rank. A window without partitionBy can force all rows into one partition; avoid global windows on large data.
 
 ## 21. Deduplication Patterns
 
-```python
-deduped = df.dropDuplicates(["business_key"])
+`distinct()` removes identical full rows. `dropDuplicates(["key"])` keeps an unspecified row for each key; it does not mean “latest.” For current-state records, define a deterministic source order.
 
-w = Window.partitionBy("business_key").orderBy(F.col("updated_at").desc())
-latest = df.withColumn("rn", F.row_number().over(w)).filter("rn = 1").drop("rn")
+```python
+def latest_orders(df):
+    w = Window.partitionBy("order_id").orderBy(
+        F.col("updated_at").desc_nulls_last(), F.col("event_seq").desc_nulls_last()
+    )
+    return (df.filter(F.col("order_id").isNotNull())
+            .withColumn("_rn", F.row_number().over(w))
+            .filter(F.col("_rn") == 1).drop("_rn"))
+
+
+latest = latest_orders(orders)
+assert latest.count() == 4
+assert latest.filter("order_id = 1").select("status").first()[0] == "PAID"
 ```
+
+This assumes `(updated_at, event_seq)` uniquely orders different versions of each key. If two different payloads tie on both fields, define a source sequence or explicit conflict rule. Arrival timestamp alone does not establish business recency. Deduplication within one batch does not deduplicate against all previous batches; use an idempotent sink or MERGE for that.
 
 ## 22. Incremental and Idempotent Processing
 
-Patterns:
+### Incremental is not the same as idempotent
 
-- Full load.
-- Incremental load.
-- Watermark.
-- High-water mark.
-- Glue bookmark.
-- CDC.
-- Backfill.
-- Idempotent partition overwrite.
+- **Incremental:** process changes since a source position, such as a CDC sequence or completed file/batch ID.
+- **Idempotent:** replaying the same input has the same final effect instead of adding duplicates.
+- **Event-time watermark:** bounds lateness/state in a streaming query; different from a batch high-water mark.
+- **Glue bookmark:** progress tracking for supported inputs; not a target transaction.
 
-```python
-incremental_df = source_df.filter(F.col("updated_at") > F.lit(last_successful_watermark))
-```
+A timestamp-only filter such as `updated_at > last_timestamp` can miss equal-timestamp rows or late commits. Use a source sequence/cursor where available, or a deliberate overlap window followed by deterministic deduplication/upsert. Preserve deletes as CDC tombstones; timestamps alone do not tell you a deleted row existed.
+
+**Commit order:** read a bounded change range → validate/deduplicate → commit the target → record successful progress. If the sink and progress store are separate, design for the crash between those two steps through idempotent replay. For `foreachBatch`, retries can repeat a batch; a batch ID is useful only with durable deduplication scoped to the query/target.
+
+**SCD interview follow-up:** Type 1 overwrites attributes; Type 2 retains versions with effective_from/effective_to and a current flag. Type 2 must expire the old row and insert a new row consistently, handle late changes, and ensure one current version per key. A simple update-all MERGE is Type 1, not a complete Type 2 implementation.
 
 ## 23. Testing PySpark Applications
 
+Test transformations locally with small, explicit input and expected rows. Do not validate only row counts: wrong values can have the same count.
+
+Save this as `test_orders.py` and run `python -m pytest test_orders.py` in an environment with pytest, a compatible PySpark/Python/Java combination, and no external cloud dependencies.
+
 ```python
 import pytest
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, functions as F
+
 
 @pytest.fixture(scope="session")
-def spark() -> SparkSession:
-    return SparkSession.builder.master("local[2]").appName("tests").getOrCreate()
-```
+def spark():
+    session = SparkSession.builder.master("local[2]").appName("tests").getOrCreate()
+    yield session
+    session.stop()
 
-```python
-def transform(df):
+
+def positive_orders(df):
     return df.filter(F.col("amount") > 0).select("id", "amount")
 
-def test_transform(spark):
-    input_df = spark.createDataFrame([(1, 10.0), (2, -1.0)], ["id", "amount"])
-    result = transform(input_df)
-    assert result.count() == 1
+
+def test_positive_orders(spark):
+    data = spark.createDataFrame([(1, 10), (2, -1), (3, None)], "id long, amount long")
+    actual = [tuple(row) for row in positive_orders(data).orderBy("id").collect()]
+    assert actual == [(1, 10)]
+    assert positive_orders(spark.createDataFrame([], data.schema)).count() == 0
 ```
+
+For joins/windows also test null keys, duplicate keys, ties, row ordering, empty inputs, and input schema. Compare DataFrames as multisets when duplicates matter: align columns/types, then check `left.exceptAll(right)` and the reverse. Test retries and late updates for lakehouse writes. Local tests do not prove cloud permissions, distributed scalability, or a streaming recovery guarantee.
 
 ## 24. Production Project Structure
 
@@ -880,6 +869,26 @@ scripts/
 
 Separate I/O from transformations. Keep transformations small, testable, and reusable.
 
+### Lessons worth taking from the quickstart
+
+```text
+Source object + stable identity → parse/type + DQ → accepted / rejected with reasons
+                                               → trusted baseline → optional business transforms
+```
+
+Keep ingestion and business transforms separate when it improves replay and ownership; this does not require separate buckets or Spark applications for every step. Validate typed values as well as raw fields, preserve rejection reasons, and reconcile accepted + rejected against source rows without losing duplicate multiplicities. `subtract` has set semantics; it is not a general rejected-row accounting method.
+
+A configuration-driven framework can separate platform code from dataset-owned schema, quality and transform rules. Validate configs/version them, use a small allowlist of supported operations, and record the config/code/run/source identities. Config files do not automatically make a pipeline idempotent or distributed.
+
+| Quickstart resource | Best use |
+| --- | --- |
+| [SQL-to-PySpark examples](../../help/quick101-spark/spark_quickstart/pyspark-101-examples.md#2-sql-to-pyspark-mental-model) | Hands-on syntax practice; use the runtime and correctness notes in this guide. |
+| [Ingestion architecture](../../help/quick101-spark/spark_quickstart/pyspark-ingestion-transformation-architecture.md#1-architecture-diagram) | Accepted/rejected/trusted/transformed boundaries and submission flow. |
+| [Parquet layout and statistics](../../help/quick101-spark/spark_quickstart/parquet-spark-performance-and-updates.md#4-where-minmax-metadata-is-stored) | Deeper explanation of column chunks, row groups and pruning. |
+| [Configuration-driven demo](../../help/quick101-spark/spark_quickstart/etl_config_driven/README.md) | A real plain-Python/local-CSV demo of ownership/config boundaries; not a distributed Spark or AWS integration test. |
+
+The quickstart is learning material, not a production contract. Some README paths refer to a pipeline_demo folder that is not present; use the actual resources linked above. Its separate ingestion README is a design sketch with embedded snippets, not a complete deployed pipeline. LocalStack service coverage depends on version/edition; a simulated AWS response does not validate real Glue, IAM, SSM or Spark behavior.
+
 ## 25. Common PySpark Mistakes
 
 - Using `collect()` on large data.
@@ -897,79 +906,79 @@ Separate I/O from transformations. Keep transformations small, testable, and reu
 
 ## 26. Troubleshooting Guide
 
-| Problem | Inspect | Likely fixes |
-|---|---|---|
-| Slow job | Spark UI Jobs/Stages | Identify slow stage, reduce shuffle |
-| One stuck stage | Task durations | Check skew/spill |
-| Executor loss | Executor logs | Memory overhead, spot loss, disk |
-| Driver OOM | Driver logs | Remove collect/toPandas |
-| Executor OOM | Executors tab | Repartition, fix skew, tune memory |
-| Fetch failure | Stage logs | Stabilize executors, reduce shuffle |
-| Python worker crash | Executor logs | UDF/package/memory |
-| S3 failure | CloudWatch/S3 path | IAM, KMS, path, throttling |
-| Missing Glue partitions | Glue Catalog | Repair/add partitions |
-| Small files | S3 layout | Compact/coalesce |
+Start by classifying the job: **not submitted / queued / doing work slowly / blocked / failed / streaming and idle**. Elapsed time alone does not tell you which one it is.
+
+1. Capture application/job-run ID, failing action, input range, code/config versions and the last good run.
+2. Inspect Jobs → slow Stage → Tasks, then SQL and Executors; compare progress, task distribution and logs.
+3. Find the earliest useful error on the failed driver/executor; a final Py4J or fetch error may only be a symptom.
+4. Recover according to the target's commit and replay semantics, then verify output and source progress.
+
+Use the [slow, frozen and crashed job runbook](#48-production-debugging-and-deep-optimization) for symptom-specific fixes. The [Spark UI reference](#34-spark-ui-and-production-troubleshooting) explains tabs and metrics.
 
 ## 27. Interview Questions and Answers
 
-### Beginner
+Answer in layers: definition → example → cost/failure case. For senior questions, add evidence and a trade-off.
 
-Q: What is lazy evaluation?
+### Fundamentals (roughly 6–18 months)
 
-A: Spark records transformations and executes only when an action is called.
+| Question | Concise answer |
+| --- | --- |
+| Why lazy evaluation? | Build a plan first, then optimize and execute it when an action needs results. |
+| Driver vs executor? | Driver coordinates/plans; executors run tasks and retain task/cache data. collect/toPandas move results to the driver. |
+| SQL vs DataFrame API? | Both use Spark SQL plans; choose the clearer expression and compare physical plans. |
+| Is dropDuplicates latest-by-key? | No. Use row_number with a deterministic source order. |
+| Does groupBy keep null keys? | Yes, null keys form a group; count(column) still skips null values. |
 
-Q: DataFrame vs RDD?
+### Applied work (roughly 2–4 years)
 
-A: DataFrames are structured and optimized by Catalyst; RDDs are lower-level.
+| Question | Concise answer |
+| --- | --- |
+| Coalesce vs repartition? | Reduce without a full shuffle vs redistribute with a shuffle; distinguish task partitions from table directories. |
+| Why did a left join lose rows? | Check right-side filters after the join, null keys, and output-grain assumptions. |
+| How do retries avoid duplicate writes? | Stable keys/source sequences, deterministic merge/replace policy, and progress committed after target success. |
+| Can Parquet UPDATE one row? | Not in place. Rewrite affected data and publish; a table format adds transactional metadata. |
+| Is caching always useful? | No. It costs memory and materialization; use measured reuse and unpersist. |
 
-### Intermediate
+### Senior design (roughly 5–8+ years)
 
-Q: repartition vs coalesce?
-
-A: `repartition` shuffles and can increase/decrease partitions. `coalesce` usually reduces partitions without full shuffle.
-
-Q: How do you tune a join?
-
-A: Filter/select early, inspect plan, broadcast small side, check duplicate keys/skew, tune shuffle partitions.
-
-### Advanced
-
-Q: What is AQE?
-
-A: Runtime query optimization that can coalesce shuffle partitions, switch joins, and handle skew using runtime stats.
-
-Q: How do you debug executor OOM?
-
-A: Inspect executor logs, Spark UI spill/GC/task sizes, skew, partition sizes, cache use, and memory overhead.
+| Question | What a strong answer includes |
+| --- | --- |
+| Why Delta vs Iceberg vs Hudi? | Supported engines/protocols, CDC shape, catalog/concurrency, operations, team/platform constraints. |
+| What does exactly-once mean? | Define source, checkpoint/state, target commit, replay identity, and external side effects; no blanket guarantee. |
+| How would you migrate a live table? | Consistent baseline + captured changes + reconciliation + coordinated cutover + rollback; row counts alone are insufficient. |
+| How do you debug a slow job? | Baseline vs changed plan/data; task distribution, scan/shuffle bytes, spill, GC and retries before tuning. |
+| Why lakehouse and medallion? | Table reliability vs quality/serving layers; neither automatically supplies governance, low latency, or cheap queries. |
 
 ## 28. Scenario-Based Interview Practice
 
-### Job Now Takes Five Hours Instead of One
+Use **symptom → evidence → hypothesis → change → verification** in onsite answers.
 
-Likely causes: data growth, skew, small files, config change, full scan, or bad join.
+| Scenario | Evidence and response |
+| --- | --- |
+| Job grows from one hour to five | Compare input/file counts, plan, join cardinality, shuffle, spill and config against the last good run. Validate output after any change. |
+| One task dominates the stage | Compare max vs median task bytes/time, hot keys and spill. Consider AQE/broadcast/hot-key isolation; more workers alone may not split that task. |
+| Driver OOM after an “optimization” | Look for collect/toPandas, broadcast construction, large plans or metadata; executor memory is not driver memory. |
+| MERGE restores stale values | Check source ordering, timestamp ties and the matched-update guard against target sequence. |
+| Backfill doubles revenue | Append was replayed, an event was counted twice, or the aggregate mixed snapshots/events; reconcile at business grain and repair idempotently. |
+| Stream state grows without bound | Inspect event-time progress, watermarks, state rows and join bounds; processing-time triggers do not evict event-time state. |
+| Table still contains deleted personal data physically | Logical DELETE and physical retention/backup deletion are separate concerns; coordinate table retention, active readers and organizational policy. |
 
-Investigate: compare Spark UI metrics, input size, stage duration, shuffle, spill, and task skew.
-
-### One Task Runs Much Longer
-
-Likely cause: skewed partition or hot key.
-
-Fix: identify key distribution, salt/split hot keys, enable AQE skew join.
-
-### `collect()` Crashes Driver
-
-Fix: write results to storage, sample/limit, aggregate first, avoid collecting large DataFrames.
+Prepare one real incident answer with before/after measurements and your role. Avoid promising a fixed percentage speedup or claiming an arbitrary file size is always optimal.
 
 ## 29. Frequently Used PySpark Code Snippets
 
 ### DataFrame Comparison
 
+Key anti joins find missing keys, not changed values. To compare full rows including duplicate counts, align column order/types first:
+
 ```python
-keys = ["id"]
-only_left = left.select(keys).distinct().join(right.select(keys).distinct(), keys, "left_anti")
-only_right = right.select(keys).distinct().join(left.select(keys).distinct(), keys, "left_anti")
-common = left.join(right, keys, "inner")
+left_rows = orders.select("order_id", "status")
+right_rows = orders.select("order_id", "status")
+assert left_rows.exceptAll(right_rows).isEmpty()
+assert right_rows.exceptAll(left_rows).isEmpty()
 ```
+
+`exceptAll` compares columns by position and retains duplicate multiplicity. `subtract` removes duplicates. For changed attributes by key, require unique keys on both inputs, full-outer join, and compare attributes with null-safe equality.
 
 ### JSON Parsing
 
@@ -1035,1558 +1044,198 @@ Glue is managed Spark plus Catalog. Use IAM roles, CloudWatch logs, job paramete
 
 ## 31.5. Lakehouse Architecture Fundamentals
 
-### What Is a Lakehouse?
+### Four layers to distinguish
 
-A lakehouse combines the scalability and low cost of data lakes with the ACID transactions, schema enforcement, and query performance of data warehouses. It achieves this by layering table formats and metadata on top of cloud object storage like S3, Azure Data Lake, or GCS.
+| Layer | Example | Responsibility |
+| --- | --- | --- |
+| Storage | S3, ADLS, HDFS | Persist objects/blocks. |
+| File format | Parquet, ORC | Encode columns, compression, row groups and statistics. |
+| Table format | Delta Lake, Iceberg, Hudi | Define committed table state and supported transactional operations. |
+| Catalog | Glue Catalog, Hive metastore, Unity Catalog | Resolve names/locations and integrate metadata/permissions; capabilities differ. |
 
-```text
-Data Lake + Data Warehouse Features = Lakehouse
-
-Object Storage (S3, ADLS, GCS)
-  ↓
-Metadata Layer (Delta, Hudi, Iceberg)
-  ↓
-ACID Transactions, Schema, Governance
-  ↓
-Spark, Trino, Athena, Flink, etc.
-```
-
-**Interview Tip**: "A lakehouse is cloud object storage plus a table format that adds transactions, schema enforcement, and metadata. This gives you the economics of a lake and the reliability of a warehouse."
-
-### The Evolution: Lake → Warehouse → Lakehouse
-
-| Aspect | Data Lake | Data Warehouse | Lakehouse |
-|---|---|---|---|
-| Storage | Object storage (cheap, scalable) | Proprietary (expensive per GB) | Object storage |
-| Format | Any (files, blobs) | Optimized binary (proprietary) | Standardized (Parquet, ORC) |
-| Transactions | None or limited | Full ACID | Full ACID via metadata layer |
-| Schema | Flexible, often inferred | Strict enforcement | Enforced and evolvable |
-| Query engines | Limited, often one vendor | SQL, but locked-in | SQL, Python, R; multiple engines |
-| Update capability | Batch rewrites | Row-level updates | Row-level updates via table format |
-| Time travel | Manual or custom | Limited | Built-in via metadata snapshots |
-| Typical cost | ~$23/TB/year (S3) | $1000+/TB/year | ~$23/TB/year + compute |
-
-### Example: Converting an Existing Data Lake Dataset to a Lakehouse
-
-Assume the current platform is a data lake on S3. Orders are stored as plain Parquet files:
+A **lakehouse** uses lake storage with a table/metadata layer and query engines to provide database-like analytical tables. A **medallion architecture** organizes quality/serving layers inside a data platform. **Delta Lake** is one table format, not another name for medallion or all lakehouses.
 
 ```text
-s3://company-data-lake/raw/orders/
-  ├── order_date=2026-07-01/part-0001.parquet
-  ├── order_date=2026-07-02/part-0001.parquet
-  └── order_date=2026-07-03/part-0001.parquet
+Sources → object storage + table format → catalog/query engines → consumers
+                 Bronze → Silver → Gold  (optional medallion organization)
 ```
 
-This works as a data lake, but it has common problems:
+### Lake, warehouse, or lakehouse?
 
-- No ACID transaction log.
-- No safe `UPDATE`, `DELETE`, or `MERGE`.
-- Readers can see partial data if a write fails.
-- Schema changes are hard to control.
-- Rollback and time travel require custom processes.
+Choose based on query latency, concurrency, data shape, supported engines, team skills and total cost. Modern warehouses can also scale horizontally, stream ingest, evolve schemas and provide time travel; lakehouses are not automatically cheaper or faster. A Parquet directory is a valid dataset, but does not acquire row-level transactions just by registering it in a catalog.
 
-To convert this dataset to a lakehouse, keep the data in S3 but rewrite or register it as an Apache Iceberg table. Iceberg adds table metadata, snapshots, schema evolution, partition information, and transaction support on top of Parquet files.
+Table readers use the format's metadata to find valid files/deletes. Reading `spark.read.parquet(delta_path)` bypasses the Delta log and can include obsolete or logically deleted data. Use the format-aware reader.
 
-#### Step 1: Configure Spark for Iceberg with AWS Glue Catalog
+### Senior design decisions
 
-```python
-from pyspark.sql import SparkSession
-
-spark = (
-    SparkSession.builder
-    .appName("migrate-orders-to-iceberg")
-    .config(
-        "spark.sql.extensions",
-        "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtension"
-    )
-    .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog")
-    .config("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog")
-    .config("spark.sql.catalog.glue_catalog.warehouse", "s3://company-lakehouse/warehouse/")
-    .config("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-    .getOrCreate()
-)
-```
-
-#### Step 2: Read the Existing Data Lake Dataset
-
-```python
-orders_lake_path = "s3://company-data-lake/raw/orders/"
-
-orders_df = spark.read.parquet(orders_lake_path)
-
-orders_df.printSchema()
-orders_df.show(5, truncate=False)
-```
-
-Example columns:
-
-```text
-order_id, customer_id, order_ts, order_date, amount, status, updated_at
-```
-
-At this point, the data is still plain Parquet. Spark can read it, but the table does not yet have lakehouse behavior.
-
-#### Step 3: Create an Iceberg Database and Table
-
-```python
-spark.sql("CREATE DATABASE IF NOT EXISTS glue_catalog.silver")
-
-spark.sql("""
-    CREATE TABLE IF NOT EXISTS glue_catalog.silver.orders (
-        order_id STRING,
-        customer_id STRING,
-        order_ts TIMESTAMP,
-        order_date DATE,
-        amount DECIMAL(10,2),
-        status STRING,
-        updated_at TIMESTAMP
-    )
-    USING iceberg
-    PARTITIONED BY (days(order_date))
-    LOCATION 's3://company-lakehouse/warehouse/silver/orders'
-""")
-```
-
-The important change is not just the file format. The table now has Iceberg metadata, so engines such as Spark, Athena, and Trino can read a consistent table snapshot.
-
-#### Step 4: Load the Existing Parquet Data into Iceberg
-
-```python
-from pyspark.sql import functions as F
-
-clean_orders_df = (
-    orders_df
-    .filter(F.col("order_id").isNotNull())
-    .filter(F.col("customer_id").isNotNull())
-    .withColumn("order_ts", F.to_timestamp("order_ts"))
-    .withColumn("order_date", F.to_date("order_date"))
-    .withColumn("amount", F.col("amount").cast("decimal(10,2)"))
-    .withColumn("updated_at", F.to_timestamp("updated_at"))
-)
-
-(
-    clean_orders_df.writeTo("glue_catalog.silver.orders")
-    .append()
-)
-```
-
-This creates an Iceberg snapshot. New readers see either the old table state or the new table state, not a half-written directory.
-
-#### Step 5: Use Lakehouse Operations
-
-Now the same dataset supports warehouse-like operations.
-
-```sql
--- Update late-arriving status changes
-MERGE INTO glue_catalog.silver.orders AS target
-USING glue_catalog.bronze.order_updates AS source
-ON target.order_id = source.order_id
-WHEN MATCHED AND source.updated_at > target.updated_at THEN
-  UPDATE SET
-    status = source.status,
-    updated_at = source.updated_at
-WHEN NOT MATCHED THEN
-  INSERT *
-```
-
-```sql
--- Query a consistent table
-SELECT order_date, status, COUNT(*) AS order_count, SUM(amount) AS revenue
-FROM glue_catalog.silver.orders
-GROUP BY order_date, status;
-```
-
-#### Step 6: Validate Before Switching Consumers
-
-```python
-source_count = spark.read.parquet(orders_lake_path).count()
-target_count = spark.table("glue_catalog.silver.orders").count()
-
-print(f"source_count={source_count}, target_count={target_count}")
-
-spark.sql("""
-    SELECT order_date, COUNT(*) AS row_count, SUM(amount) AS revenue
-    FROM glue_catalog.silver.orders
-    GROUP BY order_date
-    ORDER BY order_date
-""").show()
-```
-
-After validation, dashboards and downstream jobs can move from the old Parquet path to the Iceberg table name:
-
-```text
-Before: spark.read.parquet("s3://company-data-lake/raw/orders/")
-After:  spark.table("glue_catalog.silver.orders")
-```
-
-**Interview Tip**: "To convert a data lake dataset to a lakehouse, I do not move away from S3. I keep object storage, create an Iceberg table in Glue Catalog, load the existing Parquet data, validate row counts and business totals, then switch consumers from path-based reads to catalog-based table reads. The key improvement is that the dataset now has ACID snapshots, schema evolution, partition metadata, and safe MERGE operations."
-
-### Core Lakehouse Concepts
-
-#### Storage and Compute Separation
-
-Lakehouse separates storage from compute. Data lives in object storage; compute engines attach on demand.
-
-Benefits:
-
-- Scale storage and compute independently.
-- Multiple engines can read/write the same table.
-- Cost-effective for bursty workloads.
-- Easier disaster recovery and multi-region.
-
-```text
-S3 bucket with Delta/Hudi/Iceberg tables
-  ↓ (data format + metadata)
-  ├── Spark (ETL, transformations)
-  ├── Trino (interactive SQL)
-  ├── Athena (serverless SQL)
-  ├── Flink (streaming)
-  └── Python/Jupyter (ML, analytics)
-```
-
-#### Metadata Layer
-
-The metadata layer defines which files are active, which are deleted, schema, partitions, and transaction history. It is the "database" part of the lakehouse.
-
-Examples:
-
-- Delta Lake: `_delta_log` directory with JSON transaction log.
-- Hudi: `.hoodie` directory with commit timeline.
-- Iceberg: manifest files and metadata snapshots in a metadata folder.
-
-Importance: Readers trust metadata, not folder listing. If you list S3 directly, you see all files, including old versions. A metadata reader sees only active files.
-
-#### Partitioning in Lakehouse
-
-Partitioning is still important, but the table format handles partitioning consistently.
-
-```python
-# Explicit partitioning at write time
-df.write.format("delta").partitionBy("year", "month").save(path)
-
-# Readers see partitioning through metadata
-spark.read.format("delta").load(path)  # partition info in metadata
-```
-
-Benefits:
-
-- Query engines can skip unrelated partitions (partition pruning).
-- Concurrent writers can safely write to different partitions.
-- Partitions remain under the table format's metadata control.
-
-#### Schema and Evolution
-
-Lakehouse enforces schema and allows controlled evolution.
-
-```python
-# Schema is enforced; this fails if schema mismatches
-df.write.format("delta").mode("append").save(path)
-
-# Schema evolution: add new columns
-new_df.write.format("delta").mode("append").option("mergeSchema", True).save(path)
-```
-
-#### Transactions and Isolation
-
-Lakehouse provides ACID transactions, which ensure isolation between readers and writers.
-
-| Scenario | Data Lake (plain Parquet) | Lakehouse |
-|---|---|---|
-| Writer A and B write to same partition | Both may corrupt output | B detects conflict and retries |
-| Reader reads while writer updates | May see partial data | Reads consistent version |
-| Job crashes mid-write | Table left in inconsistent state | Rollback is atomic |
-| Need to undo recent changes | Manual recovery | Time travel or rollback |
-
-### Lakehouse Architecture on AWS
-
-On AWS, common lakehouse architectures use:
-
-| Component | Role |
-|---|---|
-| S3 | Object storage for data files |
-| AWS Glue Data Catalog | Metadata and partition management |
-| Spark (on EMR, Glue, Databricks) | Compute engine for ETL, SQL |
-| Delta Lake, Hudi, or Iceberg | Table format and metadata layer |
-| Athena (optional) | Serverless SQL on Iceberg/Delta |
-| Lake Formation (optional) | Centralized governance and access control |
-
-Example architecture:
-
-```text
-Source systems (databases, APIs, Kafka)
-  ↓ (ingest)
-S3 Bronze (raw data)
-  ↓ (transform with Spark on Glue/EMR)
-S3 Silver (Delta/Iceberg, clean data)
-  ↓ (aggregate with Spark)
-S3 Gold (Delta/Iceberg, business-ready)
-  ↓
-Athena, QuickSight, ML models, APIs
-```
-
-### Lakehouse vs Traditional Warehouse
-
-| Feature | Traditional DW | Lakehouse |
-|---|---|---|
-| Ingestion speed | Constrained by ETL tool limits | Fast Spark ingestion to bronze |
-| Data freshness | Hours to days | Minutes to seconds with streaming |
-| Ad hoc queries | Limited; schemas must be pre-built | Flexible; analysts query any layer |
-| Schema changes | Costly; requires downtime | Evolutionary; backward compatible |
-| Storage cost | High (proprietary hardware/licensing) | Low (cloud object storage) |
-| Scaling | Vertical (add CPUs/memory to one box) | Horizontal (add more nodes) |
-| Data governance | Centralized, sometimes rigid | Decentralized but policy-driven via Catalog |
-| Time travel | Not common | Native via metadata snapshots |
-| Third-party tool support | Mature | Growing (Trino, Athena, Flink, etc.) |
-
-### Lakehouse Design Principles
-
-#### 1. Separate Raw and Curated Layers
-
-Keep raw bronze data immutable and replayable. Clean data in silver, curate in gold.
-
-```python
-# Bronze: raw, append-only
-spark.read.json("source_api/events/").write.format("delta").mode("append").save("s3://.../bronze/events/")
-
-# Silver: cleaned, deduplicated, validated
-(bronze
-    .filter(F.col("event_id").isNotNull())
-    .withColumn("event_ts", F.to_timestamp("event_ts"))
-    .write.format("delta").mode("append").save("s3://.../silver/events/")
-)
-```
-
-#### 2. Use Immutable Inserts, Controlled Updates
-
-Append-only writes are cheaper and safer. Use MERGE for upserts only when necessary.
-
-```python
-# Good: append-only
-incremental.write.format("delta").mode("append").save(silver_path)
-
-# When needed: upsert with MERGE
-DeltaTable.forPath(spark, silver_path).merge(...).whenMatched(...).execute()
-```
-
-#### 3. Partition by Common Filters
-
-Partition by columns frequently used in WHERE clauses, not by unique identifiers.
-
-```python
-# Good: date-based partition
-.write.partitionBy("order_date").save(path)
-
-# Bad: cardinality explosion
-.write.partitionBy("user_id").save(path)  # millions of directories
-```
-
-#### 4. Optimize File Sizes
-
-Target Parquet files around 50-200 MB for balanced I/O and metadata overhead.
-
-```python
-# If many small files, repartition before writing
-df.repartition(100).write.format("delta").mode("overwrite").save(path)
-```
-
-#### 5. Govern Access Through Metadata
-
-Use Catalog (Glue, Unity, Hive) and Lake Formation policies to control who sees what.
-
-```python
-# Define table in catalog pointing to lakehouse data
-spark.sql("""
-    CREATE TABLE IF NOT EXISTS analytics.orders
-    USING delta
-    LOCATION 's3://my-bucket/lake/silver/orders/'
-""")
-```
-
-### Key Differences Between Lakehouse Formats
-
-All three formats solve the same problem (Parquet + transactions + metadata) but with different focuses:
-
-| Aspect | Delta Lake | Apache Hudi | Apache Iceberg |
-|---|---|---|---|
-| Transaction log | JSON files in `_delta_log` | Timeline in `.hoodie` | Snapshots + manifests |
-| Upsert strategy | MERGE after dedup | Native record-level upsert | INSERT, UPDATE, DELETE via MERGE |
-| Incremental reads | Version numbers | Commit instants | Snapshot IDs |
-| Engine support | Spark, Databricks | Spark, Flink | Spark, Trino, Athena, Flink |
-| Best for | Spark-centric, simple upserts | CDC, streaming ingestion | Multi-engine, analytical queries |
-| Production maturity | Very mature (Databricks) | Mature (Netflix, Uber) | Rapidly growing (AWS, Tabular) |
-
-### Lakehouse Governance and Metadata
-
-A lakehouse catalog (Glue, Hive, Unity Catalog, etc.) is critical for:
-
-- Discoverability: find tables and understand schemas.
-- Lineage: track where data comes from and where it goes.
-- Access control: who can read/write which tables.
-- Quality metrics: row counts, schema versions, update frequency.
-- Classification: mark sensitive data (PII, PHI, confidential).
-
-Example Glue integration:
-
-```python
-spark = (
-    SparkSession.builder
-    .config("spark.sql.catalog.glue_catalog", "org.apache.spark.sql.catalyst.catalog.ExternalCatalog")
-    .getOrCreate()
-)
-
-# Register Delta table in Glue Catalog
-spark.sql("""
-    CREATE TABLE glue_catalog.analytics.orders
-    USING delta
-    LOCATION 's3://bucket/lake/silver/orders/'
-""")
-
-# Now other users can discover and query it
-spark.sql("SELECT * FROM glue_catalog.analytics.orders")
-```
-
-### Common Lakehouse Mistakes
-
-- **Mixing formats**: Do not write plain Parquet, Delta, and Hudi to the same path.
-- **Ignoring metadata**: Assuming folder listing equals table contents.
-- **High-cardinality partitions**: Partitioning by user_id or order_id creates millions of small directories.
-- **Forgetting to vacuum/compact**: Old files accumulate; run cleanup regularly.
-- **Over-complicating bronze**: Bronze should be simple and replayable.
-- **Not testing concurrent writes**: Verify that multiple jobs can safely write to the same table.
-- **Ignoring schema evolution**: Schema changes break downstream jobs; plan and test evolution.
-
-### Interview Answer Template
-
-When asked "What is a lakehouse and why would you use one?":
-
-```text
-A lakehouse combines cloud object storage with a table format (Delta, Hudi, or Iceberg)
-to provide ACID transactions, schema enforcement, time travel, and multi-engine access—
-all at the economics of a data lake. Compared to a traditional data warehouse, a lakehouse
-is cheaper, scales horizontally, supports streaming and batch, and allows multiple query
-engines on the same data. I use a medallion architecture with bronze (raw), silver (cleaned),
-and gold (curated) layers. For silver and gold, I use Delta or Iceberg for upserts and
-consistency. The metadata layer (Glue Catalog on AWS) provides governance and discoverability.
-```
+- Confirm reader AND writer support for the chosen format version and optional features; “supports Iceberg/Delta” is not enough.
+- Plan transaction boundaries, concurrent writers, schema evolution, record identity and retention. Table-level ACID does not imply a transaction across bronze, silver and gold.
+- Governance needs IAM/storage controls and catalog policies that the engine actually enforces. A table property named owner is not an access-control rule.
+- Use compaction to improve file layout; use VACUUM/cleaning/snapshot expiration to remove retained obsolete data. They solve different problems.
+- Include orchestration, lineage, quality rules, monitoring and a serving strategy; the table format supplies only part of the platform.
 
 ## 32. Transactional Parquet with Delta Lake, Apache Hudi, and Apache Iceberg
 
-### Core Idea
+### Plain Parquet CRUD: rewrite data, then publish a new version
 
-Parquet is a columnar file format, not a database table. It is excellent for analytics because it supports compression, predicate pushdown, column pruning, and efficient scans. But plain Parquet files do not have transactions, row-level updates, rollback, or table history.
+Parquet is a columnar file format. CREATE/INSERT writes files; READ scans selected columns/row groups; UPDATE/DELETE require new data files or an external table layer. There is no generic transactional UPDATE of a standalone Parquet file.
 
-In plain Parquet, there is no in-place `UPDATE`. A Parquet file is effectively immutable in data lake workloads. To change one record, Spark usually has to:
-
-1. Read the affected file, partition, or table into a DataFrame.
-2. Apply the change in Spark.
-3. Write new Parquet files.
-4. Replace the affected partition or table path.
-
-Example: update one date partition in plain Parquet:
+This **local example** writes a replacement dataset to a different directory. It demonstrates row changes without overwriting files still needed by a lazy read:
 
 ```python
-from pyspark.sql import functions as F
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-target_path = "s3://my-bucket/lake/orders_parquet/"
 
-partition_df = (
-    spark.read.parquet(target_path)
-    .filter(F.col("order_date") == "2026-07-15")
-)
+with TemporaryDirectory() as directory:
+    old_path = str(Path(directory) / "v1")
+    new_path = str(Path(directory) / "v2")
+    spark.createDataFrame([(1, "NEW"), (2, "NEW"), (3, "PAID")],
+                          "id long, status string").write.parquet(old_path)
 
-updated_partition = (
-    partition_df
-    .withColumn(
-        "status",
-        F.when(F.col("order_id") == "O-100", F.lit("CANCELLED"))
-         .otherwise(F.col("status"))
-    )
-)
-
-spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
-
-(
-    updated_partition.write
-    .mode("overwrite")
-    .partitionBy("order_date")
-    .parquet(target_path)
-)
+    original = spark.read.parquet(old_path)
+    replacement = (original.filter(F.col("id") != 2)  # Delete id 2.
+                   .withColumn("status", F.when(F.col("id") == 1, "CANCELLED")
+                               .otherwise(F.col("status"))))
+    replacement.write.parquet(new_path)
+    actual = [tuple(row) for row in spark.read.parquet(new_path).orderBy("id").collect()]
+    assert actual == [(1, "CANCELLED"), (3, "PAID")]
 ```
 
-This is still not a transaction. If the overwrite fails, if another job writes at the same time, or if overwrite settings are wrong, readers can see missing, duplicate, partial, or inconsistent data.
+Consumers still point at v1 until a separate publication step switches them. Coordinating writers/readers, validation and recovery is your responsibility. Dynamic overwrite is not ACID and cannot infer a partition that should become empty. A cached DataFrame is not a reliable transactional publication mechanism.
 
-Lakehouse table formats solve this by storing data as files, usually Parquet, and adding a metadata layer that defines the valid table state.
+### What Delta adds
 
-```text
-Data files:
-  Parquet files in S3 or cloud object storage
+Delta Lake stores data in Parquet plus a transaction log (`_delta_log`). Readers reconstruct the committed snapshot from log/checkpoint metadata and active file/deletion information. INSERT/UPDATE/DELETE/MERGE commit a new table version atomically; they do not turn Parquet files into mutable rows.
 
-Metadata layer:
-  transaction log, snapshots, manifests, commits
+| Operation | Logical behavior | Typical physical work |
+| --- | --- | --- |
+| Append | Add rows | Add files and commit metadata; repeated append can duplicate input. |
+| Update/delete | Change/remove selected rows | Rewrite affected files, or use supported deletion-vector features. |
+| Merge | Match source rows to target keys for update/insert/delete | Read candidate target data, write changes, commit a new version. |
+| Time travel | Read an older snapshot | Needs both retained metadata and referenced data/deletion files. |
+| Vacuum | Physically remove eligible unreferenced data | Reduces storage but can remove the ability to read old versions. |
 
-Table behavior:
-  ACID transactions, MERGE, UPDATE, DELETE, rollback, time travel
-```
+Deletion vectors can logically mark rows removed from Parquet without immediately rewriting the entire file; support depends on operation/runtime and protocol. Never assume every reader supports every enabled feature. [Deletion vectors](https://docs.delta.io/delta-deletion-vectors/)
 
-**Interview Tip**: "Parquet does not become transactional by itself. Delta Lake, Hudi, and Iceberg add a table metadata layer over Parquet files so readers know which files represent the current valid table version."
+### Local Delta setup (separate fresh process)
 
-### Delta Lake
-
-Delta Lake stores table data as Parquet files and stores transaction history in the `_delta_log` directory. The transaction log is the source of truth.
-
-Delta provides:
-
-- ACID transactions.
-- `MERGE`, `UPDATE`, and `DELETE`.
-- Schema enforcement and schema evolution.
-- Time travel by version or timestamp.
-- Batch and streaming support.
-- Compaction and cleanup features in Delta-enabled platforms.
-
-On AWS, Delta Lake is commonly used with Databricks on AWS, Amazon EMR, AWS Glue Spark jobs with Delta packages, and S3 storage.
-
-Append new rows to a partitioned Delta table:
-
-```python
-orders_path = "s3://my-bucket/lake/silver/orders_delta"
-
-(
-    orders_df.write
-    .format("delta")
-    .mode("append")
-    .partitionBy("order_date")
-    .save(orders_path)
-)
-
-orders = spark.read.format("delta").load(orders_path)
-```
-
-`mode("append")` is not used for every Delta operation. It is only for writing additional rows. For updates and deletes, use Delta table operations.
-
-| Goal | Use |
-|---|---|
-| Add new rows | `df.write.format("delta").mode("append").save(path)` |
-| Create or fully replace table data | `mode("overwrite")`, used carefully |
-| Update existing rows | `DeltaTable.update(...)` or SQL `UPDATE` |
-| Delete existing rows | `DeltaTable.delete(...)` or SQL `DELETE` |
-| Upsert rows | `DeltaTable.merge(...)` or SQL `MERGE` |
-
-### Bronze to Silver Upserts with Delta MERGE
-
-Use `DeltaTable.merge(...)` when bronze data can contain a mix of:
-
-- New records that do not exist in silver yet.
-- Existing records with changed values.
-- Late-arriving corrections for old business keys.
-
-Do not use `MERGE` for every load. If the input is guaranteed to be append-only, append is simpler and cheaper. Use `MERGE` when silver must behave like an upsert table.
-
-| Bronze input pattern | Silver write pattern |
-|---|---|
-| Only new rows | Append |
-| New rows plus updates to existing keys | Deduplicate, then `MERGE` |
-| CDC inserts, updates, and deletes | Deduplicate, then `MERGE` with update/insert/delete logic |
-| Full replacement for one date or partition | Partition overwrite, used carefully |
-
-Example: deduplicate incoming bronze rows, then upsert into silver.
-
-```python
-from delta.tables import DeltaTable
-from pyspark.sql import Window
-from pyspark.sql import functions as F
-
-bronze_updates = spark.read.format("delta").load(
-    "s3://my-bucket/lake/bronze/customers_delta"
-)
-
-window_spec = Window.partitionBy("customer_id").orderBy(
-    F.col("updated_at").desc()
-)
-
-bronze_latest = (
-    bronze_updates
-    .withColumn("row_number", F.row_number().over(window_spec))
-    .filter(F.col("row_number") == 1)
-    .drop("row_number")
-)
-
-silver_table = DeltaTable.forPath(
-    spark,
-    "s3://my-bucket/lake/silver/customers_delta",
-)
-
-(
-    silver_table.alias("silver")
-    .merge(
-        bronze_latest.alias("bronze"),
-        "silver.customer_id = bronze.customer_id",
-    )
-    .whenMatchedUpdateAll()
-    .whenNotMatchedInsertAll()
-    .execute()
-)
-```
-
-Why deduplicate first: Delta `MERGE` expects one clear source row for each target business key. If the same `customer_id` appears multiple times in the bronze batch, pick the latest version before merging.
-
-Interview answer:
-
-> If bronze can contain both new rows and updates to existing rows, I use Delta Lake `MERGE` for silver. I deduplicate the incoming batch by business key first, usually keeping the latest `updated_at`, then merge using the business key. For pure append-only data, append is simpler and more efficient.
-
-The physical layout still has partition folders:
-
-```text
-s3://my-bucket/lake/silver/orders_delta/
-  _delta_log/
-    00000000000000000000.json
-    00000000000000000001.json
-
-  order_date=2026-07-15/
-    part-0001.snappy.parquet
-    part-0004.snappy.parquet
-
-  order_date=2026-07-16/
-    part-0002.snappy.parquet
-```
-
-But Delta readers do not trust folder listing alone. They read `_delta_log` to know which files are active.
-
-### What Is Inside a Delta Log JSON File
-
-Delta log files are newline-delimited JSON. Each line is one action, such as table metadata, protocol version, added files, removed files, or commit information.
-
-Example `_delta_log/00000000000000000001.json`:
-
-```json
-{"commitInfo":{"timestamp":1784246400000,"operation":"UPDATE","operationParameters":{"predicate":"order_date = '2026-07-15' AND order_id = 'O-100'"},"readVersion":0,"isolationLevel":"Serializable"}}
-{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
-{"metaData":{"id":"8f7b2c1a-table-id","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"order_id\",\"type\":\"string\",\"nullable\":true},{\"name\":\"status\",\"type\":\"string\",\"nullable\":true},{\"name\":\"order_date\",\"type\":\"date\",\"nullable\":true}]}","partitionColumns":["order_date"]}}
-{"remove":{"path":"order_date=2026-07-15/part-0001.snappy.parquet","deletionTimestamp":1784246400000,"dataChange":true}}
-{"add":{"path":"order_date=2026-07-15/part-0004.snappy.parquet","partitionValues":{"order_date":"2026-07-15"},"size":1048576,"modificationTime":1784246400000,"dataChange":true,"stats":"{\"numRecords\":3,\"minValues\":{\"order_id\":\"O-100\"},\"maxValues\":{\"order_id\":\"O-102\"},\"nullCount\":{\"order_id\":0}}"}}
-```
-
-How to read this:
-
-- `commitInfo`: describes the operation, such as `WRITE`, `UPDATE`, `DELETE`, `MERGE`, or `OPTIMIZE`.
-- `protocol`: records the minimum Delta reader/writer versions required.
-- `metaData`: stores table schema, partition columns, table id, and format details.
-- `remove`: marks an old Parquet file as no longer active.
-- `add`: marks a new Parquet file as active and stores partition values and file statistics.
-
-**Important**: Delta does not delete the old file immediately when it writes a `remove` action. The file can remain physically present for time travel. Delta readers ignore it because `_delta_log` says it is removed.
-
-### What Happens When a Delta Partition Is Updated
-
-Delta keeps the partition folder structure. For the Spark user, Delta feels like a database-style update:
-
-```python
-from delta.tables import DeltaTable
-
-orders_path = "s3://my-bucket/lake/silver/orders_delta"
-orders = DeltaTable.forPath(spark, orders_path)
-
-orders.update(
-    condition="order_date = '2026-07-15' AND order_id = 'O-100'",
-    set={"status": "'CANCELLED'"}
-)
-```
-
-Use `DeltaTable.forPath(...)` when you want to run Delta table operations such as `update`, `delete`, or `merge`. Use `spark.read.format("delta").load(...)` when you want a normal DataFrame for querying.
-
-```python
-orders_df = spark.read.format("delta").load(orders_path)
-orders_df.filter(F.col("order_date") == "2026-07-15").show()
-```
-
-Internally, Delta still works with immutable Parquet files. It does not edit one row inside an existing Parquet file. It rewrites affected files and records the change in `_delta_log`.
-
-For an update in `order_date=2026-07-15`, Delta typically:
-
-1. Finds files in that partition that contain matching rows.
-2. Reads the affected files.
-3. Writes new Parquet replacement files, usually under the same partition folder.
-4. Marks old files as removed in `_delta_log`.
-5. Marks new files as added in `_delta_log`.
-
-Example before update:
-
-```text
-order_date=2026-07-15/
-  part-0001.snappy.parquet
-
-part-0001 contents:
-  order_id=O-100, status=NEW        # row to update
-  order_id=O-101, status=NEW        # unchanged row
-  order_id=O-102, status=SHIPPED    # unchanged row
-```
-
-Example after update:
-
-```text
-order_date=2026-07-15/
-  part-0001.snappy.parquet  # old file, physically present but removed in _delta_log
-  part-0004.snappy.parquet  # new active replacement file
-
-part-0004 contents:
-  order_id=O-100, status=CANCELLED  # updated row
-  order_id=O-101, status=NEW        # unchanged row copied from old file
-  order_id=O-102, status=SHIPPED    # unchanged row copied from old file
-```
-
-Delta readers only read files that are active in the latest transaction log version. They ignore `part-0001` and read `part-0004`. Old files remain for time travel until cleanup runs.
-
-Key point: the row is logically updated, but the physical operation is a file rewrite. Updating one row may rewrite a whole Parquet file. This is called write amplification.
-
-Update example:
-
-```python
-from delta.tables import DeltaTable
-
-orders_path = "s3://my-bucket/lake/silver/orders_delta"
-orders = DeltaTable.forPath(spark, orders_path)
-
-orders.update(
-    condition="order_date = '2026-07-15' AND order_id = 'O-100'",
-    set={"status": "'CANCELLED'"}
-)
-```
-
-Delete example:
-
-```python
-from delta.tables import DeltaTable
-
-orders_path = "s3://my-bucket/lake/silver/orders_delta"
-orders = DeltaTable.forPath(spark, orders_path)
-
-orders.delete(
-    condition="order_date = '2026-07-15' AND order_id = 'O-101'"
-)
-```
-
-With this delete, Delta does not use `mode("append")`. It finds affected files, writes replacement files without `O-101`, marks old files as removed in `_delta_log`, and commits a new table version.
-
-Add new rows example:
-
-```python
-new_orders_df = spark.createDataFrame(
-    [("O-300", "NEW", "2026-07-17")],
-    ["order_id", "status", "order_date"]
-).withColumn("order_date", F.to_date("order_date"))
-
-(
-    new_orders_df.write
-    .format("delta")
-    .mode("append")
-    .partitionBy("order_date")
-    .save(orders_path)
-)
-```
-
-For new rows, use `mode("append")`. Delta writes new Parquet files and records `add` actions in `_delta_log`.
-
-SQL delete example:
-
-```sql
-DELETE FROM analytics.orders_delta
-WHERE order_date = DATE '2026-07-15'
-  AND order_id = 'O-101'
-```
-
-### Note: Joining Delta Tables Creates a Normal DataFrame
-
-Joining Delta tables works like normal Spark. Delta controls how each source table is read consistently from `_delta_log`; the join itself is a regular Spark DataFrame transformation.
-
-```python
-orders_df = spark.read.format("delta").load("s3://my-bucket/lake/silver/orders_delta")
-customers_df = spark.read.format("delta").load("s3://my-bucket/lake/silver/customers_delta")
-
-joined_df = (
-    orders_df
-    .join(customers_df, "customer_id", "left")
-    .select(
-        "order_id",
-        "customer_id",
-        "customer_name",
-        "status",
-        "order_date",
-        "amount"
-    )
-)
-```
-
-At this point, `joined_df` is just a lazy Spark DataFrame plan. It has not modified either Delta table. To persist the joined result, write it to a target table:
-
-```python
-(
-    joined_df.write
-    .format("delta")
-    .mode("overwrite")
-    .partitionBy("order_date")
-    .save("s3://my-bucket/lake/gold/order_customer_delta")
-)
-```
-
-To use one DataFrame to update an existing Delta table, use `MERGE`, not a normal join followed by manual overwrite.
-
-### How Delta Helps Spark Users
-
-Delta does not make Parquet files mutable. Spark still reads candidate data and Delta still rewrites Parquet files underneath. Delta helps because it manages the rewrite safely and transactionally.
-
-| Plain Parquet | Delta Lake |
-|---|---|
-| You manually read, modify, and overwrite files | You call `UPDATE`, `DELETE`, or `MERGE` |
-| Failed overwrite can leave partial data | Commit is atomic through `_delta_log` |
-| Readers may see inconsistent files | Readers see one consistent table version |
-| Concurrent writers can corrupt output | Delta detects write conflicts with optimistic concurrency |
-| No built-in rollback | Time travel can read older table versions |
-| Folder listing decides what is read | Transaction log decides active files |
-
-Delta does not always scan the full table. With a partition predicate such as `order_date = '2026-07-15'`, Delta can prune unrelated partitions. It then rewrites only affected candidate files, not every partition.
-
-### Concurrent Updates: Not Last Writer Wins
-
-Delta Lake uses optimistic concurrency control. Two writers can start from the same table version, but only valid non-conflicting commits are accepted. A conflicting later commit fails instead of silently overwriting the earlier commit.
-
-Example:
-
-```text
-Table starts at version 10
-
-Thread 1 reads version 10
-Thread 2 reads version 10
-
-Thread 1 updates order_date=2026-07-15 and writes replacement file part-100.parquet
-Thread 2 updates order_date=2026-07-15 and writes replacement file part-200.parquet
-
-Thread 1 commits _delta_log version 11 successfully
-Thread 2 tries to commit based on version 10
-Delta detects that conflicting files changed
-Thread 2 fails and must retry on the latest table version
-```
-
-So the rule is not "whichever thread finishes last wins." It is closer to:
-
-```text
-first valid commit wins
-conflicting later commit fails or must retry
-non-conflicting later commit can succeed as the next version
-```
-
-Two concurrent writes may both succeed when they touch different files or different partitions:
-
-```text
-Thread 1 updates order_date=2026-07-15 -> commits version 11
-Thread 2 updates order_date=2026-07-16 -> commits version 12
-```
-
-Two updates to the same partition may still both succeed if they touch different underlying Parquet files and Delta can validate that there is no conflict. They may fail if they read or rewrite the same files.
-
-**Interview Tip**: "Delta Lake does not use last-writer-wins for concurrent updates. Writers work on a snapshot, then atomically commit a new log version. If another writer changed conflicting files or table metadata, the later writer gets a conflict instead of corrupting the table."
-
-### Using Delta Lake on AWS EMR
-
-On EMR, Delta Lake is not just "normal Parquet." Spark must run with Delta Lake libraries and Delta SQL extensions. The exact Delta package version must match the EMR Spark and Scala versions.
-
-You usually need:
-
-- Delta Lake package or JAR.
-- Spark SQL extension: `io.delta.sql.DeltaSparkSessionExtension`.
-- Delta catalog: `org.apache.spark.sql.delta.catalog.DeltaCatalog`.
-- S3 permissions for the table path and `_delta_log`.
-- Optional Glue Data Catalog configuration if you want metastore tables.
-
-`spark-submit` example:
-
-```bash
-spark-submit \
-  --packages io.delta:delta-spark_2.12:<delta-version> \
-  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  delta_orders_job.py
-```
-
-PySpark `SparkSession` example:
-
-```python
-from pyspark.sql import SparkSession
-
-spark = (
-    SparkSession.builder
-    .appName("delta-on-emr")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
-```
-
-Write and read a Delta table on S3:
-
-```python
-orders_path = "s3://my-bucket/lake/silver/orders_delta"
-
-(
-    orders_df.write
-    .format("delta")
-    .mode("append")
-    .partitionBy("order_date")
-    .save(orders_path)
-)
-
-orders = spark.read.format("delta").load(orders_path)
-```
-
-Create a Delta table in the catalog:
-
-```sql
-CREATE TABLE IF NOT EXISTS analytics.orders_delta
-USING DELTA
-LOCATION 's3://my-bucket/lake/silver/orders_delta'
-```
-
-If EMR is configured to use AWS Glue Data Catalog as the Hive metastore, Spark SQL can resolve `analytics.orders_delta` through the catalog while the actual Delta files remain in S3.
-
-EMR production checklist:
-
-- Confirm EMR version, Spark version, Scala version, and Delta package compatibility.
-- Attach IAM permissions for both data files and `_delta_log`.
-- Use S3 paths consistently. Do not mix direct Parquet writes into a Delta table path.
-- Use `VACUUM` carefully because it removes old files needed for time travel.
-- Test concurrent writers if multiple EMR steps or jobs can update the same table.
-
-**Interview Tip**: "On EMR, I add the Delta Lake package and configure Spark with `DeltaSparkSessionExtension` and `DeltaCatalog`. Then I use `.format('delta')` or SQL `USING DELTA`. The main operational checks are version compatibility, S3 permissions, Glue Catalog integration, and avoiding non-Delta writes into the same path."
-
-### Running Standard PySpark and Delta Examples Locally on macOS or Windows
-
-You can practice standard PySpark and Delta Lake at home without EMR by running PySpark locally. Use standard PySpark examples to refresh DataFrame basics, joins, aggregations, and file reads/writes. Use Delta examples to learn `UPDATE`, `MERGE`, `_delta_log`, and time travel.
-
-Local prerequisites:
-
-- Install Java and make sure `java -version` works.
-- Use a Python virtual environment if possible.
-- Use local file paths for practice. Use S3 paths only if AWS credentials and Hadoop S3 dependencies are configured.
-
-Install local dependencies:
-
-```bash
-pip install pyspark delta-spark
-```
-
-For standard PySpark only, `pyspark` is enough. Install `delta-spark` only when you want to run Delta Lake examples.
-
-### Local Standard PySpark Example Without Delta Lake
-
-This example uses normal PySpark DataFrames and writes plain Parquet. It does not use Delta Lake, `_delta_log`, `UPDATE`, or `MERGE`.
-
-Standard PySpark setup:
-
-```python
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
-
-spark = (
-    SparkSession.builder
-    .appName("local-standard-pyspark-practice")
-    .master("local[*]")
-    .getOrCreate()
-)
-```
-
-Use a local path.
-
-macOS or Linux:
-
-```python
-orders_path = "/tmp/pyspark-practice/orders_parquet"
-```
-
-Windows:
-
-```python
-orders_path = "C:/tmp/pyspark-practice/orders_parquet"
-```
-
-Create, transform, and write sample data:
-
-```python
-orders_df = spark.createDataFrame(
-    [
-        ("O-100", "C-1", "NEW", 100.0, "2026-07-15"),
-        ("O-101", "C-1", "NEW", 50.0, "2026-07-15"),
-        ("O-102", "C-2", "SHIPPED", 75.0, "2026-07-15"),
-        ("O-200", "C-3", "NEW", 20.0, "2026-07-16"),
-    ],
-    ["order_id", "customer_id", "status", "amount", "order_date"],
-).withColumn("order_date", F.to_date("order_date"))
-
-daily_sales = (
-    orders_df
-    .filter(F.col("status").isin("NEW", "SHIPPED"))
-    .groupBy("order_date")
-    .agg(
-        F.countDistinct("order_id").alias("order_count"),
-        F.sum("amount").alias("total_amount")
-    )
-)
-
-(
-    orders_df.write
-    .mode("overwrite")
-    .partitionBy("order_date")
-    .parquet(orders_path)
-)
-```
-
-Read the plain Parquet data:
-
-```python
-read_df = spark.read.parquet(orders_path)
-
-read_df.printSchema()
-read_df.orderBy("order_id").show(truncate=False)
-daily_sales.orderBy("order_date").show(truncate=False)
-```
-
-Plain Parquet update pattern:
-
-```python
-partition_df = read_df.filter(F.col("order_date") == "2026-07-15")
-
-updated_partition = (
-    partition_df
-    .withColumn(
-        "status",
-        F.when(F.col("order_id") == "O-100", F.lit("CANCELLED"))
-         .otherwise(F.col("status"))
-    )
-)
-
-spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
-
-(
-    updated_partition.write
-    .mode("overwrite")
-    .partitionBy("order_date")
-    .parquet(orders_path)
-)
-```
-
-This works for practice, but it is not transactional. Spark rewrites files or partitions, and there is no `_delta_log`, rollback, or time travel.
-
-### Local Delta Lake Example
-
-Delta Spark setup:
+Start with a compatible Spark/Delta pair and the required Java/Python versions. For example, Delta 4.0.0 supports Spark 4.0.x; Delta 3.3.x supports Spark 3.5.x. Do not install the latest packages blindly into a managed Glue/EMR runtime. [Compatibility matrix](https://docs.delta.io/releases/)
 
 ```python
 from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
+from delta.tables import DeltaTable
+from pyspark.sql import SparkSession, functions as F
 
-builder = (
-    SparkSession.builder
-    .appName("local-delta-practice")
-    .master("local[*]")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-)
 
+builder = (SparkSession.builder.master("local[2]").appName("delta-practice")
+           .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+           .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"))
 spark = configure_spark_with_delta_pip(builder).getOrCreate()
 ```
 
-Use a local path.
+Install the matching `pyspark` and `delta-spark` packages in a local virtual environment first; the helper resolves the JVM artifacts too. An already-running SparkSession cannot acquire startup extensions by calling getOrCreate again.
 
-macOS or Linux:
+### CRUD and a stale-update-safe MERGE
 
-```python
-orders_path = "/tmp/delta-practice/orders_delta"
-```
-
-Windows:
+Run after the Delta setup above. The version field is a monotonically increasing source sequence for each key.
 
 ```python
-orders_path = "C:/tmp/delta-practice/orders_delta"
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+
+with TemporaryDirectory() as directory:
+    path = str(Path(directory) / "customers")
+    spark.createDataFrame([(1, "Alice", 1), (2, "Bob", 1)],
+                          "id long, name string, version long").write.format("delta").save(path)
+    target = DeltaTable.forPath(spark, path)
+
+    target.update(condition=F.col("id") == 2, set={"name": F.lit("Robert")})
+    target.delete(F.col("id") == 2)
+
+    # One non-null key per source batch; deduplicate by source sequence first if needed.
+    updates = spark.createDataFrame([(1, "Alicia", 2), (3, "Carol", 1)],
+                                   "id long, name string, version long")
+    def upsert(batch):
+        (target.alias("t").merge(batch.alias("s"), "t.id = s.id")
+         .whenMatchedUpdateAll(condition="s.version > t.version")
+         .whenNotMatchedInsertAll().execute())
+
+    upsert(updates)
+    upsert(updates)  # Replay does not create another row or regress the version.
+    stale = spark.createDataFrame([(1, "Old name", 1)], updates.schema)
+    upsert(stale)  # Older source version must not overwrite version 2.
+
+    current = spark.read.format("delta").load(path)
+    assert [tuple(row) for row in current.orderBy("id").collect()] == [
+        (1, "Alicia", 2), (3, "Carol", 1)]
+    assert spark.read.format("delta").option("versionAsOf", 0).load(path).count() == 2
 ```
 
-Create sample data:
+A source batch must resolve duplicate keys/ties before MERGE, and the target must satisfy its key uniqueness invariant. A table format does not generally enforce your business primary key. Define equal-version/different-payload conflicts and null-key handling; use CDC delete operations for tombstones. For strong out-of-order delete protection, retain a versioned tombstone or equivalent state rather than allowing a stale insert to resurrect a removed key.
+
+SQL can query a registered Delta table or a provider path, for example: ``SELECT * FROM delta.`/path/to/table` ``. UPDATE/DELETE/MERGE require Delta-enabled SQL extensions. The join of two Delta tables produces a normal lazy DataFrame; it does not update either input. [Delta DML reference](https://docs.delta.io/delta-update/)
+
+### Concurrency and retention
+
+Writers use optimistic concurrency: read a snapshot, prepare changes, validate and commit. Compatible writes may both succeed; conflicting writes can fail. Re-read/recompute and retry only operations designed for safe replay, with bounded backoff. Different partition directories alone are not a universal guarantee of conflict-free writes. There is no generic `.option("maxRetries", 3)` that makes all Delta operations safely retry. [Concurrency reference](https://docs.delta.io/concurrency-control/)
+
+Do not lower retention just to save space. Account for longest readers/streams, delayed consumers, rollback needs and backups. DELETE is logical first; VACUUM later removes eligible files. With deletion vectors, physical purging can also require a supported rewrite/purge operation before those files become eligible. Compaction is separate from deletion, and reading old versions after cleanup can fail. [Maintenance reference](https://docs.delta.io/delta-utility/)
+
+### Delta, Hudi and Iceberg
+
+| Format | Useful capabilities to evaluate | Operational questions |
+| --- | --- | --- |
+| Delta Lake | Spark SQL/Python DML, log-based snapshots, change data feed | Compatible runtimes/protocols; retention, compaction and concurrent writers. |
+| Hudi | Record keys, upsert/CDC, incremental consumption, copy-on-write/merge-on-read | Indexing, ordering/merge semantics, compaction/cleaning and table services. |
+| Iceberg | Snapshot/manifest metadata, hidden partitioning and partition evolution, multi-engine tables | Catalog/locking, engine support for row-level changes and format versions. |
+
+These are evaluation dimensions, not exclusive features or a universal ranking. Hudi ordering fields and behavior vary by version. Iceberg row-level changes may use copy-on-write or delete files depending on table/engine settings; snapshots do not mean rewriting the full table.
+
+For a configured Iceberg catalog, prefer DataFrameWriterV2 and SQL DML:
 
 ```python
-orders_df = spark.createDataFrame(
-    [
-        ("O-100", "NEW", "2026-07-15"),
-        ("O-101", "NEW", "2026-07-15"),
-        ("O-102", "SHIPPED", "2026-07-15"),
-        ("O-200", "NEW", "2026-07-16"),
-    ],
-    ["order_id", "status", "order_date"],
-).withColumn("order_date", F.to_date("order_date"))
-
-(
-    orders_df.write
-    .format("delta")
-    .mode("overwrite")
-    .partitionBy("order_date")
-    .save(orders_path)
-)
+# Requires an existing, compatible Iceberg table and configured catalog/extensions.
+updates_df.writeTo("glue_catalog.silver.orders").append()
 ```
 
-Update one row:
-
-```python
-from delta.tables import DeltaTable
-
-orders = DeltaTable.forPath(spark, orders_path)
-
-orders.update(
-    condition="order_date = '2026-07-15' AND order_id = 'O-100'",
-    set={"status": "'CANCELLED'"}
-)
-```
-
-Read current table:
-
-```python
-spark.read.format("delta").load(orders_path).orderBy("order_id").show()
-```
-
-Read an older version:
-
-```python
-spark.read.format("delta").option("versionAsOf", 0).load(orders_path).show()
-```
-
-Inspect the local folder:
-
-```text
-orders_delta/
-  _delta_log/
-  order_date=2026-07-15/
-  order_date=2026-07-16/
-```
-
-Open files under `_delta_log` to see the `add` and `remove` actions. This is the best local way to understand how Delta makes immutable Parquet files behave like a transactional table.
-
-Upsert with `MERGE`:
-
-```python
-from delta.tables import DeltaTable
-
-target = DeltaTable.forPath(spark, "s3://my-bucket/lake/silver/orders_delta")
-
-(
-    target.alias("t")
-    .merge(updates_df.alias("s"), "t.order_id = s.order_id")
-    .whenMatchedUpdate(set={
-        "status": "s.status",
-        "updated_at": "s.updated_at"
-    })
-    .whenNotMatchedInsert(values={
-        "order_id": "s.order_id",
-        "status": "s.status",
-        "updated_at": "s.updated_at"
-    })
-    .execute()
-)
-```
-
-Time travel:
-
-```python
-previous = (
-    spark.read
-    .format("delta")
-    .option("versionAsOf", 10)
-    .load("s3://my-bucket/lake/silver/orders_delta")
-)
-```
-
-Cleanup old inactive files after the retention period:
-
-```python
-DeltaTable.forPath(spark, orders_path).vacuum()
-```
-
-**Performance Tip**: Delta transactions fix correctness problems, not all performance problems. You still need good partition design, file sizing, compaction, statistics, and skew handling.
-
-### Apache Hudi
-
-Apache Hudi is a lakehouse table format designed heavily for upserts, deletes, CDC ingestion, incremental reads, and near-real-time pipelines.
-
-Hudi provides:
-
-- Transactional commit timeline.
-- Upserts and deletes.
-- Incremental reads from a commit instant.
-- Copy-on-write and merge-on-read table types.
-- Record keys and indexing for efficient updates.
-- Cleaner and compaction services.
-
-Hudi table types:
-
-| Type | Meaning | Best for |
-|---|---|---|
-| Copy-on-write | Updates rewrite Parquet files during write | Read-heavy tables |
-| Merge-on-read | Writes changes to log files and compacts later | Write-heavy or near-real-time ingestion |
-
-Key Hudi concepts:
-
-- Record key: unique business key, such as `order_id`.
-- Precombine field: field used to pick the latest record, such as `updated_at`.
-- Partition path: physical partition column, such as `order_date`.
-- Commit timeline: ordered history of table commits.
-
-Hudi upsert example:
-
-```python
-hudi_options = {
-    "hoodie.table.name": "orders_hudi",
-    "hoodie.datasource.write.recordkey.field": "order_id",
-    "hoodie.datasource.write.precombine.field": "updated_at",
-    "hoodie.datasource.write.partitionpath.field": "order_date",
-    "hoodie.datasource.write.operation": "upsert",
-    "hoodie.datasource.write.table.type": "COPY_ON_WRITE",
-}
-
-(
-    updates_df.write
-    .format("hudi")
-    .options(**hudi_options)
-    .mode("append")
-    .save("s3://my-bucket/lake/silver/orders_hudi")
-)
-```
-
-Incremental read pattern:
-
-```python
-incremental = (
-    spark.read
-    .format("hudi")
-    .option("hoodie.datasource.query.type", "incremental")
-    .option("hoodie.datasource.read.begin.instanttime", "20260715000000")
-    .load("s3://my-bucket/lake/silver/orders_hudi")
-)
-```
-
-On AWS, Hudi is commonly used with AWS Glue, Amazon EMR, S3, and the AWS Glue Data Catalog. It is a strong choice when the workload is CDC-heavy and requires frequent upserts.
-
-### Apache Iceberg
-
-Apache Iceberg is an open table format for large analytic tables. It stores table state in snapshots and manifest files that point to active data files.
-
-Iceberg provides:
-
-- ACID transactions.
-- Snapshot isolation.
-- Time travel.
-- Schema evolution.
-- Partition evolution.
-- Hidden partitioning.
-- `MERGE`, `UPDATE`, and `DELETE` depending on engine support.
-- Strong interoperability across Spark, Flink, Trino, Athena, EMR, and Glue.
-
-Iceberg is especially useful when the same lakehouse tables must work across multiple engines.
-
-Spark SQL example with a Glue Catalog-backed Iceberg table:
-
-```python
-spark.sql("""
-CREATE TABLE IF NOT EXISTS glue_catalog.analytics.orders_iceberg (
-    order_id STRING,
-    customer_id STRING,
-    order_status STRING,
-    order_ts TIMESTAMP,
-    amount DECIMAL(10, 2)
-)
-USING iceberg
-PARTITIONED BY (days(order_ts))
-""")
-
-updates_df.writeTo("glue_catalog.analytics.orders_iceberg").append()
-```
-
-Iceberg `MERGE` example:
-
-```python
-updates_df.createOrReplaceTempView("order_updates")
-
-spark.sql("""
-MERGE INTO glue_catalog.analytics.orders_iceberg t
-USING order_updates s
-ON t.order_id = s.order_id
-WHEN MATCHED THEN UPDATE SET
-    t.order_status = s.order_status,
-    t.amount = s.amount
-WHEN NOT MATCHED THEN INSERT *
-""")
-```
-
-Time travel query:
-
-```python
-snapshot_df = spark.read.option("snapshot-id", "123456789").table(
-    "glue_catalog.analytics.orders_iceberg"
-)
-```
-
-On AWS, Iceberg is commonly used with AWS Glue Data Catalog, Amazon Athena, Amazon EMR, AWS Glue Spark, and S3. It is often a strong choice when multiple engines must read and write the same lakehouse tables.
-
-### Delta Lake vs Hudi vs Iceberg
-
-| Format | Best fit | Strengths | Watch out for |
-|---|---|---|---|
-| Delta Lake | Databricks or Spark-heavy lakehouse workloads | Simple Spark API, strong `MERGE`, time travel, mature Delta ecosystem | Runtime/package compatibility outside Databricks |
-| Apache Hudi | CDC, frequent upserts, incremental ingestion | Record-level upserts, incremental pulls, copy-on-write and merge-on-read choices | More write options to understand and tune |
-| Apache Iceberg | Open lakehouse across many engines | Snapshots, hidden partitioning, schema and partition evolution, Athena/Trino/Spark interoperability | Requires correct catalog and engine configuration |
-
-### How to Choose
-
-- Use Delta Lake when your platform is Databricks or Delta-standardized Spark and you want straightforward `MERGE`, time travel, and schema enforcement.
-- Use Hudi when the workload is CDC-heavy, upsert-heavy, or needs incremental consumption from commits.
-- Use Iceberg when many engines must share the same tables, especially Spark, Athena, Trino, Flink, EMR, and Glue.
-
-### Production Checklist for Transactional Data Lake Tables
-
-- Choose the table format deliberately. Do not mix formats casually.
-- Store data in S3, but manage table state through the format metadata.
-- Use a catalog such as AWS Glue Data Catalog when the format and engine support it.
-- Pick partition columns based on query patterns and data volume.
-- Prefer date formats such as `yyyy-MM-dd`; avoid `ddmmyyyy` strings for partition values.
-- Avoid high-cardinality partition columns such as `user_id`.
-- Compact small files regularly.
-- Configure retention, vacuum, cleaner, or snapshot expiration carefully.
-- Test concurrent writes if multiple jobs can modify the same table.
-- Treat schema evolution as a controlled production change.
-- Monitor table metadata growth, commit history, and failed write attempts.
-- Keep raw bronze data replayable so corrupted silver or gold tables can be rebuilt.
-
-### Common Interview Question
-
-**Question**: How would you make Parquet on S3 behave like a transactional database table?
-
-**Answer**: Plain Parquet is only a file format. It cannot update rows in place and does not have ACID transactions. I would use Delta Lake, Apache Hudi, or Apache Iceberg. These formats still store data as Parquet files, but they add a metadata layer that tracks active files, removed files, commits, schema, and snapshots. In Delta Lake specifically, partition folders remain, but `_delta_log` is the source of truth. To the Spark user, `UPDATE` and `MERGE` look like database operations. Internally, Delta rewrites affected Parquet files, marks old files as removed, and atomically commits the new table version so readers see consistent data.
+Use `MERGE INTO` for upserts, and the table's partition transforms rather than guessing folder paths. A catalog named glue_catalog configured for Iceberg is not a generic Delta catalog. [Iceberg Spark writes](https://iceberg.apache.org/docs/latest/spark-writes/)
 
 ## 33. Medallion Architecture
 
-### The Core Idea
-
-Medallion architecture is a layered data lakehouse design pattern. It organizes data into progressively cleaner and more business-ready layers:
-
-- Bronze: raw or nearly raw data.
-- Silver: cleaned, validated, deduplicated, and conformed data.
-- Gold: business-ready aggregates, marts, metrics, and serving tables.
-
-```mermaid
-flowchart LR
-    A["Source systems"] --> B["Bronze: raw ingestion"]
-    B --> C["Silver: cleaned and conformed"]
-    C --> D["Gold: business-ready serving"]
-    D --> E["BI, ML, APIs, dashboards"]
-```
-
-**Interview Tip**: Explain medallion architecture as "a way to separate raw ingestion, data cleaning, and business serving so pipelines are replayable, testable, and easier to govern."
-
-### Bronze Layer
-
-The bronze layer stores source-aligned data with minimal transformation. It is the landing zone for raw events, files, CDC records, API extracts, or database dumps.
-
-Bronze should preserve:
-
-- Original source columns.
-- Source system identifiers.
-- Ingestion timestamp.
-- File name or batch id.
-- Raw payload when useful.
-- Enough metadata to replay and audit.
-
-Bronze examples:
-
-- Raw JSON events from Kafka.
-- CSV files from a vendor.
-- CDC records from a relational database.
-- API response payloads.
-
-Bronze PySpark pattern:
-
-```python
-from pyspark.sql import functions as F
-
-bronze = (
-    spark.read
-    .option("multiline", "false")
-    .json("s3://my-bucket/raw/orders/")
-    .withColumn("_ingest_ts", F.current_timestamp())
-    .withColumn("ingest_date", F.to_date("_ingest_ts"))
-    .withColumn("_source_file", F.input_file_name())
-)
-
-(
-    bronze.write
-    .mode("append")
-    .partitionBy("ingest_date")
-    .parquet("s3://my-bucket/lake/bronze/orders/")
-)
-```
-
-**Production Practice**: Keep bronze append-only when possible. If downstream logic changes, rebuild silver and gold from bronze instead of asking the source system to resend historical data.
-
-### Silver Layer
-
-The silver layer turns raw data into reliable analytical data. It applies data quality rules, typing, deduplication, standard naming, and joins to reference data.
-
-Silver usually includes:
-
-- Explicit schema and correct data types.
-- Deduplicated records.
-- Validated required fields.
-- Standardized column names.
-- Clean timestamps and dates.
-- Conformed dimensions.
-- PII handling or tokenization where required.
-- Upserts from CDC sources.
-
-Silver PySpark pattern:
-
-```python
-from pyspark.sql import Window
-from pyspark.sql import functions as F
-
-w = Window.partitionBy("order_id").orderBy(F.col("updated_at").desc())
-
-silver = (
-    bronze
-    .filter(F.col("order_id").isNotNull())
-    .withColumn("updated_at", F.to_timestamp("updated_at"))
-    .withColumn("amount", F.col("amount").cast("decimal(10,2)"))
-    .withColumn("_rn", F.row_number().over(w))
-    .filter(F.col("_rn") == 1)
-    .drop("_rn")
-)
-```
-
-Silver append write with a transactional table format:
-
-```python
-(
-    silver.write
-    .format("iceberg")  # or delta/hudi depending on your platform
-    .mode("append")
-    .saveAsTable("glue_catalog.silver.orders")
-)
-```
-
-If silver must update existing business keys, use a table format upsert instead of append. With Delta Lake, that usually means `DeltaTable.merge(...)` after deduplicating the bronze batch.
+Medallion is a quality/serving pattern, not a Spark API or table format.
 
 ```text
-bronze batch has new and changed records
-  -> deduplicate by business key
-  -> merge into silver
-  -> update matched rows
-  -> insert unmatched rows
+Sources → Bronze (source-aligned, replayable)
+        → Silver (typed, validated, deduplicated, conformed)
+        → Gold (business-grain marts, metrics and serving tables)
+                         ↘ quarantine / audit at each validation boundary
 ```
 
-**Performance Tip**: Silver tables are frequently joined and reused, so table layout matters. Choose partitioning, file size, clustering, and compaction based on actual query patterns.
+| Layer | Preserve / produce | Interview example |
+| --- | --- | --- |
+| Bronze | Source payload, source sequence/file identity, ingestion metadata | Append captured order events; record malformed payloads for investigation. |
+| Silver | Valid types/keys, deterministic versions, CDC deletes, conformed entities | One current order per ID with a monotonic source sequence. |
+| Gold | Defined metric grain and business rules | Daily paid revenue by customer; do not count obsolete order versions. |
 
-### Gold Layer
-
-The gold layer is optimized for business consumption. It contains curated marts, aggregates, feature tables, KPI tables, and dashboard-ready datasets.
-
-Gold examples:
-
-- Daily revenue by product.
-- Customer 360 table.
-- Fraud model feature table.
-- Finance reporting mart.
-- Executive dashboard metrics.
-
-Gold PySpark pattern:
+Using the local sample from section 4:
 
 ```python
-gold_daily_sales = (
-    silver
-    .groupBy(F.to_date("order_ts").alias("order_date"), "order_status")
-    .agg(
-        F.countDistinct("order_id").alias("orders"),
-        F.sum("amount").alias("revenue")
-    )
-)
-
-(
-    gold_daily_sales.write
-    .mode("overwrite")
-    .format("parquet")
-    .partitionBy("order_date")
-    .save("s3://my-bucket/lake/gold/daily_sales/")
-)
+# This illustrates transformations only; no transactional sink is configured here.
+bronze = orders.withColumn("_source", F.lit("practice"))
+silver = latest_orders(bronze)  # Function from section 21.
+quarantine = silver.filter(F.col("customer_id").isNull() | F.col("amount").isNull())
+valid_silver = silver.filter(F.col("customer_id").isNotNull() & F.col("amount").isNotNull())
+gold = (valid_silver.filter(F.col("status") == "PAID")
+        .groupBy("order_date", "customer_id")
+        .agg(F.sum("amount").alias("paid_revenue")))
+# Gold: 2026-01-01/C1 -> 120.00; 2026-01-02/C2 -> 50.00
 ```
 
-For gold tables that must support updates, history, or concurrent readers, use Delta Lake, Hudi, or Iceberg instead of plain Parquet.
+Choose the meaning of a silver table: immutable events, current state, or SCD history. Appending every bronze replay to a “current state” silver table is not deduplication. Silver/gold often benefit from transactional formats; bronze can be raw files or transactional tables. The design does not require exactly three physical copies for every dataset.
 
-### Medallion Architecture Benefits
-
-| Benefit | Why it matters |
-|---|---|
-| Replayability | Silver and gold can be rebuilt from bronze |
-| Data quality | Rules can be applied before data reaches business users |
-| Lineage | Each layer has a clear purpose and source |
-| Governance | Access can be restricted by layer |
-| Performance | Gold can be optimized for BI and serving |
-| Team ownership | Data engineering owns bronze/silver; analytics teams often own gold marts |
-
-### Common Design Choices
-
-| Decision | Recommended approach |
-|---|---|
-| Bronze format | Keep raw data as source-aligned as possible |
-| Silver format | Use transactional table format for upserts and corrections |
-| Gold format | Use format and layout based on serving engine |
-| Partitioning | Partition by common filters, not by unique identifiers |
-| Data quality | Block or quarantine bad records before gold |
-| Reprocessing | Use deterministic jobs with batch ids or watermarks |
-
-### Common Mistakes
-
-- Putting complex business logic directly into bronze.
-- Skipping silver and building dashboards from raw data.
-- Treating gold as a dumping ground for every possible column.
-- Using non-idempotent jobs that duplicate records on retry.
-- Partitioning by high-cardinality columns.
-- Ignoring schema evolution.
-- Not keeping enough raw history to rebuild downstream layers.
-- Letting small files accumulate in every layer.
-
-### Interview Answer Template
-
-When asked to explain medallion architecture:
-
-```text
-I use medallion architecture to structure a lakehouse into bronze, silver, and gold layers.
-Bronze keeps raw, replayable source data with ingestion metadata.
-Silver cleans, deduplicates, validates, standardizes, and conforms the data.
-Gold contains business-ready marts, aggregates, metrics, or ML feature tables.
-This pattern improves quality, lineage, governance, reprocessing, and performance.
-In production, I often use Delta, Hudi, or Iceberg for silver and gold tables when I need ACID transactions, upserts, time travel, or concurrent access.
-```
-
-### How Medallion and Transactional Table Formats Work Together
-
-Medallion architecture is a data design pattern. Delta Lake, Hudi, and Iceberg are storage table formats. They solve different but complementary problems.
-
-Use them together like this:
-
-- Bronze: often append-only raw files or transactional tables when ingestion needs exactly-once semantics.
-- Silver: commonly transactional because deduplication, corrections, CDC, and upserts are frequent.
-- Gold: often transactional when dashboards, ML features, or reports need reliable updates and rollback.
-
-```text
-Bronze raw data
-  -> append-only, replayable, source-aligned
-
-Silver clean data
-  -> Delta/Hudi/Iceberg for upserts, deduplication, schema enforcement
-
-Gold serving data
-  -> optimized tables for BI, ML, APIs, or reporting
-```
+**Senior answer:** Define freshness and quality targets, the record/event grain, replay horizon, late-change/delete handling, access policies and retention. Rebuilding gold from a current-state silver snapshot can differ from reconstructing historical metrics from events; choose deliberately. Separate table commits are not automatically atomic across layers. [Medallion reference](https://docs.databricks.com/aws/en/lakehouse/medallion)
 
 ## 34. Spark UI and Production Troubleshooting
 
@@ -2675,7 +1324,7 @@ This often appears for `groupBy`, `distinct`, `orderBy`, joins, and `repartition
 |---|---|---|
 | `BroadcastHashJoin` | Small side is broadcast to executors. | Fast for small dimension tables. |
 | `BroadcastExchange` | Spark is preparing broadcast data. | Confirm broadcast is actually happening. |
-| `SortMergeJoin` | Both sides are shuffled and sorted. | Common for large equi-joins. |
+| `SortMergeJoin` | Merge matching keys in sorted inputs; existing distribution/order may be reused. | Common for large equi-joins. |
 | `Exchange` before join | Data is being shuffled before the join. | Normal for large joins, expensive if avoidable. |
 
 Example:
@@ -2712,152 +1361,105 @@ large sort-merge join or full scan, I reduce columns, filter earlier, broadcast
 small dimensions, improve partition pruning, or tune shuffle partitions.
 ```
 
+`explain("cost")` shows available estimates; `formatted` describes the physical plan. Check the executed/final AQE plan and runtime metrics in the SQL UI. A PushedFilters entry does not prove every row group was skipped. Compare actual bytes, files and rows read.
+
+### Parquet files, task partitions and pruning
+
+A large Parquet file is not necessarily one task or one in-memory object. Readers can split work across row groups/splits and combine small files into scan partitions. Compressed on-disk bytes also understate the decoded/execution working set.
+
+| Mechanism | Skips / controls | Example |
+| --- | --- | --- |
+| Column pruning | Unused column chunks | SELECT id, amount does not require all 100 columns. |
+| Storage partition pruning | Unrelated directory/table partitions | order_date = a specified day. |
+| Parquet statistics | Row groups that cannot satisfy a predicate | amount max=500 lets a reader skip that group for amount > 1000. |
+| Scan partition sizing | File-read task distribution | spark.sql.files.maxPartitionBytes; not an output-file-size limit. |
+| maxRecordsPerFile | Row count per written file | Does not specify exact compressed MB. |
+
+Min/max/null statistics live in Parquet metadata, commonly at row-group/column-chunk level in the footer. They do not require sorted data, but sorting/clustering can tighten ranges and improve skipping. Sorting adds write/shuffle cost and does not guarantee a later read's row order. File/row-group statistics do not replace table-format snapshots or transactions.
+
+[Parquet format reference](https://parquet.apache.org/docs/file-format/), [Spark file scan tuning](https://spark.apache.org/docs/3.5.7/sql-performance-tuning.html#other-configuration-options).
+
 ## 36. Common Coding Interview Exercises
 
-These are common PySpark interview tasks. Keep the answer simple: state the key, apply the transformation, and explain shuffle/cost when relevant.
+Use the shared data from section 4. Return the required columns/types and apply orderBy only when the task requires output order. These examples use tiny collections for assertions; do not collect production datasets.
 
-### Remove Duplicates Keeping Latest
+### Latest row and top N
 
-```python
-from pyspark.sql import Window, functions as F
-
-w = Window.partitionBy("id").orderBy(F.col("updated_at").desc())
-
-result = (
-    df.withColumn("rn", F.row_number().over(w))
-      .filter(F.col("rn") == 1)
-      .drop("rn")
-)
-```
-
-### Find Records In One DataFrame But Not Another
+Use `latest_orders` from section 21 for current order state. For exactly one most recent order per customer, break timestamp ties with the unique order ID:
 
 ```python
-right_ids = right.select("id").distinct()
-missing = left.join(right_ids, "id", "left_anti")
+latest = latest_orders(orders)
+w = Window.partitionBy("customer_id").orderBy(F.col("updated_at").desc(), "order_id")
+top_one = latest.withColumn("rn", F.row_number().over(w)).filter("rn = 1").drop("rn")
 ```
 
-### Join On Multiple Columns
+Clarify whether null customer IDs are a valid group. For top N distinct amounts including ties, use dense_rank ordered only by amount; do not add ID to that rank order.
+
+### Missing IDs: anti join
 
 ```python
-joined = left.join(right, ["id", "business_date"], "inner")
+expected_ids = spark.createDataFrame([(1,), (2,), (3,), (9,)], "order_id long")
+missing = expected_ids.join(latest.select("order_id"), "order_id", "left_anti")
+assert [row.order_id for row in missing.collect()] == [9]
 ```
 
-### Top N Per Group
+### Changes by key, including null values
 
 ```python
-from pyspark.sql import Window, functions as F
-
-w = Window.partitionBy("category").orderBy(F.col("amount").desc())
-
-top_n = (
-    df.withColumn("rn", F.row_number().over(w))
-      .filter(F.col("rn") <= 3)
-      .drop("rn")
-)
+before = spark.createDataFrame([(1, "NEW"), (2, None)], "id long, status string")
+after = spark.createDataFrame([(1, "PAID"), (2, "NEW")], before.schema)
+changed = (before.alias("b").join(after.alias("a"), "id")
+           .filter(~F.col("b.status").eqNullSafe(F.col("a.status")))
+           .select("id", F.col("a.status").alias("status")))
+assert changed.count() == 2
 ```
 
-### Running Total
+This example detects updates for matching keys. Use a full outer join plus presence flags to classify inserts/deletes too; require unique non-null keys or define another matching policy.
+
+### Union, duplicates and schema order
 
 ```python
-from pyspark.sql import Window, functions as F
-
-w = Window.partitionBy("account_id").orderBy("txn_ts")
-result = df.withColumn("running_total", F.sum("amount").over(w))
+left = spark.createDataFrame([(1, "x")], "id long, label string")
+right = spark.createDataFrame([("y", 2)], "label string, id long")
+combined = left.unionByName(right)  # union() would match by position.
+assert [tuple(row) for row in combined.orderBy("id").collect()] == [(1, "x"), (2, "y")]
 ```
 
-### Compare Two DataFrames By Key
+Both union methods retain duplicates; call distinct only if the contract requires it. allowMissingColumns=True fills missing columns with nulls and should be a deliberate schema policy.
+
+### Explode arrays without losing empty/null parents
 
 ```python
-keys = ["id"]
-
-left_keys = left.select(keys).distinct()
-right_keys = right.select(keys).distinct()
-
-only_left = left_keys.join(right_keys, keys, "left_anti")
-only_right = right_keys.join(left_keys, keys, "left_anti")
-common = left.join(right, keys, "inner")
+nested = spark.createDataFrame([(1, ["a", "b"]), (2, []), (3, None)],
+                               "id long, tags array<string>")
+flat = nested.select("id", F.explode_outer("tags").alias("tag"))
+assert flat.count() == 4  # a, b, one null for empty array, one null for null array.
 ```
 
-### Flatten Nested JSON
+Use explode when empty/null arrays should produce no output rows. For JSON text, use from_json with an explicit schema before selecting nested fields.
+
+### Running total and rolling average
 
 ```python
-flat = df.select(
-    "id",
-    F.col("payload.customer.name").alias("customer_name"),
-    F.col("payload.customer.region").alias("customer_region"),
-)
+w = Window.partitionBy("customer_id").orderBy("updated_at", "order_id")
+running = latest.withColumn("total", F.sum("amount").over(
+    w.rowsBetween(Window.unboundedPreceding, Window.currentRow)))
+last_three = latest.withColumn("avg_last_3_rows", F.avg("amount").over(w.rowsBetween(-2, 0)))
 ```
 
-### Handle Null Values
+A row frame counts rows, not elapsed days. For a time-range window, define event time, time zone, peer/tie behavior and missing-day handling first. Aggregates ignore null amounts; decide if null means unknown or zero before filling it.
+
+### Null semantics and counts
 
 ```python
-clean = (
-    df.fillna({"status": "UNKNOWN"})
-      .withColumn("amount", F.coalesce(F.col("amount"), F.lit(0.0)))
-)
+counts = orders.agg(F.count("*").alias("rows"), F.count("amount").alias("known_amounts")).first()
+assert (counts.rows, counts.known_amounts) == (5, 4)
+assert orders.filter(F.col("status") != "PAID").count() == 2  # NULL status is not kept.
+keep_unknown = orders.filter((F.col("status") != "PAID") | F.col("status").isNull())
+assert keep_unknown.count() == 3
 ```
 
-### Rolling Average
-
-```python
-from pyspark.sql import Window, functions as F
-
-w = Window.partitionBy("id").orderBy("event_ts").rowsBetween(-6, 0)
-result = df.withColumn("rolling_avg_7", F.avg("amount").over(w))
-```
-
-### Identify Duplicate Business Keys
-
-```python
-duplicates = (
-    df.groupBy("business_key")
-      .count()
-      .filter(F.col("count") > 1)
-)
-```
-
-### Detect Data Skew
-
-```python
-skew = (
-    df.groupBy("join_key")
-      .count()
-      .orderBy(F.desc("count"))
-)
-```
-
-### Process Incremental Records
-
-```python
-incremental = df.filter(F.col("updated_at") > F.lit(last_watermark))
-```
-
-### Write Partitioned Data
-
-```python
-(
-    df.repartition("business_date")
-      .write
-      .mode("overwrite")
-      .partitionBy("business_date")
-      .parquet(output_path)
-)
-```
-
-### Optimize A Slow Join
-
-```python
-small_dim = (
-    dim.select("id", "segment")
-       .dropDuplicates(["id"])
-)
-
-result = (
-    fact.select("id", "amount")
-        .join(F.broadcast(small_dim), "id", "left")
-)
-```
+Do not translate pandas truth tests directly into Spark Column expressions. Use parenthesized `&`, `|`, `~`, isNull/isNotNull, and literal columns where appropriate.
 
 ## 37. General Performance Anti-Patterns
 
@@ -2895,3176 +1497,444 @@ These are common review findings in Spark and Glue code. They apply broadly to p
 
 ## 38. Spark Structured Streaming
 
-### What Is Structured Streaming?
+### Model and a valid trigger
 
-Spark Structured Streaming treats unbounded data streams as infinite DataFrames. Instead of writing separate streaming code, you use the same DataFrame API and SQL queries. Spark handles micro-batches, checkpointing, and stateful operations internally.
-
-```python
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
-
-spark = SparkSession.builder.appName("streaming").getOrCreate()
-
-# Read from Kafka stream
-df = (
-    spark.readStream
-    .format("kafka")
-    .option("kafka.bootstrap.servers", "localhost:9092")
-    .option("subscribe", "events_topic")
-    .option("startingOffsets", "earliest")
-    .load()
-)
-
-# Transform using standard DataFrame API
-processed = (
-    df.select(F.from_json(F.col("value").cast("string"), schema).alias("data"))
-      .select("data.*")
-      .filter(F.col("amount") > 0)
-)
-
-# Write to target with checkpointing
-query = (
-    processed.writeStream
-    .format("delta")
-    .option("checkpointLocation", "s3://bucket/checkpoint/events")
-    .option("path", "s3://bucket/lake/bronze/events")
-    .option("mergeSchema", True)
-    .start()
-)
-
-query.awaitTermination()
-```
-
-**Key Difference from Batch:**
+Structured Streaming evaluates a DataFrame query incrementally over an unbounded input. Micro-batches are the common execution mode; a batch can create multiple Spark jobs/stages. Output mode, state support and sink capabilities must agree.
 
 ```python
-# Batch: read → transform → write (once)
-batch_df = spark.read.parquet("s3://bucket/data/")
-result = batch_df.filter(...)
-result.write.mode("overwrite").parquet("s3://bucket/output/")
+# Assumes an existing event stream with event_ts TIMESTAMP, customer_id and amount.
+windowed = (events.withWatermark("event_ts", "10 minutes")
+            .groupBy(F.window("event_ts", "5 minutes"), "customer_id")
+            .agg(F.sum("amount").alias("total")))
 
-# Streaming: read → transform → write (continuous)
-stream_df = spark.readStream.kafka(...)
-result = stream_df.filter(...)
-query = result.writeStream.start()  # Runs forever
+# Requires a Delta-enabled runtime and separate durable target/checkpoint paths.
+query = (windowed.writeStream.format("delta").outputMode("append")
+         .option("checkpointLocation", checkpoint_path)
+         .trigger(processingTime="10 seconds")
+         .start(output_path))
 ```
 
-### Micro-Batch Architecture
+Append mode emits finalized event-time windows after watermark progress. Without a watermark, an unbounded aggregation may not be valid in append mode. Update/complete modes have different sink and state requirements.
 
-Spark Structured Streaming processes streams in small batches by default. Each batch is a discrete trigger.
+| Trigger | Meaning |
+| --- | --- |
+| No trigger option | Run successive micro-batches as fast as possible. |
+| processingTime="10 seconds" | Start on that interval when able; a slow batch does not guarantee ten-second freshness. |
+| availableNow=True | Process data available at the start, in one or more batches, then stop (supported sources). |
+| continuous="1 second" | Different, restricted continuous mode; do not assume micro-batch state/operators or exactly-once guarantees. |
 
-```text
-Incoming stream of events
-  ↓
-Batch 1 (100ms of data)
-  ↓
-Apply transformations
-  ↓
-Write to sink (Delta, S3, etc.)
-  ↓ (checkpoint recorded)
-Batch 2 (next 100ms of data)
-  ↓ (repeat)
-```
+### Watermarks: event time, not a wall-clock TTL
 
-Trigger options:
+Conceptually, watermark progress is based on the maximum observed event time minus the delay threshold. If max event time is 14:10 and the delay is ten minutes, the watermark is around 14:00, not “accept everything before 14:00.” Rows older than that may be too late. The guarantee is one-sided: data within the supported delay is not dropped for lateness; data beyond it may or may not be processed.
 
-```python
-# Micro-batch every 10 seconds
-.option("triggerInterval", "10 seconds")
+Eviction depends on operator/window/join conditions and trigger progress. A ten-minute watermark does not imply exactly ten minutes of state, and an idle source may stop watermark advancement. Multiple input streams have a watermark policy too.
 
-# Continuous mode (low-latency, experimental)
-.trigger(continuous="1 second")
+### Recovery and end-to-end guarantees
 
-# Once: process all available data and stop
-.trigger(once=True)
+A checkpoint holds source progress, commit metadata and, for stateful queries, state-store information. It is not the output sink's `_spark_metadata` directory. Assign a stable, unique durable checkpoint to each query; changing stateful logic or source layout can require migration/restart planning.
 
-# Default: process as fast as data arrives
-.trigger(availableNow=True)
-```
+| Boundary | What must be true |
+| --- | --- |
+| Source | Replayable offsets/files retained long enough. |
+| Processing | Recoverable checkpoint/state and replay-safe logic. |
+| Sink | Transactional or idempotent writes for replayed batches. |
+| External effects | Separate deduplication/transaction handling for notifications, APIs, JDBC writes, etc. |
 
-### Stateful Streaming: Aggregations
+foreachBatch supplies a batch ID but is at-least-once by default; implement durable replay protection. Kafka sink writes are at-least-once. A checkpoint alone does not make arbitrary sinks exactly-once.
 
-Stateful operations require Spark to maintain state across batches. Example: counting events per customer over time.
+### Joins and state
 
-```python
-from pyspark.sql import functions as F, Window
+Stream-static joins can enrich a stream without retaining both streaming sides as state. Broadcast the static side only when it fits. Refresh strategy and historical consistency need explicit design; a static DataFrame is not automatically a continuously refreshed dimension.
 
-# Count events per customer ID in 1-minute tumbling windows
-windowed = (
-    df.withColumn("timestamp", F.col("timestamp").cast("timestamp"))
-      .groupBy(
-          F.window("timestamp", "1 minute"),
-          "customer_id"
-      )
-      .agg(
-          F.count("*").alias("event_count"),
-          F.sum("amount").alias("total_amount")
-      )
-)
+Stream-stream joins need event-time watermarks AND bounded event-time join conditions for bounded state. Joining only on user_id does not magically retain “one hour.” Stateful deduplication also needs a defined key and retention horizon; on supporting runtimes use dropDuplicatesWithinWatermark deliberately.
 
-query = (
-    windowed.writeStream
-    .format("delta")
-    .option("checkpointLocation", "s3://bucket/ckpt/agg")
-    .start()
-)
-```
+**Operate:** Track query progress (input/processed rows per second, batch duration, watermark and state rows), source lag and sink latency. Test restarts, duplicated inputs, late events and malformed records. Do not assume batch AQE settings tune stateful streaming.
 
-State is maintained in Spark executor memory. For large states, configure:
-
-```python
-spark.conf.set("spark.sql.streaming.stateStore.minDeltasForSnapshot", 10)
-spark.conf.set("spark.sql.streaming.stateStore.format", "delta")
-```
-
-### Watermarking: Handling Late Data
-
-Watermarks define how late data can arrive before being dropped. Without watermarks, state grows indefinitely.
-
-```python
-# Allow data up to 10 minutes late
-df_with_watermark = (
-    df.withWatermark("event_timestamp", "10 minutes")
-      .groupBy(
-          F.window("event_timestamp", "5 minutes"),
-          "customer_id"
-      )
-      .agg(F.sum("amount").alias("total"))
-)
-```
-
-How it works:
-
-```text
-Current watermark: 14:00
-Incoming events before 14:00 are included
-Incoming events after 14:00 but within 10 minutes are included
-Incoming events before 13:50 are dropped (too late)
-After 14:10, watermark advances to 14:10
-```
-
-**Interview Tip**: "Watermarks prevent unbounded state growth. Without them, Spark keeps all historical state in memory forever. With a 10-minute watermark, we only keep 10 minutes of state, which is manageable."
-
-### Exactly-Once Semantics
-
-Spark Structured Streaming guarantees exactly-once end-to-end if source, processing, and sink all support idempotency.
-
-| Component | Behavior |
-|---|---|
-| **Source** | Kafka partitions, S3 files with offsets tracked |
-| **Processing** | Checkpoint records Spark state at each batch |
-| **Sink** | Idempotent writes (Delta, S3) using batch ID |
-
-Checkpoint directory stores:
-
-```text
-s3://bucket/checkpoint/
-  _spark_metadata/
-    0  (batch 0 state)
-    1  (batch 1 state)
-    2  (batch 2 state)
-```
-
-Recovery:
-
-```python
-# On failure, Spark reads latest checkpoint
-# Restarts from that batch
-# Source (Kafka) re-reads from saved offsets
-# State is recreated from checkpoint
-# Sink receives same data again (idempotent write)
-```
-
-**Production Practice**: Always use checkpoints. Never run streaming jobs without `checkpointLocation`.
-
-```python
-# GOOD: with checkpoint
-query = df.writeStream.option("checkpointLocation", path).start()
-
-# BAD: no recovery mechanism
-query = df.writeStream.start()  # Will lose state on failure
-```
-
-### Handling Errors in Streaming
-
-```python
-# Bad records handling
-schema = StructType([...])
-
-parsed = (
-    df.select(F.from_json(F.col("value").cast("string"), schema,
-                         mode="PERMISSIVE").alias("data"))
-      .select("data.*")
-)
-
-# Log or quarantine failures
-failed = (
-    df.withColumn("parsed",
-                 F.from_json(F.col("value").cast("string"), schema))
-      .filter(F.col("parsed").isNull())
-)
-
-query_failed = (
-    failed.writeStream
-    .format("delta")
-    .option("checkpointLocation", "s3://bucket/ckpt/failed")
-    .option("path", "s3://bucket/lake/failed_records")
-    .start()
-)
-```
-
-### Common Streaming Patterns
-
-#### Session Windows (Time-Based Groups)
-
-Group events into sessions with a gap timeout:
-
-```python
-sessions = (
-    df.groupBy(
-        F.session_window("event_ts", "30 minutes"),
-        "user_id"
-    )
-    .agg(
-        F.count("*").alias("events_in_session"),
-        F.sum("amount").alias("session_revenue")
-    )
-)
-```
-
-#### Join Stream with Batch (Slowly Changing Dimension)
-
-```python
-# Stream of transactions
-transactions = spark.readStream.kafka(...)
-
-# Batch reference data (updated daily)
-customers = spark.read.delta("s3://bucket/ref/customers")
-
-# Join: stream to batch
-joined = (
-    transactions.join(
-        F.broadcast(customers),
-        "customer_id",
-        "left"
-    )
-)
-```
-
-**Important**: Always broadcast the batch side. Streaming + streaming joins are expensive.
-
-#### Join Two Streams (State-Managed)
-
-```python
-stream1 = spark.readStream.kafka("topic1", ...)
-stream2 = spark.readStream.kafka("topic2", ...)
-
-# Join on key with 1-hour state
-joined = (
-    stream1.join(
-        stream2,
-        "user_id",
-        "inner"
-    )
-    .select("*")  # State kept for 1 hour
-)
-```
-
-**Warning**: Stateful stream-stream joins can consume significant memory. Use watermarks and ttl carefully.
-
-### Testing Streaming Queries
-
-```python
-from pyspark.sql.streaming import StreamingQueryListener
-
-class MyListener(StreamingQueryListener):
-    def onQueryStarted(self, event):
-        print(f"Query started: {event.id}")
-
-    def onQueryProgress(self, event):
-        print(f"Processed: {event.progress.numInputRows} rows")
-
-    def onQueryTerminated(self, event):
-        print(f"Query ended")
-
-spark.streams.addListener(MyListener())
-
-# Run test
-query = df.writeStream.format("memory").start()
-query.processAllAvailable()
-query.stop()
-```
-
-### Performance Tuning for Streaming
-
-```python
-spark.conf.set("spark.sql.streaming.minBatchesToRetain", 10)
-spark.conf.set("spark.sql.streaming.schemaInference", "false")  # Always provide schema
-spark.conf.set("spark.sql.shuffle.partitions", "200")  # For aggregations
-spark.conf.set("spark.sql.adaptive.enabled", "true")
-```
-
-**Interview Tip**: "Structured Streaming uses micro-batches under the hood. Each batch is a discrete Spark job. For exactly-once, use checkpoints, idempotent sinks (Delta), and partition-aware sources (Kafka)."
+[Reference: Structured Streaming](https://spark.apache.org/docs/3.5.7/structured-streaming-programming-guide.html)
 
 ## 39. Real-Time AWS Data Pipelines
 
-### Kinesis Data Streams
+### Pick the ingestion boundary
 
-Kinesis streams provide a scalable, real-time data ingestion service on AWS.
-
-```python
-# Read from Kinesis
-df = (
-    spark.readStream
-    .format("kinesis")
-    .option("streamName", "my-stream")
-    .option("region", "us-east-1")
-    .option("initialPosition", "TRIM_HORIZON")
-    .load()
-)
-
-# Data structure
-# df has columns: data (binary), partitionKey, sequenceNumber, approximateArrivalTimestamp
-
-parsed = (
-    df.select(
-        F.col("approximateArrivalTimestamp").cast("timestamp").alias("timestamp"),
-        F.from_json(F.col("data").cast("string"), schema).alias("payload")
-    )
-    .select("timestamp", "payload.*")
-)
-
-# Write to Delta Lake
-query = (
-    parsed.writeStream
-    .format("delta")
-    .option("checkpointLocation", "s3://bucket/ckpt/kinesis")
-    .option("path", "s3://bucket/lake/bronze/events")
-    .start()
-)
-```
-
-### Kinesis Firehose (Simpler Alternative)
-
-Kinesis Firehose is a managed service that can transform and deliver data to S3, Redshift, or Splunk. Less flexible than streams but minimal operational overhead.
+| Service | Role | Interview trade-off |
+| --- | --- | --- |
+| Kinesis Data Streams / Kafka | Retained event stream | Ordering is per shard/partition; replay, key skew and retention matter. |
+| Amazon Data Firehose | Managed buffered delivery | Lower operational burden; delivery/format/latency capabilities depend on destination. |
+| Glue Streaming | Managed Spark processing | Choose supported connector/options, worker capacity, checkpoint and sink replay policy. |
+| EventBridge + Step Functions | Routing and orchestration | Events can repeat; define execution identity and idempotent jobs. |
 
 ```text
-Applications
-  → Kinesis Firehose
-    → Lambda (optional transformation)
-    → S3 (buffered)
-    → Athena (query)
+Kafka/Kinesis → supported streaming connector → parse/quarantine → Bronze table
+                                              → Silver upsert → Gold → compatible query/serving engine
+S3 object event → EventBridge → workflow/Lambda → Glue job → validation/publication
 ```
 
-### EventBridge for Event Routing
+Kinesis is not a universal built-in `.readStream.kafka(...)`-style API. Connector names/options and record schemas vary between open-source Spark, EMR and Glue. Use the runtime's supported connector, not invented shorthand. For GlueContext, construct it from SparkContext (for example `GlueContext(spark.sparkContext)`), not SparkSession.
 
-EventBridge lets you route events from sources to targets. Common pattern: S3 upload triggers Glue job.
+An EventBridge rule needs a supported target integration. Use a documented Glue workflow/event trigger, or invoke a workflow/Lambda that starts the job; do not assume a Glue job ARN is directly interchangeable with any EventBridge target. Size workers from measured throughput/lag, not a blanket “always G.2X” rule.
 
-```python
-# When S3 file lands, trigger Glue job
-import boto3
+### Submission success is not job success
 
-client = boto3.client('events')
+In an S3 → Lambda → SSM → spark-submit design, Lambda is a short-lived submitter; keep long-running Spark processing outside the invocation. Record the SSM command ID and the Spark application/job-run ID, then track completion through the owning service. An accepted command can still queue, fail to launch, or fail during the write.
 
-client.put_rule(
-    Name='s3-to-glue-rule',
-    EventPattern={
-        "source": ["aws.s3"],
-        "detail-type": ["Object Created"],
-        "detail": {
-            "bucket": {"name": ["my-bucket"]},
-            "object": {"key": [{"prefix": "raw/"}]}
-        }
-    },
-    State='ENABLED'
-)
-
-client.put_targets(
-    Rule='s3-to-glue-rule',
-    Targets=[{
-        'Arn': 'arn:aws:glue:region:account:job/my-job',
-        'RoleArn': 'arn:aws:iam::account:role/service-role',
-        'Id': '1'
-    }]
-)
-```
-
-### Step Functions for Complex Workflows
-
-Step Functions orchestrate multi-step data pipelines with error handling and retries.
-
-```json
-{
-  "Comment": "Data pipeline workflow",
-  "StartAt": "TriggerGlueJob",
-  "States": {
-    "TriggerGlueJob": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::glue:startJobRun.sync",
-      "Parameters": {
-        "JobName": "data-ingestion-job"
-      },
-      "Next": "ValidateData"
-    },
-    "ValidateData": {
-      "Type": "Task",
-      "Resource": "arn:aws:lambda:function:validate-data",
-      "Next": "CheckValidation"
-    },
-    "CheckValidation": {
-      "Type": "Choice",
-      "Choices": [
-        {
-          "Variable": "$.validation_passed",
-          "BooleanEquals": true,
-          "Next": "TransformData"
-        }
-      ],
-      "Default": "SendAlert"
-    },
-    "TransformData": {
-      "Type": "Task",
-      "Resource": "arn:aws:glue:startJobRun",
-      "End": true
-    },
-    "SendAlert": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::sns:publish",
-      "End": true
-    }
-  }
-}
-```
-
-### Real-Time Lakehouse Pattern
-
-Combine Kinesis + Spark Streaming + Delta Lake:
-
-```text
-Kinesis Data Stream
-  ↓ (real-time events)
-Spark Structured Streaming
-  ↓ (parse, validate)
-Bronze Delta Lake (append-only, raw)
-  ↓ (micro-batch dedup)
-Silver Delta Lake (clean, deduplicated)
-  ↓ (aggregation)
-Gold Delta Lake (business metrics)
-  ↓
-Athena / QuickSight (real-time dashboards)
-```
-
-Example Glue Streaming Job:
-
-```python
-from awsglue.context import GlueContext
-from awsglue.job import Job
-from pyspark.sql import functions as F
-
-glue_context = GlueContext(spark)
-job = Job(glue_context)
-job.init(args["JOB_NAME"], args)
-
-# Read Kinesis
-df = glue_context.create_data_frame.from_options(
-    connection_type="kinesis",
-    connection_options={
-        "streamName": "events",
-        "startingPosition": "LATEST",
-        "inferSchema": "true"
-    },
-    format="json"
-)
-
-# Transform
-parsed = (
-    df.select(F.from_json(F.col("body"), schema).alias("data"))
-      .select("data.*")
-      .filter(F.col("event_ts").isNotNull())
-)
-
-# Write to S3 with checkpoint
-query = (
-    parsed.writeStream
-    .format("delta")
-    .option("checkpointLocation", args["checkpoint_path"])
-    .option("path", args["output_path"])
-    .start()
-)
-
-query.awaitTermination()
-job.commit()
-```
-
-**Production Practice**: For real-time Glue jobs, use G.2X workers and enable auto-scaling for consistent throughput.
+S3 events can repeat. Use a deliberate source identity (for example bucket/key/version plus pipeline identity), coordinate concurrent runs, and make replay safe. A new random run ID is useful for tracing but does not deduplicate a repeated source event. Keep input validation and argument passing separate from shell command construction.
 
 ## 40. Data Quality, Observability, and SLAs
 
-### Why Data Quality Matters
+### Quality, freshness and correctness are different
 
-Bad data propagates downstream: wrong dashboards → wrong decisions → wrong business outcomes. Data quality is not optional in production.
+| Metric | Define it precisely |
+| --- | --- |
+| Completeness | Non-null required values / eligible rows; define empty-input behavior. |
+| Uniqueness | Rows or keys meeting the uniqueness rule; specify denominator. |
+| Validity | Values satisfy format/range/domain rules; a valid email pattern does not prove accuracy. |
+| Accuracy | Reconcile with a trusted source or business truth. |
+| Freshness | Age of newest committed source/target data, including source outages. |
+| Timeliness | Data delivered by a specified deadline in a specified time zone. |
 
-```text
-Raw data (98% accurate)
-  ↓
-Silver (should be 99.9% accurate)
-  ↓
-Gold (should be 99.99% accurate)
-  ↓
-Dashboards/ML (garbage in = garbage out)
-```
+An SLI is the measured indicator, an SLO its target, and an SLA a stated service commitment. No bronze/silver/gold percentage is inherently guaranteed.
 
-### Defining Quality Metrics
-
-| Metric | Definition | Example |
-|---|---|---|
-| **Completeness** | % of non-null values in required columns | Customer ID: 99.8% non-null |
-| **Uniqueness** | % of unique values for keys | Order ID: 100% unique |
-| **Accuracy** | % of values matching known patterns | Email: 95% valid format |
-| **Timeliness** | % of data arriving within SLA | Daily report: 99% arrive by 9am |
-| **Consistency** | Values match across systems | Amount in Orders = Amount in GL: 99.9% |
-| **Validity** | Values within expected ranges | Amount: 0 < x < 1,000,000 |
-
-### Great Expectations Framework
-
-Great Expectations is a Python library for data quality validation and testing.
-
-```python
-from great_expectations.dataset import PandasDataset
-import great_expectations as ge
-
-# Create dataset and define expectations
-df = spark.read.parquet("s3://bucket/data/")
-df_pd = df.toPandas()
-
-dataset = ge.from_pandas(df_pd)
-
-# Validate specific columns
-suite = ge.core.expectation_suite.ExpectationSuite("orders_suite")
-
-suite.add_expectation(
-    ge.core.expectation.ExpectMissingColumn(column="order_id").to_not_be()
-)
-
-suite.add_expectation(
-    ge.core.expectation.ExpectColumnValuesToNotBeNull(column="customer_id", mostly=0.99)
-)
-
-suite.add_expectation(
-    ge.core.expectation.ExpectColumnValuesToBeInSet(
-        column="order_status",
-        value_set=["NEW", "SHIPPED", "CANCELLED"]
-    )
-)
-
-# Run validation
-results = dataset.validate(expectation_suite=suite)
-
-if not results.success:
-    print("Validation failed!")
-    for failure in results.results:
-        print(f"{failure['expectation_config']['expectation_type']}: {failure}")
-else:
-    print("All checks passed!")
-```
-
-### Built-in Spark Validation
+### Validate all required columns, including non-first columns
 
 ```python
 def validate_orders(df):
-    """Validate order data against business rules"""
-
-    # Check: required columns exist
-    required = ["order_id", "customer_id", "amount", "order_date"]
-    for col in required:
-        if col not in df.columns:
-            raise ValueError(f"Missing required column: {col}")
-
-    # Check: no nulls in key columns
-    null_counts = df.select([F.count(F.when(F.col(c).isNull(), c)) for c in required])
-    if null_counts.collect()[0][0] > 0:
-        raise ValueError("Null values found in required columns")
-
-    # Check: duplicates
-    duplicates = (
-        df.groupBy("order_id")
-          .count()
-          .filter(F.col("count") > 1)
-          .count()
-    )
-    if duplicates > 0:
-        raise ValueError(f"Found {duplicates} duplicate order IDs")
-
-    # Check: amount range
-    invalid_amounts = (
-        df.filter((F.col("amount") <= 0) | (F.col("amount") > 1000000))
-          .count()
-    )
-    if invalid_amounts > 0:
-        raise ValueError(f"Found {invalid_amounts} invalid amounts")
-
-    # Check: order_date is in past
-    invalid_dates = (
-        df.filter(F.col("order_date") > F.current_date())
-          .count()
-    )
-    if invalid_dates > 0:
-        raise ValueError(f"Found {invalid_dates} future-dated orders")
-
+    required = ["order_id", "customer_id", "amount"]
+    missing = set(required) - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing columns: {sorted(missing)}")
+    nulls = df.agg(*[F.count(F.when(F.col(name).isNull(), 1)).alias(name)
+                     for name in required]).first().asDict()
+    if any(nulls.values()):
+        raise ValueError(f"Null required values: {nulls}")
+    if not df.groupBy("order_id").count().filter("count > 1").isEmpty():
+        raise ValueError("Duplicate order IDs")
+    if not df.filter(F.col("amount") < 0).isEmpty():
+        raise ValueError("Negative amount")
     return df
-
-# Use in pipeline
-try:
-    validated_df = validate_orders(silver_df)
-    # Proceed with processing
-except ValueError as e:
-    logger.error(f"Validation failed: {e}")
-    # Quarantine data or alert
 ```
 
-### SLOs and SLAs for Data
+This illustrative contract permits zero amounts and empty batches. Change those rules to the domain. Define quality failures before publishing, retain quarantined rows with reasons, and reconcile source/accepted/rejected counts. Collecting one aggregate row is bounded; converting the entire dataset to pandas for validation is not.
 
-Define and monitor Service Level Objectives (SLOs) and Agreements (SLAs):
+Use native Spark aggregates or a version-compatible Spark quality framework. Great Expectations APIs differ by release; configure a Spark-backed data source rather than copying obsolete pandas-only APIs into a large-data job.
 
-```python
-# Define SLOs in configuration
-SLOS = {
-    "silver.orders": {
-        "completeness": 0.99,       # 99% non-null
-        "uniqueness": 1.0,           # 100% unique by order_id
-        "freshness": 86400,          # Data within 1 day
-        "freshness_slo": 0.95        # 95% of time within SLA
-    },
-    "gold.daily_revenue": {
-        "timeliness": "09:00 UTC",   # Should be ready by 9am
-        "accuracy": 0.999,           # 99.9% accurate vs GL
-        "uptime": 0.999              # 99.9% available for queries
-    }
-}
-
-# Implement monitoring
-def check_slo(table_name, metric_name, threshold):
-    if table_name == "silver.orders" and metric_name == "completeness":
-        null_count = df.filter(F.col("order_id").isNull()).count()
-        completeness = 1 - (null_count / df.count())
-        return completeness >= threshold
-    # ... more checks
-```
-
-### Anomaly Detection
-
-Detect unexpected changes in data distributions:
-
-```python
-from pyspark.sql import functions as F
-import numpy as np
-
-def detect_anomalies(df, column, z_score_threshold=3):
-    """Detect outliers using z-score"""
-
-    mean_val = df.agg(F.mean(column)).collect()[0][0]
-    std_val = df.agg(F.stddev(column)).collect()[0][0]
-
-    anomalies = (
-        df.withColumn("z_score",
-                     (F.col(column) - mean_val) / std_val)
-          .filter(F.abs(F.col("z_score")) > z_score_threshold)
-    )
-
-    return anomalies
-
-# Monitor volume anomalies
-daily_counts = (
-    df.groupBy(F.to_date("event_ts"))
-      .count()
-      .withColumnRenamed("count", "event_count")
-)
-
-anomalies = detect_anomalies(daily_counts, "event_count", z_score_threshold=2.5)
-
-if anomalies.count() > 0:
-    logger.warning(f"Anomaly detected: unusual event count")
-```
-
-### Data Contracts
-
-Define schemas and guarantees between producers and consumers:
-
-```python
-# Define data contract
-ORDERS_CONTRACT = {
-    "table": "gold.orders",
-    "owner": "payments_team",
-    "schema": {
-        "order_id": ("string", False),       # not null
-        "customer_id": ("string", False),
-        "amount": ("decimal(10,2)", False),
-        "order_ts": ("timestamp", False),
-        "status": ("string", False)
-    },
-    "partitionBy": ["order_date"],
-    "sortBy": ["order_ts"],
-    "slo": {
-        "freshness_hours": 1,
-        "completeness": 0.99
-    },
-    "lineage": {
-        "source": ["bronze.raw_orders"],
-        "transformations": ["dedup", "validate", "enrich"]
-    }
-}
-
-# Validate against contract
-def validate_contract(df, contract):
-    for col_name, (dtype, nullable) in contract["schema"].items():
-        if col_name not in df.columns:
-            raise ValueError(f"Missing column: {col_name}")
-
-        if not nullable:
-            nulls = df.filter(F.col(col_name).isNull()).count()
-            if nulls > 0:
-                raise ValueError(f"Nulls found in {col_name}")
-
-    return True
-```
-
-**Production Practice**: Start with critical columns and metrics. Expand coverage over time. Automate checks and create dashboards for SLO tracking.
+**Senior follow-up:** Verify schema types as well as column names/nullability; monitor freshness even when no new rows arrive. Anomaly scores need a historical baseline and a defined behavior for zero variance/empty history; they are not a correctness proof.
 
 ## 41. Data Security and Compliance
 
-### Row-Level Security (RLS)
+### Enforce access at the boundary
 
-Restrict data access based on user identity or attributes.
+- IAM/bucket/KMS policies protect storage; catalog/Lake Formation/Unity Catalog controls apply only through supported engines and configured policies.
+- Filtering a DataFrame or dropping a column is a transformation, not an access-control boundary if the caller can read the underlying files.
+- Row filters and column masks are provider-specific. Unity Catalog SQL is not generic Spark SQL and does not configure Glue Catalog permissions.
+- An unsalted SHA-256 of a predictable identifier is pseudonymization, not encryption or guaranteed anonymity. Use approved tokenization/keyed hashing where required, and protect the mapping/key.
 
-```python
-from pyspark.sql import functions as F
-
-# Example: each region sees only their own data
-user_region = "NORTH_AMERICA"  # From authentication context
-
-filtered_df = (
-    orders_df.filter(F.col("region") == user_region)
-)
-
-# Alternative: dynamic row filtering
-def apply_row_level_security(df, user_attributes):
-    """Apply RLS based on user region and department"""
-
-    region_filter = F.col("region") == user_attributes["region"]
-    dept_filter = F.col("department").isin(user_attributes["departments"])
-
-    return df.filter(region_filter & dept_filter)
-```
-
-Delta Lake with Unity Catalog supports row-level policies:
-
-```sql
--- Create RLS policy
-CREATE ROW FILTER sales.orders_rls ON glue_catalog.analytics.orders
-USING (region = current_user_region())
-
--- Apply to column access
-ALTER TABLE glue_catalog.analytics.orders
-SET ROW FILTER sales.orders_rls
-```
-
-### Column-Level Security (CLS)
-
-Mask or redact sensitive columns from unauthorized users.
+For a data-processing example only:
 
 ```python
-# Approach 1: Redact sensitive columns
-def mask_pii(df, columns_to_mask, user_role):
-    """Mask sensitive data for non-admin users"""
-
-    if user_role == "admin":
-        return df  # Admins see full data
-
-    for col in columns_to_mask:
-        df = df.withColumn(
-            col,
-            F.when(F.lit(user_role) == "admin", F.col(col))
-             .otherwise(F.lit("REDACTED"))
-        )
-
-    return df
-
-# Approach 2: Hash sensitive values
-def hash_pii(df, columns_to_hash):
-    """Hash sensitive data for analysis without exposure"""
-
-    for col in columns_to_hash:
-        df = df.withColumn(f"{col}_hash", F.sha2(F.col(col), 256))
-
-    return df.drop(*columns_to_hash)
-
-# Usage
-sensitive_cols = ["ssn", "credit_card", "email"]
-secure_df = mask_pii(orders_df, sensitive_cols, user_role="analyst")
+masked = orders.select("order_id", F.lit("REDACTED").alias("customer_id"), "amount")
 ```
 
-### Encryption
+Encryption must be configured on the storage connector/runtime or bucket, not assumed from arbitrary DataFrameWriter options. Use workload IAM roles and secret stores, TLS where supported, and verify actual object encryption and KMS permissions. Never embed passwords in examples intended for deployment.
 
-#### In-Transit Encryption (TLS)
+### Logical deletion vs physical removal
 
-```python
-# Spark to S3 with encryption
-spark.conf.set("spark.hadoop.fs.s3a.ssl.enabled", "true")
-spark.conf.set("spark.hadoop.fs.s3a.endpoint.ssl.enabled", "true")
+A table DELETE removes rows from the current snapshot. Old data files, snapshots, checkpoints, downstream exports and backups may still retain them. Design authorized retention/physical cleanup and audit workflows across all copies. A region setting or a short Spark script does not establish legal compliance. Keep this as an engineering discussion, with policy requirements supplied by the organization.
 
-# Kafka with TLS
-df = (
-    spark.readStream
-    .format("kafka")
-    .option("kafka.security.protocol", "SSL")
-    .option("kafka.ssl.truststore.location", "/path/to/truststore")
-    .option("kafka.ssl.truststore.password", "password")
-    .load()
-)
-```
-
-#### At-Rest Encryption (S3 KMS)
-
-```python
-# S3 with server-side KMS encryption
-df.write \
-    .format("delta") \
-    .option("spark.hadoop.fs.s3a.server-side-encryption-algorithm", "aws:kms") \
-    .option("spark.hadoop.fs.s3a.server-side-encryption-kms-key-id", "arn:aws:kms:...") \
-    .save("s3://bucket/encrypted/data")
-```
-
-### PII Detection and Handling
-
-```python
-import re
-
-def detect_pii(df):
-    """Detect potential PII columns"""
-
-    pii_patterns = {
-        "ssn": r"\d{3}-\d{2}-\d{4}",
-        "email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-        "phone": r"\d{3}-\d{3}-\d{4}",
-        "credit_card": r"\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}"
-    }
-
-    findings = {}
-
-    for col_name in df.columns:
-        sample = df.select(col_name).limit(1000).collect()
-        for pii_type, pattern in pii_patterns.items():
-            matches = sum(1 for row in sample if re.search(pattern, str(row[col_name])))
-            if matches > 0:
-                findings.setdefault(col_name, []).append(pii_type)
-
-    return findings
-
-# Catalog PII columns
-pii_cols = detect_pii(df)
-print(f"Detected PII: {pii_cols}")
-
-# Apply masking/hashing
-for col, pii_types in pii_cols.items():
-    df = hash_pii(df, [col])
-```
-
-### Audit Logging
-
-```python
-import logging
-from datetime import datetime
-
-# Structured audit logs
-class AuditLogger:
-    def log_access(self, user_id, table, action, timestamp, status):
-        log_entry = {
-            "timestamp": timestamp,
-            "user_id": user_id,
-            "table": table,
-            "action": action,  # read, write, delete
-            "status": status,   # success, denied
-            "ip_address": "...",
-            "details": "..."
-        }
-        # Send to centralized logging (CloudWatch, ELK, etc.)
-        logger.info(f"AUDIT: {log_entry}")
-
-audit = AuditLogger()
-
-# Log query access
-audit.log_access(
-    user_id="user123",
-    table="glue_catalog.analytics.orders",
-    action="SELECT",
-    timestamp=datetime.utcnow(),
-    status="success"
-)
-
-# Log data access denials
-audit.log_access(
-    user_id="user456",
-    table="sensitive_data",
-    action="SELECT",
-    timestamp=datetime.utcnow(),
-    status="denied"  # User doesn't have permission
-)
-```
-
-### HIPAA/GDPR Compliance Patterns
-
-**GDPR Right to Deletion:**
-
-```python
-def delete_customer_data(customer_id):
-    """GDPR: Delete all data for a customer"""
-
-    # Find all tables with customer_id
-    tables_to_clean = [
-        "silver.orders",
-        "silver.customer_profile",
-        "gold.customer_360"
-    ]
-
-    for table in tables_to_clean:
-        df = spark.read.format("delta").load(f"s3://bucket/lake/{table}")
-
-        # Delete matching records
-        DeltaTable.forPath(spark, f"s3://bucket/lake/{table}").delete(
-            f"customer_id = '{customer_id}'"
-        )
-
-    # Log for audit trail
-    audit.log_access(
-        user_id="compliance_admin",
-        table="all",
-        action="DELETE",
-        timestamp=datetime.utcnow(),
-        status="success",
-        notes=f"GDPR deletion for {customer_id}"
-    )
-```
-
-**HIPAA Data Residency:**
-
-```python
-# Ensure data stays in specific region
-spark.conf.set("spark.hadoop.fs.s3.region", "us-east-1")  # HIPAA-compliant region
-
-# Encrypt at rest
-spark.conf.set("spark.hadoop.fs.s3a.server-side-encryption-algorithm", "aws:kms")
-
-# Log all access
-```
+Log access and policy decisions in the enforcing systems, with request/job/table identities; avoid exposing sensitive payloads in logs. Distinguish a self-reported application log from an authoritative storage/catalog audit trail.
 
 ## 42. Cost Optimization for Data Pipelines
 
-### Understanding Spark Costs
-
-Spark cost = compute hours × hourly rate + storage + data transfer
+Optimize **cost per correct, on-time output**, not just executor runtime.
 
 ```text
-Glue:  ~$0.44/DPU-hour
-EMR:   ~$0.22/EC2-hour + EMR overhead
-S3:    ~$0.023/GB stored
-
-Example:
-  10 DPU Glue job × 2 hours = 20 DPU-hours × $0.44 = $8.80
-  1 TB input from S3 + 100 GB output = $0.023/GB storage
-  Total: ~$10
+Compute cost ≈ billed capacity × billed duration × applicable regional rate
+Total cost = compute + storage over time + requests + data transfer + orchestration/maintenance
 ```
 
-### Right-Sizing Executors
+Storage charges are not a per-GB-read price. Glue DPU-hours are not executor-hours. Use the workload's billing units, region, execution class and measured utilization; avoid copying fixed prices into interview answers.
 
-```python
-# Configuration for different workload sizes
+### Right-sizing and layout
 
-# Light workloads (< 1GB data)
-spark.conf.set("spark.executor.instances", "2")
-spark.conf.set("spark.executor.memory", "2g")
-spark.conf.set("spark.executor.cores", "1")
+| Symptom | Candidate action | Verify |
+| --- | --- | --- |
+| Many tiny files / scheduling overhead | Compaction or better write distribution | File-count/size distribution and scan latency. |
+| Large spills / OOM | Smaller per-task data, less skew, appropriate worker/memory sizing | Spill, GC, task bytes and cost. |
+| Mostly idle workers | Lower capacity or supported autoscaling | SLA, peak lag and billed capacity. |
+| Repeated expensive scans | Selective layout/filtering or justified cache | Actual bytes scanned, reuse and memory pressure. |
+| Heavy shuffle | Correct cardinality, broadcast if safe, partial aggregation | Final plan, shuffle bytes and output equality. |
 
-# Medium workloads (1-100GB data)
-spark.conf.set("spark.executor.instances", "8")
-spark.conf.set("spark.executor.memory", "8g")
-spark.conf.set("spark.executor.cores", "2")
+Executor memory/instances are generally startup/resource-allocation settings; setting them on an already-running SparkSession does not resize the cluster. Glue uses worker types and worker counts/autoscaling. Choose from its actual runtime-supported options.
 
-# Large workloads (100GB+ data)
-spark.conf.set("spark.executor.instances", "32")
-spark.conf.set("spark.executor.memory", "16g")
-spark.conf.set("spark.executor.cores", "4")
-```
+Catalyst can push filters through equivalent projections, so merely moving a filter up a chain may produce the same scan. Verify PartitionFilters/ReadSchema and actual I/O. Compaction and retention also incur costs; choose frequency from write/read volume and operational requirements.
 
-For Glue, choose worker types:
-
-| Worker Type | Memory | Cores | Cost/Hour | Best For |
-|---|---|---|---|---|
-| G.1X | 4 GB | 1 | $0.44 | Small jobs, development |
-| G.2X | 16 GB | 2 | $0.44 | Most production jobs |
-| G.4X | 64 GB | 4 | $0.88 | Large data, complex joins |
-
-### Query Optimization Savings
-
-```python
-# BEFORE: Inefficient (full scan, large shuffle)
-slow_df = (
-    df.withColumn("revenue", F.col("amount") * F.col("quantity"))
-      .filter(F.col("order_date") == "2026-07-16")
-      .groupBy("customer_id")
-      .agg(F.sum("revenue"))
-)
-# Cost: High - scans entire table before filtering
-
-# AFTER: Optimized (filter early, column selection)
-fast_df = (
-    df.select("customer_id", "amount", "quantity", "order_date")
-      .filter(F.col("order_date") == "2026-07-16")
-      .withColumn("revenue", F.col("amount") * F.col("quantity"))
-      .groupBy("customer_id")
-      .agg(F.sum("revenue"))
-)
-# Cost: Low - filters and selects columns early, reduces shuffle
-```
-
-Estimated savings: **60-80%** on compute costs.
-
-### Partition Pruning
-
-```python
-# Query only needed partitions
-df = spark.read.parquet("s3://bucket/data/year=2026/month=07/")
-
-# Good: partition predicate pushed down
-filtered = df.filter(F.col("day") == 16)  # Reads only day=16 partition
-
-# Bad: filters after read
-filtered = df.filter(F.col("day") == 16)  # Reads all days, then filters
-```
-
-Savings: **50-80%** on I/O.
-
-### Caching Strategy
-
-```python
-# Cache only reused DataFrames
-temp_df = df.filter(...).select(...)
-
-# If used 3+ times, cache
-temp_df.cache()
-result1 = temp_df.groupBy(...).count()
-result2 = temp_df.filter(...).count()
-result3 = temp_df.join(...).count()
-temp_df.unpersist()
-
-# Specify storage level
-from pyspark import StorageLevel
-temp_df.persist(StorageLevel.MEMORY_ONLY)  # Fastest
-temp_df.persist(StorageLevel.MEMORY_AND_DISK)  # Fallback to disk
-temp_df.persist(StorageLevel.DISK_ONLY)  # Only if RAM constrained
-```
-
-### S3 Optimization
-
-```python
-# Compact small files before querying
-df.repartition(100).write.mode("overwrite").parquet("s3://bucket/data/")
-
-# Use S3 Intelligent-Tiering
-# S3 automatically moves old data to cheaper tiers
-
-# S3 Select: filter at storage layer
-# (Supported for Parquet/JSON in some contexts)
-```
-
-### Monitor Costs
-
-```python
-import logging
-
-def log_cost_metrics(job_name, executor_hours, gb_read, gb_written):
-    """Log job cost for analysis"""
-
-    glue_cost = executor_hours * 0.44
-    s3_cost = (gb_read + gb_written) * 0.000023  # $0.023/GB
-    total_cost = glue_cost + s3_cost
-
-    logger.info(f"""
-    Job: {job_name}
-    Executor Hours: {executor_hours}
-    Data Read: {gb_read} GB
-    Data Written: {gb_written} GB
-    ---
-    Glue Cost: ${glue_cost:.2f}
-    S3 Cost: ${s3_cost:.2f}
-    Total: ${total_cost:.2f}
-    Cost per GB processed: ${total_cost / (gb_read + gb_written):.4f}
-    """)
-
-# At end of job
-log_cost_metrics(
-    job_name="daily_orders_aggregation",
-    executor_hours=2.5,
-    gb_read=50,
-    gb_written=2
-)
-```
-
-**Interview Tip**: "I optimize Spark costs by filtering early, selecting only needed columns, right-sizing executors, caching only reused data, enabling partition pruning, and monitoring query explain plans. I also use Glue's auto-scaling and choose the right worker type for the workload."
-
-## 52. Lakehouse Implementation & Operations Guide
-
-### Part 1: Creating Your First Lakehouse
-
-#### Step 1: Set Up Spark with Lakehouse Support
-
-```python
-from pyspark.sql import SparkSession
-from delta import configure_spark_with_delta_pip
-
-# For Delta Lake
-builder = (
-    SparkSession.builder
-    .appName("lakehouse-setup")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-)
-
-spark = configure_spark_with_delta_pip(builder).getOrCreate()
-
-# For Iceberg (alternative)
-spark = (
-    SparkSession.builder
-    .appName("iceberg-lakehouse")
-    .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtension")
-    .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog")
-    .config("spark.sql.catalog.glue_catalog.type", "glue")
-    .config("spark.sql.catalog.glue_catalog.warehouse", "s3://my-bucket/warehouse")
-    .getOrCreate()
-)
-```
-
-#### Step 2: Create Initial Bronze Table
-
-```python
-from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, TimestampType
-
-# Define schema explicitly (CRITICAL for production)
-orders_schema = StructType([
-    StructField("order_id", StringType(), False),
-    StructField("customer_id", StringType(), False),
-    StructField("amount", IntegerType(), False),
-    StructField("order_date", StringType(), False),  # Will convert
-    StructField("status", StringType(), True),
-    StructField("raw_payload", StringType(), True),
-])
-
-# Read raw data
-raw_df = (
-    spark.read
-    .schema(orders_schema)
-    .json("s3://bucket/raw/orders/2026-07-16/")
-)
-
-# Add metadata columns
-bronze_df = (
-    raw_df
-    .withColumn("_ingest_ts", F.current_timestamp())
-    .withColumn("_ingest_date", F.to_date("_ingest_ts"))
-    .withColumn("_source_system", F.lit("order_api_v1"))
-    .withColumn("_file_name", F.input_file_name())
-)
-
-# Create Bronze table (first time) or append
-bronze_path = "s3://my-bucket/lake/bronze/orders"
-
-# Create managed table in Glue Catalog
-bronze_df.write \
-    .format("delta") \
-    .mode("append") \
-    .option("mergeSchema", False) \
-    .save(bronze_path)
-
-# Register in catalog
-spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS glue_catalog.bronze.orders
-    USING DELTA
-    LOCATION '{bronze_path}'
-    TBLPROPERTIES (
-        'description' = 'Raw order data from API',
-        'owner' = 'data_team',
-        '_ingest_date' = '{F.current_date()}'
-    )
-""")
-
-print("✅ Bronze table created successfully")
-```
-
-#### Step 3: Create Silver Table with Validation
-
-```python
-from pyspark.sql import Window
-
-# Read from Bronze
-bronze_orders = spark.read.format("delta").load(bronze_path)
-
-# Validation rules
-def validate_silver_data(df):
-    """Apply business rules before Silver"""
-
-    validated = (
-        df
-        # Remove nulls in critical fields
-        .filter(F.col("order_id").isNotNull())
-        .filter(F.col("customer_id").isNotNull())
-        .filter(F.col("amount").isNotNull())
-
-        # Type conversions
-        .withColumn("amount", F.col("amount").cast("decimal(10,2)"))
-        .withColumn("order_date", F.to_date("order_date", "yyyy-MM-dd"))
-
-        # Business rule validation
-        .filter(F.col("amount") > 0)  # No zero/negative orders
-        .filter(F.col("order_date") <= F.current_date())  # No future dates
-        .filter(F.col("status").isin("NEW", "SHIPPED", "CANCELLED", "REFUNDED"))
-    )
-
-    return validated
-
-# Deduplicate (keep latest version of each order)
-w = Window.partitionBy("order_id").orderBy(F.col("_ingest_ts").desc())
-
-silver_df = (
-    bronze_orders
-    .transform(validate_silver_data)
-    .withColumn("_row_num", F.row_number().over(w))
-    .filter(F.col("_row_num") == 1)
-    .drop("_row_num")
-    .withColumn("_processed_ts", F.current_timestamp())
-)
-
-# Create Silver table
-silver_path = "s3://my-bucket/lake/silver/orders"
-
-silver_df.write \
-    .format("delta") \
-    .mode("append") \
-    .partitionBy("order_date") \
-    .save(silver_path)
-
-spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS glue_catalog.silver.orders
-    USING DELTA
-    LOCATION '{silver_path}'
-    PARTITIONED BY (order_date)
-    TBLPROPERTIES (
-        'description' = 'Cleaned and validated orders',
-        'owner' = 'data_team',
-        'quality_level' = 'silver'
-    )
-""")
-
-print("✅ Silver table created with validation")
-```
-
-#### Step 4: Create Gold Table (Business-Ready)
-
-```python
-# Read from Silver
-silver_orders = spark.read.format("delta").load(silver_path)
-
-# Business aggregations
-gold_daily_orders = (
-    silver_orders
-    .groupBy("order_date")
-    .agg(
-        F.count("*").alias("total_orders"),
-        F.countDistinct("customer_id").alias("unique_customers"),
-        F.sum("amount").alias("total_revenue"),
-        F.avg("amount").alias("avg_order_value"),
-        F.min("amount").alias("min_order_value"),
-        F.max("amount").alias("max_order_value"),
-    )
-    .withColumn("_created_ts", F.current_timestamp())
-)
-
-# Create Gold table
-gold_path = "s3://my-bucket/lake/gold/daily_orders"
-
-gold_daily_orders.write \
-    .format("delta") \
-    .mode("overwrite") \
-    .partitionBy("order_date") \
-    .save(gold_path)
-
-spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS glue_catalog.gold.daily_orders
-    USING DELTA
-    LOCATION '{gold_path}'
-    PARTITIONED BY (order_date)
-    TBLPROPERTIES (
-        'description' = 'Daily order metrics for dashboards',
-        'owner' = 'analytics_team',
-        'slo_freshness_hours' = '4',
-        'slo_accuracy' = '99.9'
-    )
-""")
-
-print("✅ Gold table created successfully")
-```
-
----
-
-### Part 2: Migrating from Parquet to Lakehouse
-
-#### Strategy 1: Zero-Downtime Migration (Recommended)
-
-```python
-# Current state: Parquet files
-parquet_path = "s3://bucket/legacy/customers/"
-
-# Step 1: Read existing Parquet
-parquet_df = spark.read.parquet(parquet_path)
-
-# Step 2: Validate data quality
-row_count_before = parquet_df.count()
-print(f"Parquet rows: {row_count_before}")
-
-# Step 3: Write to Delta (new location initially)
-delta_temp_path = "s3://my-bucket/lake/temp/customers_migration/"
-
-parquet_df.write \
-    .format("delta") \
-    .mode("overwrite") \
-    .save(delta_temp_path)
-
-# Step 4: Verify integrity
-delta_df = spark.read.format("delta").load(delta_temp_path)
-row_count_after = delta_df.count()
-
-assert row_count_before == row_count_after, "Row count mismatch!"
-print(f"✅ Validation passed: {row_count_after} rows")
-
-# Step 5: Move to production location
-delta_prod_path = "s3://my-bucket/lake/silver/customers/"
-
-# First migration: copy data
-delta_df.write \
-    .format("delta") \
-    .mode("overwrite") \
-    .partitionBy("customer_date") \
-    .save(delta_prod_path)
-
-# Step 6: Update applications to read from new location
-# - Update Glue jobs
-# - Update dashboards
-# - Update data consumers
-
-# Step 7: After validation period, deprecate Parquet
-# - Add deprecation notice to old path
-# - Monitor for stragglers
-# - Keep Parquet for X days as fallback
-
-print("✅ Migration complete")
-```
-
-#### Strategy 2: Dual-Write Approach (For High-Availability)
-
-```python
-def write_to_both_formats(df, base_path):
-    """Write to both Parquet and Delta during migration"""
-
-    # Write to Parquet (old system)
-    df.write \
-        .mode("overwrite") \
-        .parquet(f"{base_path}/parquet/")
-
-    # Write to Delta (new system)
-    df.write \
-        .format("delta") \
-        .mode("append") \
-        .save(f"{base_path}/delta/")
-
-    print("✅ Written to both Parquet and Delta")
-
-# During migration window, write both
-df = spark.read.parquet("s3://bucket/input/")
-write_to_both_formats(df, "s3://my-bucket/lake/orders/")
-
-# Gradually shift readers from Parquet to Delta
-# Once all readers migrated, stop Parquet writes
-```
-
-#### Strategy 3: Backfill Historical Data
-
-```python
-from datetime import datetime, timedelta
-
-def backfill_delta_from_daily_parquets(start_date, end_date):
-    """Backfill Delta table from daily Parquet archives"""
-
-    current = start_date
-    delta_path = "s3://my-bucket/lake/silver/transactions/"
-
-    while current <= end_date:
-        date_str = current.strftime("%Y-%m-%d")
-        parquet_dir = f"s3://archive/daily_parquets/{date_str}/"
-
-        try:
-            # Read daily Parquet
-            daily_df = spark.read.parquet(parquet_dir)
-
-            # Validate
-            if daily_df.count() == 0:
-                print(f"⚠️ No data for {date_str}")
-            else:
-                # Write to Delta
-                daily_df.write \
-                    .format("delta") \
-                    .mode("append") \
-                    .partitionBy("transaction_date") \
-                    .save(delta_path)
-
-                print(f"✅ Backfilled {date_str}: {daily_df.count()} rows")
-
-        except Exception as e:
-            print(f"❌ Error for {date_str}: {e}")
-
-        current += timedelta(days=1)
-
-# Backfill last 2 years
-backfill_delta_from_daily_parquets(
-    start_date=datetime(2024, 1, 1),
-    end_date=datetime(2026, 1, 1)
-)
-```
-
----
-
-### Part 3: Building Medallion + Lakehouse End-to-End
-
-#### Complete Pipeline Example
-
-```python
-from delta.tables import DeltaTable
-from pyspark.sql import Window
-
-class LakehousePipeline:
-    """Complete medallion + lakehouse pipeline"""
-
-    def __init__(self, spark, base_path="s3://my-bucket/lake"):
-        self.spark = spark
-        self.base_path = base_path
-
-    def ingest_to_bronze(self, source_path, table_name):
-        """Step 1: Ingest raw data to Bronze"""
-
-        print(f"🔵 Ingesting {table_name} to Bronze...")
-
-        df = self.spark.read.json(source_path)
-
-        bronze_df = (
-            df
-            .withColumn("_ingest_ts", F.current_timestamp())
-            .withColumn("_ingest_date", F.to_date("_ingest_ts"))
-            .withColumn("_source_file", F.input_file_name())
-        )
-
-        bronze_path = f"{self.base_path}/bronze/{table_name}"
-
-        bronze_df.write \
-            .format("delta") \
-            .mode("append") \
-            .partitionBy("_ingest_date") \
-            .save(bronze_path)
-
-        print(f"✅ Bronze {table_name}: {bronze_df.count()} rows")
-        return bronze_path
-
-    def transform_to_silver(self, bronze_path, table_name, business_key):
-        """Step 2: Clean and deduplicate to Silver"""
-
-        print(f"🟢 Transforming {table_name} to Silver...")
-
-        bronze_df = self.spark.read.format("delta").load(bronze_path)
-
-        # Validation
-        validated = (
-            bronze_df
-            .filter(F.col(business_key).isNotNull())
-            .filter(F.col("_ingest_ts").isNotNull())
-        )
-
-        # Deduplication: keep latest version
-        w = Window.partitionBy(business_key).orderBy(F.col("_ingest_ts").desc())
-
-        silver_df = (
-            validated
-            .withColumn("_rn", F.row_number().over(w))
-            .filter(F.col("_rn") == 1)
-            .drop("_rn")
-            .withColumn("_processed_ts", F.current_timestamp())
-        )
-
-        silver_path = f"{self.base_path}/silver/{table_name}"
-
-        # Use MERGE for upserts (key feature of lakehouse)
-        if self._table_exists(silver_path):
-            silver_table = DeltaTable.forPath(self.spark, silver_path)
-
-            silver_table.alias("silver") \
-                .merge(
-                    silver_df.alias("source"),
-                    f"silver.{business_key} = source.{business_key}"
-                ) \
-                .whenMatchedUpdateAll() \
-                .whenNotMatchedInsertAll() \
-                .execute()
-        else:
-            silver_df.write \
-                .format("delta") \
-                .mode("overwrite") \
-                .partitionBy("_ingest_date") \
-                .save(silver_path)
-
-        print(f"✅ Silver {table_name}: {silver_df.count()} rows")
-        return silver_path
-
-    def aggregate_to_gold(self, silver_path, table_name, agg_spec):
-        """Step 3: Create business-ready Gold tables"""
-
-        print(f"🟡 Aggregating {table_name} to Gold...")
-
-        silver_df = self.spark.read.format("delta").load(silver_path)
-
-        # Apply aggregations
-        gold_df = silver_df.groupBy(*agg_spec["group_by"]) \
-                           .agg(*agg_spec["agg_functions"])
-
-        gold_path = f"{self.base_path}/gold/{table_name}"
-
-        gold_df.write \
-            .format("delta") \
-            .mode("overwrite") \
-            .partitionBy("date") \
-            .save(gold_path)
-
-        print(f"✅ Gold {table_name}: {gold_df.count()} rows")
-        return gold_path
-
-    def _table_exists(self, path):
-        """Check if Delta table exists"""
-        try:
-            self.spark.read.format("delta").load(path).limit(1).collect()
-            return True
-        except:
-            return False
-
-# Usage
-pipeline = LakehousePipeline(spark)
-
-# Execute pipeline
-bronze = pipeline.ingest_to_bronze("s3://raw/orders/", "orders")
-silver = pipeline.transform_to_silver(bronze, "orders", "order_id")
-gold = pipeline.aggregate_to_gold(silver, "orders", {
-    "group_by": ["order_date"],
-    "agg_functions": [
-        F.count("*").alias("total_orders"),
-        F.sum("amount").alias("revenue")
-    ]
-})
-
-print("✅ Complete medallion + lakehouse pipeline executed")
-```
-
----
-
-### Part 4: Lakehouse Maintenance Operations
-
-#### OPTIMIZE: Compact Small Files
-
-```python
-from delta.tables import DeltaTable
-
-def optimize_delta_table(table_path, partition_col=None):
-    """Compact small files using OPTIMIZE"""
-
-    table = DeltaTable.forPath(spark, table_path)
-
-    print(f"Optimizing {table_path}...")
-
-    # Get file count before
-    files_before = spark.read.format("delta").load(table_path).rdd.getNumPartitions()
-
-    # Run OPTIMIZE with Z-order clustering
-    if partition_col:
-        spark.sql(f"""
-            OPTIMIZE delta.`{table_path}`
-            ZORDER BY ({partition_col})
-        """)
-    else:
-        spark.sql(f"OPTIMIZE delta.`{table_path}`")
-
-    # Verify
-    files_after = spark.read.format("delta").load(table_path).rdd.getNumPartitions()
-
-    print(f"✅ Optimized: {files_before} → {files_after} files")
-
-# Schedule this weekly
-optimize_delta_table("s3://lake/silver/orders", "order_date")
-```
-
-#### VACUUM: Clean Old Files
-
-```python
-def vacuum_delta_table(table_path, retention_hours=168):  # 7 days default
-    """Delete old files to save storage"""
-
-    print(f"Vacuuming {table_path} (retention: {retention_hours}h)...")
-
-    # Safety check: retention >= 7 days for production
-    assert retention_hours >= 168, "Retention must be >= 7 days"
-
-    # Run VACUUM
-    spark.sql(f"""
-        VACUUM delta.`{table_path}`
-        RETAIN {retention_hours} HOURS
-    """)
-
-    print(f"✅ Vacuumed old files")
-
-# Run monthly after backups
-vacuum_delta_table("s3://lake/silver/orders", retention_hours=720)  # 30 days
-```
-
-#### Collect Statistics
-
-```python
-def analyze_delta_table(table_path):
-    """Collect statistics for query optimization"""
-
-    print(f"Analyzing {table_path}...")
-
-    spark.sql(f"""
-        ANALYZE TABLE delta.`{table_path}`
-        COMPUTE STATISTICS
-    """)
-
-    # View statistics
-    stats = spark.sql(f"""
-        SELECT
-            num_rows,
-            num_files,
-            size_in_bytes
-        FROM delta.`{table_path}`.delta_log
-        ORDER BY version DESC
-        LIMIT 1
-    """)
-
-    stats.show()
-
-# Run after major loads
-analyze_delta_table("s3://lake/silver/orders")
-```
-
-#### Monitor Table Health
-
-```python
-def monitor_lakehouse_health(base_path):
-    """Monitor medallion layer health"""
-
-    for layer in ["bronze", "silver", "gold"]:
-        layer_path = f"{base_path}/{layer}"
-
-        # Check if layer exists
-        try:
-            df = spark.read.format("delta").load(layer_path)
-
-            # Get metrics
-            row_count = df.count()
-            partition_count = df.rdd.getNumPartitions()
-
-            # Check for nulls in key columns
-            null_check = df.select([
-                F.count(F.when(F.col(c).isNull(), c)).alias(f"{c}_nulls")
-                for c in df.columns
-            ]).collect()[0]
-
-            print(f"""
-            {layer.upper()} Layer:
-              Rows: {row_count}
-              Partitions: {partition_count}
-              Avg rows/partition: {row_count // partition_count}
-              Null checks: {dict(null_check.asDict())}
-            """)
-
-        except Exception as e:
-            print(f"⚠️ {layer}: {e}")
-
-monitor_lakehouse_health("s3://my-bucket/lake")
-```
-
----
-
-### Part 5: Lakehouse Troubleshooting
-
-#### Issue 1: Schema Mismatch
-
-```python
-# Problem: New data has different schema than table
-
-# Solution 1: Auto-merge schema
-df.write \
-    .format("delta") \
-    .mode("append") \
-    .option("mergeSchema", True) \
-    .save(table_path)
-
-# Solution 2: Explicit schema evolution
-spark.sql(f"""
-    ALTER TABLE delta.`{table_path}`
-    ADD COLUMN new_column STRING
-""")
-
-# Solution 3: Rename columns safely
-df_renamed = df.withColumnRenamed("old_name", "new_name")
-df_renamed.write \
-    .format("delta") \
-    .mode("append") \
-    .save(table_path)
-```
-
-#### Issue 2: Slow Queries After Updates
-
-```python
-# Problem: Query slowness after MERGE operations
-
-# Solution: OPTIMIZE after big merges
-(
-    DeltaTable.forPath(spark, table_path)
-    .alias("t")
-    .merge(updates.alias("u"), "t.id = u.id")
-    .whenMatchedUpdateAll()
-    .whenNotMatchedInsertAll()
-    .execute()
-)
-
-# Then optimize
-spark.sql(f"OPTIMIZE delta.`{table_path}`")
-```
-
-#### Issue 3: Out of Memory During Merge
-
-```python
-# Problem: MERGE fails with OOM on large tables
-
-# Solution: Batch the merge
-def batch_merge(target_path, updates_df, merge_key, batch_size=100000):
-    """Merge large dataset in batches"""
-
-    total_rows = updates_df.count()
-    num_batches = (total_rows // batch_size) + 1
-
-    for batch_num in range(num_batches):
-        offset = batch_num * batch_size
-
-        batch = updates_df.repartition(10).limit(batch_size).collect()
-        batch_df = spark.createDataFrame(batch, updates_df.schema)
-
-        target_table = DeltaTable.forPath(spark, target_path)
-
-        target_table.alias("target") \
-            .merge(batch_df.alias("source"), f"target.{merge_key} = source.{merge_key}") \
-            .whenMatchedUpdateAll() \
-            .whenNotMatchedInsertAll() \
-            .execute()
-
-        print(f"✅ Merged batch {batch_num + 1}/{num_batches}")
-
-batch_merge(silver_path, large_updates_df, "order_id", batch_size=50000)
-```
-
-#### Issue 4: Concurrent Write Conflicts
-
-```python
-# Problem: Two jobs writing to same table simultaneously
-
-# Lakehouse solution: Automatic retry on conflict
-try:
-    df.write \
-        .format("delta") \
-        .mode("append") \
-        .option("maxRetries", 3) \
-        .option("retryDelayMs", 1000) \
-        .save(table_path)
-except Exception as e:
-    print(f"❌ Conflict after retries: {e}")
-    # Log and alert
-```
-
-#### Issue 5: File Count Explosion
-
-```python
-# Problem: Too many small files slowing queries
-
-# Monitor
-def check_file_explosion(table_path):
-    """Alert if too many small files"""
-
-    spark.sql(f"""
-        SELECT
-            count(*) as num_files,
-            percentile(size_bytes, 0.5) as median_size,
-            percentile(size_bytes, 0.95) as p95_size
-        FROM table_info(delta.`{table_path}`)
-    """).show()
-
-check_file_explosion("s3://lake/silver/orders")
-
-# Solution: Coalesce before write
-df.coalesce(100).write \
-    .format("delta") \
-    .mode("overwrite") \
-    .save(table_path)
-
-# Or OPTIMIZE periodically
-spark.sql(f"OPTIMIZE delta.`{table_path}`")
-```
-
----
-
-### Part 6: Lakehouse Format Decision Framework
-
-#### Decision Tree
-
-```python
-def choose_lakehouse_format():
-    """Decision framework for Delta vs Hudi vs Iceberg"""
-
-    return {
-        "question_1": "Is your primary engine Spark?",
-        "if_yes": {
-            "question_2": "Do you need CDC/streaming upserts?",
-            "if_yes_cdc": {
-                "decision": "Apache Hudi",
-                "why": "Specialized for CDC, record-level upserts",
-                "use_cases": ["Real-time CDC ingestion", "Streaming updates"],
-                "examples": ["Debezium → Kafka → Hudi", "Streaming dimensions"],
-            },
-            "if_no_cdc": {
-                "question_3": "Do multiple engines need to access data?",
-                "if_yes_multi": {
-                    "decision": "Apache Iceberg",
-                    "why": "Best multi-engine support",
-                    "use_cases": ["Trino queries", "Athena queries", "Flink processing"],
-                    "examples": ["Data sharing across organizations"],
-                },
-                "if_no_multi": {
-                    "decision": "Delta Lake",
-                    "why": "Spark-optimized, simplest MERGE",
-                    "use_cases": ["Databricks workloads", "Spark-centric platforms"],
-                    "examples": ["Most Glue/EMR deployments"],
-                }
-            }
-        },
-        "if_no_spark": {
-            "decision": "Apache Iceberg",
-            "why": "Better support for non-Spark engines",
-            "use_cases": ["Trino-first platforms", "Flink streaming"],
-        }
-    }
-
-# Example usage
-framework = choose_lakehouse_format()
-print(framework)
-```
-
-#### Format Comparison Matrix
-
-```python
-format_comparison = {
-    "metric": ["Transaction Log", "Update Mechanism", "Spark Support", "Multi-Engine", "Streaming", "Maturity"],
-    "Delta Lake": ["JSON in _delta_log", "MERGE rewrites files", "Excellent", "Limited", "Good", "Excellent"],
-    "Hudi": ["Parquet timeline", "Record-level CoW/MoR", "Good", "Growing", "Excellent", "Good"],
-    "Iceberg": ["Metadata in manifest", "Full table snapshots", "Good", "Excellent", "Growing", "Growing"],
-}
-
-# Create comparison table
-comparison_df = spark.createDataFrame([
-    (format_comparison["metric"][i],
-     format_comparison["Delta Lake"][i],
-     format_comparison["Hudi"][i],
-     format_comparison["Iceberg"][i])
-    for i in range(len(format_comparison["metric"]))
-], ["Metric", "Delta Lake", "Hudi", "Iceberg"])
-
-comparison_df.show(truncate=False)
-```
-
-#### When NOT to Use Lakehouse
-
-```python
-# Use plain Parquet when:
-
-# 1. Append-only, no updates
-df.write.parquet("s3://bucket/data/")
-
-# 2. Very cost-sensitive (lakehouse adds overhead)
-# → Plain Parquet: ~$23/TB/year
-# → Lakehouse: ~$25-30/TB/year
-
-# 3. Single writer, no concurrency needs
-# → Transaction overhead unnecessary
-
-# 4. Time-travel not required
-# → No need for version management
-
-# 5. External systems don't support format
-# → Some legacy tools only understand Parquet
-
-print("""
-Verdict: Most modern data platforms benefit from lakehouse.
-But cost-sensitive, append-only workloads can use plain Parquet.
-""")
-```
-
----
-
-### Production Checklist: Before Going Live
-
-```python
-def pre_launch_lakehouse_checklist():
-    """Critical checks before production launch"""
-
-    checklist = {
-        "Architecture": [
-            "☐ Bronze/Silver/Gold strategy defined",
-            "☐ Partition columns chosen based on query patterns",
-            "☐ Format selected (Delta/Hudi/Iceberg)",
-            "☐ Retention policies defined",
-        ],
-        "Implementation": [
-            "☐ Schema validated (explicit, not inferred)",
-            "☐ Deduplication logic tested",
-            "☐ MERGE logic validated",
-            "☐ Backfill strategy documented",
-        ],
-        "Operations": [
-            "☐ OPTIMIZE schedule set (weekly/monthly)",
-            "☐ VACUUM schedule set (30-90 day retention)",
-            "☐ Monitoring dashboards created",
-            "☐ Alerting configured",
-        ],
-        "Security": [
-            "☐ S3 encryption configured (KMS)",
-            "☐ IAM roles created (least privilege)",
-            "☐ Lake Formation or Ranger configured",
-            "☐ PII columns identified",
-        ],
-        "Governance": [
-            "☐ Data catalog entries created",
-            "☐ SLOs/SLAs documented",
-            "☐ Owner/contact assigned",
-            "☐ Lineage documented",
-        ],
-        "Testing": [
-            "☐ Data quality tests pass",
-            "☐ Concurrent writes tested",
-            "☐ Failure recovery tested",
-            "☐ Performance benchmarked",
-        ],
-    }
-
-    for category, items in checklist.items():
-        print(f"\n{category}:")
-        for item in items:
-            print(f"  {item}")
-
-pre_launch_lakehouse_checklist()
-```
-
----
-
-### Summary: Lakehouse Implementation Maturity Levels
-
-```
-Level 1: Single Delta Table
-  → One table with basic append writes
-  → No deduplication or MERGE
-  → Manual maintenance
-
-Level 2: Bronze + Silver
-  → Two-layer medallion
-  → Deduplication in Silver
-  → Automated nightly jobs
-
-Level 3: Full Medallion (Bronze + Silver + Gold)
-  → Three layers with clear responsibilities
-  → MERGE for upserts
-  → Scheduled OPTIMIZE/VACUUM
-
-Level 4: Multi-Table Lakehouse (Production)
-  → 10+ tables across bronze/silver/gold
-  → Data mesh with domain ownership
-  → Automated governance and SLO monitoring
-  → Real-time streaming + batch
-
-Level 5: Enterprise Lakehouse
-  → Petabyte-scale data
-  → Multi-region/multi-cloud
-  → Advanced features: time travel, governance
-  → Integration with ML platforms
-```
-
-**Production Practice**: Start at Level 2-3, grow to Level 4+ as your platform matures.
+Use current service pricing and measured job metrics for estimates. A table format does not impose a universal dollar-per-TB premium, and a lakehouse is not automatically cheaper than a warehouse.
 
 ## 43. Spark MLlib and Distributed Feature Engineering
 
-### Why MLlib for Big Data?
-
-Spark MLlib is the machine learning library built for distributed systems. Unlike scikit-learn (single-machine) or TensorFlow (specialized for deep learning), MLlib trains on massive datasets across clusters.
-
-**When to use MLlib:**
-- Training on 100GB+ datasets
-- Feature engineering pipelines that need to scale
-- Spark-native ML workflows
-- Batch model training
-- Feature transformation and validation
-
-### Distributed Feature Engineering
-
-Feature engineering is where most ML work happens in production data platforms.
+Use `pyspark.ml` DataFrame pipelines for distributed feature preparation and supported models. Distributed training is not automatically preferable just because data originated in Spark.
 
 ```python
-from pyspark.sql import functions as F
 from pyspark.ml import Pipeline
-from pyspark.ml.feature import (
-    StringIndexer, OneHotEncoder, StandardScaler, VectorAssembler
-)
-
-# Raw data
-df = spark.read.parquet("s3://bucket/bronze/user_events/")
-
-# Feature 1: Numeric scaling
-from pyspark.ml.feature import StandardScaler, VectorAssembler
-
-numeric_cols = ["age", "session_duration", "scroll_depth"]
-assembler = VectorAssembler(inputCols=numeric_cols, outputCol="features_numeric")
-scaler = StandardScaler(inputCol="features_numeric", outputCol="scaled_features")
-
-# Feature 2: Categorical encoding
-categorical_cols = ["device_type", "browser", "region"]
-indexers = [StringIndexer(inputCol=col, outputCol=f"{col}_indexed")
-            for col in categorical_cols]
-encoders = [OneHotEncoder(inputCol=f"{col}_indexed", outputCol=f"{col}_encoded")
-            for col in categorical_cols]
-
-# Feature 3: Time-based features
-features_df = (
-    df.withColumn("event_hour", F.hour("event_ts"))
-      .withColumn("event_day", F.dayofweek("event_ts"))
-      .withColumn("event_date_num", F.unix_timestamp("event_ts"))
-)
-
-# Combine all features
-feature_cols = ["scaled_features"] + [f"{col}_encoded" for col in categorical_cols] + ["event_hour", "event_day"]
-final_assembler = VectorAssembler(inputCols=feature_cols, outputCol="final_features")
-
-# Build pipeline
-pipeline = Pipeline(stages=indexers + encoders + [assembler, scaler, final_assembler])
-model = pipeline.fit(features_df)
-engineered_df = model.transform(features_df)
-```
-
-### Feature Store Integration
-
-A feature store (Feast, Tecton) manages features for production ML. Spark is often the compute engine that populates it.
-
-```python
-from pyspark.sql import functions as F
-
-# Compute features in Spark
-def compute_user_features(transactions_df):
-    """Compute user features from transaction history"""
-
-    return (
-        transactions_df
-        .groupBy("user_id")
-        .agg(
-            F.count("*").alias("total_transactions"),
-            F.sum("amount").alias("total_spend"),
-            F.avg("amount").alias("avg_transaction"),
-            F.max("amount").alias("max_transaction"),
-            F.stddev("amount").alias("stddev_transaction"),
-            F.min("transaction_date").alias("first_transaction_date"),
-            F.max("transaction_date").alias("last_transaction_date"),
-            F.datediff(F.max("transaction_date"), F.min("transaction_date")).alias("customer_lifetime_days")
-        )
-        .withColumn("days_since_last_purchase",
-                   F.datediff(F.current_date(), F.col("last_transaction_date")))
-    )
-
-user_features = compute_user_features(transactions_df)
-
-# Write to feature store (pseudo-code)
-# This would be Feast, Tecton, or custom store
-user_features.write.format("delta").mode("overwrite").save("s3://bucket/feature_store/user_features/")
-```
-
-### Training at Scale
-
-```python
 from pyspark.ml.classification import LogisticRegression
-from pyspark.ml.evaluation import BinaryClassificationEvaluator
+from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
 
-# Prepare training data
-train_df = engineered_df.filter(F.col("training_flag") == 1)
 
-# Train model
-lr = LogisticRegression(
-    featuresCol="final_features",
-    labelCol="target",
-    maxIter=100,
-    regParam=0.01,
-    elasticNetParam=0.8  # L1/L2 mix
-)
-
-model = lr.fit(train_df)
-
-# Evaluate
-predictions = model.transform(test_df)
-evaluator = BinaryClassificationEvaluator(labelCol="target")
-auc = evaluator.evaluate(predictions)
-
-print(f"AUC: {auc}")
+# training and validation have region STRING, amount DOUBLE, label DOUBLE.
+indexer = StringIndexer(inputCol="region", outputCol="region_index", handleInvalid="keep")
+encoder = OneHotEncoder(inputCol="region_index", outputCol="region_vector")
+assembler = VectorAssembler(inputCols=["amount", "region_vector"], outputCol="features")
+classifier = LogisticRegression(featuresCol="features", labelCol="label")
+pipeline = Pipeline(stages=[indexer, encoder, assembler, classifier])
+# fitted = pipeline.fit(training)
+# predictions = fitted.transform(validation)
 ```
 
-### Batch Scoring
+Split before fitting preprocessors to avoid leakage. Fit on training only, reuse the same fitted PipelineModel for validation/scoring, define null/unseen-category behavior, and persist model/version metadata. For event data, use a time-aware split and point-in-time-correct joins so features do not see future information.
 
-```python
-# Load trained model
-model = PipelineModel.load("s3://bucket/models/user_churn_model/v1")
-
-# Score new data
-new_data = spark.read.parquet("s3://bucket/bronze/user_events_today/")
-scores = model.transform(new_data)
-
-# Write predictions for serving
-(
-    scores
-    .select("user_id", "probability", "prediction")
-    .write.mode("overwrite")
-    .format("delta")
-    .save("s3://bucket/gold/user_churn_predictions/")
-)
-```
-
-**Production Practice**: Feature engineering typically takes 80% of ML project time. Invest in making it scalable, testable, and reproducible.
+Feature stores add feature definitions, lineage and online/offline serving contracts; writing a Delta file alone is not a complete feature store. Choose distributed training versus bounded export to another ML stack using working-set size, supported algorithms and serving needs.
 
 ## 44. Data Mesh Architecture for Big Data Platforms
 
-### What Is Data Mesh?
+Data mesh is primarily an ownership and operating model: domains own data products, a self-service platform provides reusable infrastructure, and federated governance sets interoperable standards.
 
-Data mesh is an organizational and technical architecture for decentralized data ownership. Instead of a central data warehouse run by one team, each business domain owns its own data.
+| Pillar | Practical evidence |
+| --- | --- |
+| Domain ownership | Named team responsible for quality, changes and incidents. |
+| Data as a product | Defined schema/grain, consumers, documentation, versioning and SLOs. |
+| Self-service platform | Standard ingestion, CI/CD, catalog, observability and permissions. |
+| Federated governance | Shared identity, contracts, interoperability and enforcement policies. |
 
-```text
-Traditional (Centralized):
-  Applications → Central Data Team → Single Data Warehouse
-
-Data Mesh (Decentralized):
-  Payments Domain → Owns payment data
-    ↓
-  Payments Data Product (curated, documented)
-    ↓
-  Shared by other domains (discovery, contracts, governance)
-
-  Orders Domain → Owns order data
-    ↓
-  Orders Data Product
-    ↓
-  Shared via data marketplace
-```
-
-### Four Pillars of Data Mesh
-
-#### 1. Domain Ownership
-
-Each business domain owns its data end-to-end:
-
-```python
-# Payments Domain owns payment.py
-class PaymentsDomain:
-    """Payments domain - owns all payment data"""
-
-    owner = "Payments Team"
-    domain_id = "payments"
-    slack_channel = "#payments-data"
-
-    # Domain produces data products
-    data_products = [
-        "transactions",
-        "payment_methods",
-        "reconciliation"
-    ]
-
-    # Domain defines SLOs
-    slos = {
-        "transactions": {"freshness_hours": 1, "accuracy": 0.9999},
-        "payment_methods": {"freshness_hours": 1, "completeness": 0.99},
-    }
-```
-
-#### 2. Data as a Product
-
-Each domain treats its output data as a product for internal/external consumption.
-
-```python
-class TransactionDataProduct:
-    """Payments domain's transaction data product"""
-
-    # Product metadata
-    domain = "payments"
-    name = "transactions"
-    version = "1.0"
-    location = "s3://lake/payments/transactions"
-
-    # Schema contract (guaranteed by domain)
-    schema = StructType([
-        StructField("transaction_id", StringType(), False),
-        StructField("user_id", StringType(), False),
-        StructField("amount", DecimalType(10, 2), False),
-        StructField("currency", StringType(), False),
-        StructField("status", StringType(), False),
-        StructField("timestamp", TimestampType(), False),
-    ])
-
-    # SLO/SLA
-    freshness_slo = "data within 1 hour"
-    completeness_slo = "99.9% of transactions included"
-    accuracy_slo = "amount reconciles with ledger 99.99%"
-
-    # Discovery/documentation
-    description = "Real-time transaction records from payment system"
-    contact = "payments-data@company.com"
-
-    # Governance
-    pii_columns = ["user_id"]
-    retention_days = 7
-    sensitivity = "confidential"
-```
-
-#### 3. Self-Service Infrastructure
-
-Central platform provides tools for domains to manage their data:
-
-```text
-Self-Service Platform:
-  → Data ingestion (Kafka, APIs)
-  → Data transformation (Spark jobs)
-  → Data storage (S3 + Delta Lake)
-  → Data catalog (Glue Catalog, Atlas)
-  → Data quality monitoring
-  → Access control (IAM, Lake Formation)
-  → Observability (CloudWatch, DataDog)
-```
-
-#### 4. Governance & Interoperability
-
-Central governance ensures:
-- Data quality standards
-- Security and compliance
-- Discoverability
-- Schema evolution
-
-```python
-# Central governance layer
-class DataMeshGovernance:
-    """Central governance policies for all domains"""
-
-    def validate_data_product(self, product):
-        """Ensure all products meet minimum standards"""
-
-        checks = {
-            "has_schema": product.schema is not None,
-            "has_documentation": len(product.description) > 50,
-            "has_owner": product.owner is not None,
-            "has_slos": "freshness_slo" in product.__dict__,
-            "pii_classified": "pii_columns" in product.__dict__,
-            "retention_defined": product.retention_days is not None,
-        }
-
-        failed = [k for k, v in checks.items() if not v]
-        if failed:
-            raise ValueError(f"Data product missing: {failed}")
-
-        return True
-
-    def enforce_catalog_entry(self, domain, product_name):
-        """Register product in central catalog"""
-        # Creates Glue Table with metadata
-        # Registers in data lineage system
-        # Sets up monitoring and alerts
-        pass
-```
-
-### Implementing Data Mesh on AWS
-
-```text
-Payments Domain → Glue Job (ingestion) → S3 (Bronze)
-                    ↓
-                Glue Job (transform) → S3 (Silver/Delta)
-                    ↓
-                Glue Catalog (register as data product)
-                    ↓
-            [Available in data marketplace]
-                    ↓
-                Orders Domain (discovers) → Glue Query (joins with transactions)
-                    ↓
-                Orders Domain transforms → S3 (Gold) → Dashboard
-```
-
-### Data Product Contract Example
-
-```python
-# Define contract between producer and consumer
-PAYMENT_TRANSACTIONS_CONTRACT = {
-    "producer": "payments",
-    "product_name": "transactions",
-    "version": "1.0",
-    "location": "s3://lake/payments/transactions",
-
-    "schema": {
-        "transaction_id": ("string", False, "Unique transaction ID"),
-        "user_id": ("string", False, "Customer ID"),
-        "amount": ("decimal(10,2)", False, "Transaction amount"),
-        "currency": ("string", False, "ISO 4217 code (USD, EUR, etc)"),
-        "status": ("string", False, "Status enum: PENDING, COMPLETED, FAILED"),
-        "timestamp": ("timestamp", False, "UTC transaction time"),
-        "created_at": ("timestamp", False, "Record creation time"),
-    },
-
-    "partitioning": ["date(timestamp)"],
-    "slos": {
-        "freshness": {"max_latency_hours": 1},
-        "completeness": {"min_percentage": 99.9},
-        "accuracy": {"reconciliation_target": 99.99},
-    },
-
-    "consumers": ["orders", "analytics", "risk"],
-    "owner": "payments-data@company.com",
-    "support_link": "https://wiki/payments-data",
-}
-
-# Consumer validates against contract
-def consume_data_product(contract):
-    df = spark.read.format("delta").load(contract["location"])
-
-    # Validate schema
-    for col, (dtype, nullable, _) in contract["schema"].items():
-        assert col in df.columns, f"Missing column: {col}"
-
-    # Validate SLOs
-    row_count = df.count()
-    if row_count == 0:
-        raise ValueError("No data (SLO violation)")
-
-    return df
-```
-
-**Production Practice**: Start with 2-3 critical domains. Let the pattern grow organically as teams adopt it.
+A medallion lakehouse can be organized per domain, but creating three folders per team does not create a data mesh. Catalog registration alone does not provide ownership, lineage or quality enforcement. For senior interviews, discuss who owns cross-domain definitions, incompatible schema changes, access approvals and incident response.
 
 ## 45. Data APIs and Real-Time Serving
 
-### Why Data APIs?
-
-Data must be served to applications, dashboards, and other systems. APIs provide controlled access without exposing raw data.
+Separate bulk analytics from low-latency serving:
 
 ```text
-Data Lake (raw data)
-  → Transformation (Spark)
-  → Serving Layer (API)
-  → Applications (web, mobile, ML models)
+Spark gold tables → incremental export/materialization → database/search/online store
+                                                API → bounded lookups/cache
+Spark SQL warehouse / Athena / Trino → BI and interactive analytics
 ```
 
-### REST API Pattern
+Starting a Spark scan per Flask request is usually a poor sub-second API design: scheduling, concurrency and driver memory become request-path bottlenecks. A cache may hide repeated queries but does not fix unbounded misses. Select serving storage and indexes for the latency/concurrency/SLA required, then publish consistent versions with refresh lag monitoring.
 
-```python
-from flask import Flask, request, jsonify
-from pyspark.sql import SparkSession
-
-app = Flask(__name__)
-spark = SparkSession.builder.appName("data-api").getOrCreate()
-
-@app.route("/api/v1/user/<user_id>/metrics", methods=["GET"])
-def get_user_metrics(user_id):
-    """Real-time user metrics API"""
-
-    # Query gold table
-    df = spark.read.format("delta").load("s3://lake/gold/user_metrics/")
-
-    metrics = (
-        df.filter(F.col("user_id") == user_id)
-          .select("user_id", "total_spend", "order_count", "customer_lifetime")
-          .limit(1)
-          .collect()
-    )
-
-    if not metrics:
-        return jsonify({"error": "User not found"}), 404
-
-    record = metrics[0]
-    return jsonify({
-        "user_id": record.user_id,
-        "total_spend": float(record.total_spend),
-        "order_count": int(record.order_count),
-        "customer_lifetime_days": int(record.customer_lifetime),
-    })
-
-@app.route("/api/v1/products/search", methods=["GET"])
-def search_products():
-    """Search products by keyword"""
-
-    query = request.args.get("q", "")
-    limit = int(request.args.get("limit", 10))
-
-    df = spark.read.format("delta").load("s3://lake/gold/products/")
-
-    results = (
-        df.filter(F.col("product_name").ilike(f"%{query}%"))
-          .select("product_id", "product_name", "category", "price")
-          .limit(limit)
-          .collect()
-    )
-
-    return jsonify([dict(row) for row in results])
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-```
-
-### Caching for Low-Latency Access
-
-```python
-import redis
-
-# Use Redis for frequently accessed data
-redis_client = redis.Redis(host="redis-server", port=6379)
-
-@app.route("/api/v1/catalog/categories", methods=["GET"])
-def get_categories():
-    """Cached categories endpoint"""
-
-    # Check cache first
-    cached = redis_client.get("categories")
-    if cached:
-        return jsonify(json.loads(cached))
-
-    # Query data lake
-    df = spark.read.format("delta").load("s3://lake/gold/categories/")
-    categories = df.select("category_id", "category_name").collect()
-
-    result = [dict(row) for row in categories]
-
-    # Cache for 1 hour
-    redis_client.setex("categories", 3600, json.dumps(result))
-
-    return jsonify(result)
-```
-
-### Batch Export for BI Tools
-
-```python
-# Export to Athena/Redshift for BI tools
-def export_to_bi_layer():
-    """Export gold tables to Athena for BI consumption"""
-
-    # Read gold layer
-    daily_sales = spark.read.format("delta").load("s3://lake/gold/daily_sales/")
-
-    # Optimize for BI queries (sorted, partitioned)
-    (
-        daily_sales
-        .repartition(10, "date")
-        .write.mode("overwrite")
-        .option("compression", "snappy")
-        .format("parquet")
-        .save("s3://bi-layer/daily_sales/")
-    )
-
-    # Register in Athena
-    spark.sql("""
-        CREATE EXTERNAL TABLE IF NOT EXISTS bi_db.daily_sales
-        STORED AS PARQUET
-        LOCATION 's3://bi-layer/daily_sales/'
-    """)
-```
-
-**Interview Tip**: "I serve data through layered approaches: real-time APIs for critical paths (Redis cached), batch exports for BI tools, and streaming updates for dashboards. I optimize based on SLAs: sub-second for APIs, hourly for batch dashboards."
+For a deliberate batch export, use compatible schema/format/catalog integration and idempotent publication. Registering a path does not create an Athena-specific transaction layer, and reading a Delta path as raw Parquet bypasses its snapshot semantics. Serializing Spark Rows uses `row.asDict()`, not `dict(row)`.
 
 ## 46. Advanced AWS Glue Patterns
 
-### Glue Studio Visual Jobs
+### Runtime compatibility comes before APIs
 
-Glue Studio is the no-code/low-code visual interface for building ETL jobs.
+| Glue runtime | Spark | Python | Java |
+| --- | --- | --- | --- |
+| Glue 4.0 | 3.3.0 | 3.10 | 8 |
+| Glue 5.0 | 3.5.4 | 3.11 | 17 |
 
-```text
-Glue Studio Workflow:
-  1. Drag data source (S3, Kafka, JDBC)
-  2. Apply transforms (join, filter, aggregate visually)
-  3. Map to target (S3, Redshift, Glue Catalog)
-  4. Generate and deploy PySpark code
-```
+These are named runtime examples, not a claim about the newest release. Verify the job's selected version and bundled table-format libraries before deploying. Do not assume local Spark 4 APIs or Delta 4 packages work in Glue 4/5. [Glue runtime matrix](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html)
 
-Example transforms in Studio:
-- **Source**: S3 bucket with CSV files
-- **Select Fields**: Keep only needed columns
-- **Filter**: Remove invalid records
-- **Join**: Join with reference data
-- **Aggregate**: Group and summarize
-- **Target**: Write to S3 as Parquet
+| Worker example | DPU | vCPU | Memory |
+| --- | --- | --- | --- |
+| G.1X | 1 | 4 | 16 GB |
+| G.2X | 2 | 8 | 32 GB |
+| G.4X | 4 | 16 | 64 GB |
 
-### Glue 4.0+ Features
+Other sizes and memory-optimized options depend on availability/runtime. Choose capacity using task memory and throughput, not just input GB. [Worker specifications](https://docs.aws.amazon.com/glue/latest/dg/worker-types.html)
 
-Glue 4.0 brings significant improvements:
+### Glue job lifecycle sketch
 
 ```python
-# Glue 4.0 has Spark 3.3, Python 3.11, better performance
-
+import sys
 from awsglue.context import GlueContext
 from awsglue.job import Job
-from awsglue.dynamicframe import DynamicFrame
-from pyspark.sql import functions as F
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
 
-glueContext = GlueContext(spark)
-job = Job(glueContext)
+
+args = getResolvedOptions(sys.argv, ["JOB_NAME"])
+glue_context = GlueContext(SparkContext.getOrCreate())
+spark = glue_context.spark_session
+job = Job(glue_context)
 job.init(args["JOB_NAME"], args)
-
-# Glue 4.0: Better partition handling
-dyf = glueContext.create_dynamic_frame.from_options(
-    connection_type="s3",
-    connection_options={
-        "paths": ["s3://bucket/data/"],
-        "recurse": True,  # Handle nested partitions
-        "ignorePartitionColumns": False,
-    },
-    format="parquet"
-)
-
-# Glue 4.0: Improved error reporting
-df = dyf.toDF()
-error_info = dyf.errorsAsDynamicFrame()
-
-# Glue 4.0: Better AQE defaults
-spark.conf.set("spark.sql.adaptive.enabled", "true")
-spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
-
-job.commit()
+# Perform input/transformation/output work here; propagate failures.
+job.commit()  # Commits bookmark progress where configured; not arbitrary sink transactions.
 ```
 
-### Custom Connectors
+Configure table-format support using the selected Glue runtime's documented job parameters/JARs/extensions, rather than mixing session builders for multiple formats. Iceberg GlueCatalog uses its catalog implementation and S3 FileIO; `catalog.type=glue` is not a portable substitute. Use documented integration for each format: [Delta on Glue](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-etl-format-delta-lake.html), [Iceberg on Glue](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-etl-format-iceberg.html).
 
-```python
-# Create custom Glue connector for proprietary system
-
-class CustomDatabaseConnector:
-    """Custom connector for internal database"""
-
-    def __init__(self, host, port, username, password):
-        self.host = host
-        self.port = port
-        self.username = username
-        self.password = password
-
-    def read(self, table_name):
-        """Read table and return Spark DataFrame"""
-
-        connection_url = f"jdbc:database://{self.host}:{self.port}/db"
-
-        df = spark.read.format("jdbc").option("url", connection_url) \
-            .option("dbtable", table_name) \
-            .option("user", self.username) \
-            .option("password", self.password) \
-            .load()
-
-        return df
-
-# Use in Glue job
-connector = CustomDatabaseConnector("internal.db", 5432, "user", "pass")
-df = connector.read("customers")
-
-# Transform
-transformed = df.filter(F.col("active") == True)
-
-# Write to S3
-transformed.write.mode("overwrite").parquet("s3://bucket/customers/")
-```
-
-### Glue Catalog Federation
-
-Connect to external Hive/Iceberg catalogs:
-
-```python
-# Register external catalog
-spark.conf.set("spark.sql.catalog.external", "org.apache.iceberg.spark.SparkCatalog")
-spark.conf.set("spark.sql.catalog.external.type", "hive")
-spark.conf.set("spark.sql.catalog.external.uri", "thrift://hive-metastore:9083")
-
-# Query external tables
-result = spark.sql("SELECT * FROM external.database.table")
-```
-
-**Production Practice**: Use Glue Studio for simple jobs, code-based Glue for complex logic with version control.
+Glue Studio can generate code, but production jobs still need version control, tests, observability and retries. JDBC reads need a compatible driver, bounded parallelism and database-load protection; avoid collecting secrets or blindly maximizing connections.
 
 ## 47. Graph Processing and Network Analysis
 
-### GraphFrames Basics
-
-GraphFrames extend Spark DataFrames for graph problems.
+GraphFrames supplies DataFrame-based graph algorithms as an additional dependency; match its Python/JVM artifacts to Spark/Scala. Vertices require a unique id column, edges src/dst, and some algorithms require a configured checkpoint location.
 
 ```python
+# Requires compatible GraphFrames packages/JARs and an initialized SparkSession.
 from graphframes import GraphFrame
-from pyspark.sql import functions as F
 
-# Vertex DataFrame: users
-users = spark.createDataFrame([
-    (1, "Alice"),
-    (2, "Bob"),
-    (3, "Charlie"),
-    (4, "David"),
-], ["id", "name"])
 
-# Edge DataFrame: friendships (social graph)
-edges = spark.createDataFrame([
-    (1, 2),  # Alice → Bob
-    (1, 3),  # Alice → Charlie
-    (2, 3),  # Bob → Charlie
-    (3, 4),  # Charlie → David
-    (4, 2),  # David → Bob
-], ["src", "dst"])
-
-# Create graph
-g = GraphFrame(users, edges)
-
-# Graph queries
-# 1. Degree distribution
-g.degrees.show()  # In/out degree per vertex
-
-# 2. Find all paths of length 2
-paths = g.find("(a)-[e1]->(b); (b)-[e2]->(c)").show()
-
-# 3. Connected components (find communities)
-result = g.connectedComponents()
-result.show()
-
-# 4. PageRank (importance scores)
-ranks = g.pageRank(resetProbability=0.15, maxIter=10)
-ranks.vertices.select("id", "name", "pagerank").show()
-
-# 5. Shortest path
-from graphframes.lib import AggregateMessages as AM
-shortest_paths = g.shortestPaths(landmarks=[1, 4])
-shortest_paths.select("id", "distances").show()
+vertices = spark.createDataFrame([(1,), (2,), (3,)], "id long")
+edges = spark.createDataFrame([(1, 2), (2, 3)], "src long, dst long")
+graph = GraphFrame(vertices, edges)
+graph.degrees.show()  # Total degree; use inDegrees/outDegrees when direction matters.
 ```
 
-### Real-World: Fraud Detection Graph
+Connected components find connectivity, not necessarily communities or fraud rings. For component membership, join returned vertex IDs/component labels to your entities; a component label is not a list for isin(). Directed shortestPaths to landmarks and PageRank have different meanings; explain the algorithm before choosing it.
 
-```python
-# Build transaction graph for fraud detection
-customers = spark.read.parquet("s3://lake/customers/")
-transactions = spark.read.parquet("s3://lake/transactions/")
-
-# Vertices: customers
-vertices = customers.select("customer_id", "name").withColumnRenamed("customer_id", "id")
-
-# Edges: transactions (customer → customer transfers)
-edges = (
-    transactions
-    .select(
-        F.col("sender_id").alias("src"),
-        F.col("receiver_id").alias("dst"),
-        "amount",
-        "timestamp"
-    )
-    .filter(F.col("amount") > 1000)  # High-value transfers
-)
-
-# Create transaction graph
-tx_graph = GraphFrame(vertices, edges)
-
-# Find highly connected suspicious clusters
-suspicious_clusters = (
-    tx_graph.connectedComponents()
-    .groupBy("component")
-    .agg(F.count("*").alias("size"))
-    .filter(F.col("size") > 10)  # Clusters with 10+ members
-)
-
-# Identify potential fraud rings
-fraud_risk = suspicious_clusters.join(
-    vertices, vertices.id.isin(suspicious_clusters.component)
-)
-```
-
-### Network Analysis Use Cases
-
-| Problem | Solution |
-|---|---|
-| **Community detection** | Connected components, clustering |
-| **Influence ranking** | PageRank, betweenness centrality |
-| **Anomaly detection** | Unusual edge patterns, new connections |
-| **Path analysis** | Shortest path, all paths queries |
-| **Bottleneck detection** | Degree distribution, clustering coefficient |
-
-**Production Practice**: Graph problems at scale require careful partitioning strategy. Use edge partitioning for sparse graphs.
+In interviews, discuss edge/vertex cardinality, high-degree skew, iterations, checkpointing and whether a graph database or specialized engine better fits online traversal. Treat fraud signals as candidates requiring validation, not proof.
 
 ## 48. Production Debugging and Deep Optimization
 
-### Event Log Analysis
+### 1. Capture evidence before restarting
 
-Spark saves detailed event logs. Parse them to diagnose issues:
+Record the application/job-run ID, action/query, start time, input range/size/file count, code/config versions and last successful run. Save the first useful exception plus driver/executor/container logs. Compare input, completed tasks and streaming progress over time; a busy notebook cell is not proof that Spark is frozen.
 
-```python
-import json
-from pyspark.sql import functions as F
-
-# Read Spark event log
-event_log_path = "/path/to/spark-events/"
-
-events = (
-    spark.read.text(event_log_path)
-    .select(F.from_json(F.col("value"), "map<string,string>").alias("event"))
-    .select("event.*")
-)
-
-# Analyze task metrics
-task_metrics = (
-    events
-    .filter(F.col("Event") == "SparkListenerTaskEnd")
-    .select(
-        F.col("Stage ID"),
-        F.col("Task Type"),
-        F.col("Task Metrics.executorRunTime"),
-        F.col("Task Metrics.peakExecutionMemory"),
-        F.col("Task Metrics.diskBytesSpilled")
-    )
-)
-
-# Find slow tasks
-slow_tasks = (
-    task_metrics
-    .withColumn("duration_secs", F.col("executorRunTime") / 1000)
-    .filter(F.col("duration_secs") > 60)
-    .orderBy(F.desc("duration_secs"))
-)
-
-slow_tasks.show()
-```
-
-### Memory Spill Diagnosis
+For a healthy **classic Spark** driver, this snapshot reads scheduler state without triggering a new data scan:
 
 ```python
-# Detect memory pressure
-def diagnose_memory_spill(df, stage_name):
-    """Analyze memory usage and spill patterns"""
-
-    df.explain("formatted")  # Shows estimated stats
-
-    # Add metrics tracking
-    df_with_metrics = (
-        df.withColumn("execution_plan", F.col("execution_plan"))
-    )
-
-    # Monitor during execution
-    result = df.collect()
-
-    print(f"Rows processed: {df.count()}")
-    print(f"Partitions: {df.rdd.getNumPartitions()}")
-
-    # Check for spill indicators
-    # - Very slow execution
-    # - GC warnings in logs
-    # - Task failures with "shuffle fetch failure"
-
-    return result
-
-# Prevention
-def prevent_spill(df, operation_name):
-    """Optimize to avoid spill"""
-
-    # Strategy 1: Increase shuffle partitions
-    spark.conf.set("spark.sql.shuffle.partitions", "1000")
-
-    # Strategy 2: Reduce per-task memory
-    df_reduced = df.select(  # Select only needed columns
-        F.col("a"), F.col("b"), F.col("c")
-    )
-
-    # Strategy 3: Sample and scale down
-    sample = df.sample(0.1)  # Test with 10% first
-    sample.groupBy(...).count().show()
-
-    return df_reduced
+sc = spark.sparkContext
+tracker = sc.statusTracker()
+print("application:", sc.applicationId)
+print("UI:", sc.uiWebUrl)  # May be None when UI is disabled.
+print("active jobs:", tracker.getActiveJobsIds())
+print("active stages:", tracker.getActiveStageIds())
 ```
 
-### Executor Loss Debugging
+The snapshot is best-effort and can change immediately. Spark Connect/managed notebooks may expose different controls. If the driver is unreachable, use the cluster/service console and retained logs instead of adding another count/collect action.
 
-```python
-# Detect executor failures
-def check_executor_health():
-    """Monitor executor stability"""
+### 2. Locate the phase: slow vs blocked vs waiting
 
-    # Read Spark event logs
-    events = spark.read.text("/path/to/events/").collect()
+| Evidence | Investigate | Candidate fix |
+| --- | --- | --- |
+| No app ID, or failure before first Spark job | Launcher logs, Python/Java/Spark/JAR versions, credentials/DNS and source/catalog discovery | Fix launch/config/connectivity; adding executors cannot fix an incompatible runtime. |
+| App exists; pending tasks, no usable executors | Queue/quota/capacity, executor startup failures, resource requests and autoscaling limits | Resolve allocation/startup; distinguish queued work from a hung task. |
+| No active stage while driver is busy | File listing, schema inference, large plan construction, Python loops or driver-side calls | Narrow paths/schema, reduce plan growth; inspect the driver's thread stack when authorized. Lazy transformations alone may submit no work. |
+| One/few tasks dominate | Max vs median bytes/time, hot keys, spill, task host, Python/UDF stack | Correct skew/cardinality, split oversized work, or fix blocked code. Extra workers alone do not split a hot key. |
+| All tasks progress, but slowly | Total scan/shuffle bytes, CPU, disk spill/GC and join output size | Reduce actual work, fix join explosion/layout, size task working sets; measure output equivalence. |
+| Active tasks stop making progress | JVM/Python stacks, external JDBC/API/S3 waits, retries and GC | Fix the specific dependency/code; set bounded connector/client timeouts, not arbitrary Spark-wide timeout increases. |
+| Tasks finish but write has not returned | Driver/connector commit logs, catalog/table locks/conflicts, uploads and external sink status | Diagnose finalization; verify committed target state before retrying. Do not race another writer against it. |
+| Stream is RUNNING with no new output | Source lag, input/processed rates, trigger duration, last progress, watermark/state and sink | Idle input or unfinalized windows can be normal. Growing lag with stalled batches points to processing/sink pressure. |
 
-    executor_fails = []
-    for event in events:
-        data = json.loads(event)
-        if data.get("Event") == "SparkListenerExecutorMetricsUpdate":
-            executor_fails.append({
-                "executor_id": data.get("Executor ID"),
-                "memory_used": data.get("Peak Executor Memory"),
-            })
+A stream's runtime is not a batch completion deadline. For micro-batches, compare source lag and processed throughput with the required freshness; do not restart simply because an awaitTermination call keeps waiting.
 
-    # Diagnose common causes
-    causes = {
-        "OOM": "Peak memory exceeds allocated",
-        "Spot termination": "Frequent failures at same time",
-        "Network": "Shuffle fetch failures increasing",
-        "Disk": "I/O errors in task logs",
-    }
+### 3. If it crashed, find which process failed
 
-    return causes
-```
+| Failure / symptom | Evidence and correction |
+| --- | --- |
+| Driver OOM or vanished driver | Remove unbounded collect/toPandas, huge local objects/plans/metadata; size the driver separately from executors. A final Py4J connection error alone does not prove OOM. |
+| Executor/container killed | Check the platform termination reason and memory metrics. Exit 137 means SIGKILL, not automatically OOM. Distinguish JVM heap from Python/native/off-heap/container overhead; reduce per-task pressure or choose appropriate capacity. |
+| Python worker exits or hangs | Inspect Python traceback/stderr, package/ABI/Python versions, UDF input size and external calls. Reproduce with the offending partition/key, then prefer built-ins or bounded logic. |
+| FetchFailed / repeated executor loss | Trace lost shuffle data to OOM, disk, network or preemption. Fix the underlying loss; increasing retries can mask the cause and prolong failure. |
+| AnalysisException / NoSuchMethodError / missing module | Fix schema/column/API or package/JAR compatibility. Repeating the same invalid plan will not recover it. |
+| One partition repeatedly fails | Isolate a bounded input/key range and check malformed values, deterministic exceptions, large records or skew; keep a regression case. |
+
+Speculation may help certain stragglers, but it is not a general fix for data skew or deterministic failures, and duplicate task attempts can repeat external side effects. Spill is sometimes normal; use its size and impact, not its mere presence, to diagnose memory pressure.
+
+### 4. Cancel and recover without duplicating work
+
+1. Preserve diagnostics and identify concurrent writers/runs. If work must stop, cancel the specific job/query through its owning interface.
+2. In classic Spark, a job group assigned before the action can be cancelled with `sc.cancelJobGroup(group_id)` from another driver control path. This is best-effort cancellation, not a guaranteed kill of every external call or an undo of writes. For streaming, stop the query with its query control; stopping SparkSession affects the whole application.
+3. Check target commit history/output manifests and source progress. Some writes may have committed before the driver failed; a timeout does not prove that nothing was written.
+4. Retry a bounded source range using the target's replay-safe merge/replace policy. Repeated plain append can duplicate data. Do not delete a stream checkpoint, transactional metadata, or shared output merely to make a retry start.
+5. Confirm keys/multiplicities, business totals, rejected rows, freshness/lag and progress state; then add the failure case to tests/alerts.
+
+**Example:** A stage has 199 completed tasks and one task with 30× the median input. Investigate the hot key and join multiplicity first. If instead no executors were allocated, fix capacity/launch. If a JDBC write committed before the driver died, reconcile that commit before replaying it. The same “job took too long” symptom leads to different fixes.
+
+### 5. Make the next incident easier to diagnose
+
+Enable retained event logs before startup so History Server or the platform's Spark UI can reconstruct completed/failed runs. Logs need an existing, writable, supported location; driver text logs and Spark event logs serve different purposes. On Glue, configure Spark UI/event-log storage and retain the job-run/CloudWatch identifiers. Event-log parsing varies by Spark version; an executor metrics update is not an executor failure event.
+
+Log phase boundaries and correlated run/app/query IDs. Monitor task skew, retries, spill/GC, executor loss, source lag and commit duration. Keep dependency timeouts and bounded orchestration retries aligned with the SLA; avoid launching overlapping retries before earlier attempts stop.
+
+References: [Spark monitoring and history](https://spark.apache.org/docs/3.5.7/monitoring.html), [Spark cancellation](https://spark.apache.org/docs/3.5.7/api/python/reference/api/pyspark.SparkContext.cancelJobGroup.html), [Glue Spark UI/history](https://docs.aws.amazon.com/glue/latest/dg/monitor-spark-ui-history.html), [Glue capacity diagnosis](https://docs.aws.amazon.com/glue/latest/dg/monitor-debug-capacity.html).
 
 ## 49. Common Big Data Architecture Patterns
 
-### Lambda Architecture (Batch + Speed Layer)
+| Pattern | Structure | Key trade-off |
+| --- | --- | --- |
+| Lambda architecture | Separate batch and speed processing feeding serving views | Two implementations must reconcile consistently; naïve union can double-count overlap. |
+| Kappa architecture | Durable event log with stream processing and replay | Replay cost, retention and historical corrections must fit the design. |
+| Medallion lakehouse | Bronze/silver/gold on lake/table storage | Layer contracts, versioned publication and reprocessing; not inherently real-time. |
+| Data mesh | Domain-owned products on a shared platform | Ownership/governance/interoperability, not a replacement storage format. |
 
-```text
-Data Source
-  ↙         ↘
-Batch      Speed
-Layer      Layer
-  ↘         ↙
-  Serving Layer
-    ↓
-  Clients
-```
-
-```python
-# Batch layer: daily aggregations
-def batch_layer():
-    """Process historical data in batch"""
-    df = spark.read.parquet("s3://lake/transactions/")
-    daily_metrics = df.groupBy("date").agg(F.sum("amount"))
-    daily_metrics.write.mode("overwrite").parquet("s3://batch_results/")
-
-# Speed layer: real-time stream
-def speed_layer():
-    """Process real-time events"""
-    df = spark.readStream.kafka("...", topics="events")
-    hourly_metrics = (
-        df.groupBy(F.window("timestamp", "1 hour"))
-        .agg(F.sum("amount"))
-    )
-    hourly_metrics.writeStream.start()
-
-# Serving layer: merge results
-def serving_layer():
-    """Merge batch and real-time results"""
-    batch = spark.read.parquet("s3://batch_results/latest/")
-    speed = spark.read.delta("s3://speed_results/")
-    result = batch.union(speed).coalesce(1)
-    result.write.mode("overwrite").parquet("s3://serving/")
-```
-
-### Kappa Architecture (Stream Only)
-
-```text
-Data Source
-  ↓
-Event Stream (Kafka)
-  ↓
-Stream Processing (Spark Streaming)
-  ↓
-Materialized View (Delta Lake)
-  ↓
-Serving
-```
-
-All processing through streaming:
-
-```python
-def kappa_pipeline():
-    """Kappa: everything through stream"""
-
-    df = spark.readStream.kafka("events_topic")
-
-    # Deduplication via state
-    deduped = (
-        df.withWatermark("timestamp", "24 hours")
-        .groupBy("event_id")
-        .agg(F.first("payload"))
-    )
-
-    # Aggregation
-    metrics = (
-        deduped
-        .groupBy(F.window("timestamp", "1 hour"))
-        .agg(F.count("*").alias("events"))
-    )
-
-    # Materialized view
-    query = (
-        metrics.writeStream
-        .format("delta")
-        .option("checkpointLocation", "ckpt/")
-        .start()
-    )
-
-    return query
-```
-
-### Lakehouse with Medallion + Data Mesh
-
-```text
-Medallion Layers:
-  Bronze (raw)
-    ↓ (per domain)
-  Silver (cleaned)
-    ↓ (per domain)
-  Gold (business-ready)
-
-Data Mesh:
-  Payments Domain
-    - Bronze → Silver → Gold
-    - Produces: transactions, payment_methods
-
-  Orders Domain
-    - Bronze → Silver → Gold
-    - Produces: orders, order_items
-
-  Central Platform
-    - Catalog (Glue)
-    - Governance (Lake Formation)
-    - Observability (CloudWatch)
-```
+Choose from freshness, correction/replay needs, source retention, query engines and team operations. None requires coalesce(1), unconditional append, or an unbounded stream-stream join. Avoid “one architecture always wins” answers.
 
 ## 50. Handling Scale, Skew, and Performance Challenges
 
-### Extreme Scale (Petabyte Range)
+### Salting an aggregation correctly
+
+For a hot key, a two-stage aggregation can spread partial sums. Keep salt bucket count bounded and remove the salt in the final grouping.
 
 ```python
-# At petabyte scale, every optimization matters
-
-# 1. Partition aggressively
-df.repartition(10000, "date", "region")  # 10K partitions for massive data
-
-# 2. Use statistics for planning
-spark.sql("ANALYZE TABLE big_table COMPUTE STATISTICS")
-
-# 3. Predicate pushdown is critical
-df_filtered = df.filter(F.col("date") == "2026-07-01")  # Filter early
-
-# 4. Compact files
-df_filtered.coalesce(1000).write.parquet("s3://bucket/data/")
+# Assumes transactions has customer_id STRING and amount numeric.
+salted = transactions.withColumn("_salt", F.floor(F.rand(seed=7) * 8).cast("int"))
+partial = salted.groupBy("customer_id", "_salt").agg(F.sum("amount").alias("partial_sum"))
+totals = partial.groupBy("customer_id").agg(F.sum("partial_sum").alias("total"))
 ```
 
-### Handling Extreme Skew
+A seeded random expression is not a durable row identity across repartitioning/retries; use a stable hash of a source record ID if repeatable assignment is needed. For exact money sums, use suitable decimal precision. Floating-point regrouping can change rounding. For averages, combine partial sum AND count, not an average of averages.
 
-```python
-# Problem: One customer has 99% of transactions
+For joins, replicate the small hot-key side across salts and assign each corresponding large-side row one salt; implement null and outer-join semantics deliberately. Repartitioning on customer_id alone leaves the hot key intact. Identify heavy-hitter DataFrames through semi/anti joins, not `col.isin(other_dataframe)`.
 
-# Solution 1: Salting
-skewed_df = (
-    df.withColumn("salt", F.concat(
-        F.col("customer_id"),
-        F.lit("_"),
-        F.rand() * 100  # Spread across 100 buckets
-    ))
-    .groupBy("salt")
-    .agg(...)
-)
+### Scale and lineage
 
-# Solution 2: Heavy-hitter isolation
-heavy_hitters = df.groupBy("customer_id").count() \
-    .filter(F.col("count") > df.count() * 0.01)  # Top 1%
+File count, metadata overhead, skew and shuffle bytes matter as much as total TB. There is no correct universal choice of 10,000 runtime partitions. Choose from per-task working set and available cores, then measure.
 
-heavy_data = df.filter(F.col("customer_id").isin(heavy_hitters))
-normal_data = df.filter(~F.col("customer_id").isin(heavy_hitters))
-
-# Process separately, union results
-results = (
-    heavy_data.groupBy("customer_id").agg(...).union(
-        normal_data.groupBy("customer_id").agg(...)
-    )
-)
-```
-
-### Managing Long Lineage
-
-```python
-# Problem: 100+ transformations create expensive lineage
-
-# Solution: Checkpoint at boundaries
-def checkpoint_intermediate():
-    """Break lineage at safe points"""
-
-    df = spark.read.parquet("s3://input/")
-
-    # Complex transformation 1 (50 steps)
-    df1 = expensive_transform_1(df)
-    df1.write.mode("overwrite").format("delta").save("s3://temp/stage1/")
-
-    # Read back (breaks lineage)
-    df1 = spark.read.format("delta").load("s3://temp/stage1/")
-
-    # Complex transformation 2 (50 steps)
-    df2 = expensive_transform_2(df1)
-    df2.write.mode("overwrite").format("delta").save("s3://output/")
-```
+Use durable materialization/checkpoints at stable boundaries when plans are costly or recovery needs justify it. Cache does not cut lineage; localCheckpoint trades durability for convenience. Replaying a long plan needs its source data retained, and materialized intermediate outputs need their own lifecycle/commit policy.
 
 ## 51. Modern Big Data Stack Integration
 
-### Airflow Orchestration with Spark
+### Orchestration, deployment and ownership
 
-```python
-from airflow import DAG
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from airflow.providers.amazon.aws.operators.glue import AwsGlueJobOperator
-from datetime import datetime, timedelta
+| Concern | Practical contract |
+| --- | --- |
+| Airflow/Step Functions/Glue workflows | Define job dependencies, run IDs, retries, timeouts, late data and backfill behavior. |
+| Job idempotency | Retrying an orchestration task must not duplicate a committed batch. |
+| Infrastructure as code | Pin provider/library versions; provision roles, storage, catalogs, connections, job args and observability. |
+| Catalog registration | Use the provider's supported catalog and format, not an arbitrary internal Spark class. |
+| Lineage | Track source/target versions and transformation/job version; a table property alone is not end-to-end lineage. |
+| Permissions | Enforce through the actual catalog/storage engine; generic Spark SQL GRANT is not portable across platforms. |
 
-default_args = {
-    "owner": "data_team",
-    "retries": 2,
-    "retry_delay": timedelta(minutes=5),
-}
+A local SparkSubmitOperator is not automatically a submission to an EMR cluster; choose the correct deployment integration. Airflow provider names and AWS CDK constructs change across versions, so use their matching official examples rather than an unversioned infrastructure snippet in an interview guide.
 
-with DAG(
-    "data_pipeline",
-    default_args=default_args,
-    schedule_interval="0 2 * * *",  # Daily at 2 AM
-    start_date=datetime(2026, 1, 1),
-) as dag:
+**Senior follow-up:** Explain who owns replay/cutover, when a job counts as successful, what happens after a partial multi-table write, and how you roll back a schema/logic deployment without losing later valid data.
 
-    # Task 1: Ingest with Glue
-    ingest = AwsGlueJobOperator(
-        task_id="ingest_data",
-        job_name="data-ingestion-job",
-    )
+## 52. Lakehouse Implementation & Operations Guide
 
-    # Task 2: Transform with Spark on EMR
-    transform = SparkSubmitOperator(
-        task_id="transform_data",
-        application="s3://bucket/jobs/transform.py",
-        conf={"spark.executor.instances": "10"},
-        total_executor_cores=40,
-    )
+### Migrate without claiming “zero downtime” from a copy
 
-    # Task 3: Validate quality
-    validate = AwsGlueJobOperator(
-        task_id="validate_quality",
-        job_name="data-quality-validation",
-    )
+1. Inventory readers/writers, record grain, schema and access paths; choose a compatible format/catalog.
+2. Capture a consistent baseline and source progress boundary. Pause writes or capture changes while copying.
+3. Write to a separate target and validate schema, keys, row multiplicities, business totals and rejected rows.
+4. Apply changes since the baseline, including deletes, using deterministic ordering and replay-safe writes.
+5. Coordinate writer/reader cutover, monitor lag/correctness and keep a documented rollback route.
+6. Retire old paths only after consumers, retention and recovery requirements are satisfied.
 
-    ingest >> transform >> validate
-```
+Equal row counts do not prove equality. Dual writes are not atomic: one can succeed and the other fail. Define reconciliation and authoritative state rather than calling two writes “high availability.” Some formats provide supported metadata conversion/import; verify its constraints instead of relabeling a Parquet directory.
 
-### Infrastructure as Code (CDK)
+### Maintenance is format-specific
 
-```python
-from aws_cdk import (
-    aws_glue as glue,
-    aws_s3 as s3,
-    aws_iam as iam,
-    core,
-)
+| Goal | Delta example | Equivalent concern elsewhere |
+| --- | --- | --- |
+| Compact small active files | OPTIMIZE / supported optimize API | Iceberg rewrite_data_files; Hudi clustering/compaction depending on table type. |
+| Remove old unreferenced data | VACUUM | Iceberg snapshot expiration/orphan cleanup; Hudi cleaner. |
+| Inspect table/file metrics | DESCRIBE DETAIL/history on supported runtime | Snapshot/manifests/timeline and engine metrics. |
+| Evolve schema | Explicit approved schema change or controlled mergeSchema | Format/engine-specific evolution; check consumers. |
 
-class DataPipelineStack(core.Stack):
-    def __init__(self, scope: core.Construct, id: str, **kwargs):
-        super().__init__(scope, id, **kwargs)
+Compaction is not VACUUM. Spark input partition count is not table file count. Optimizer statistics, table history and row-level data are different metadata; there is no generic `table.delta_log` SQL table with all metrics.
 
-        # S3 bucket for data lake
-        data_bucket = s3.Bucket(self, "DataLake",
-            versioned=True,
-            encryption=s3.BucketEncryption.KMS,
-        )
+Keep retention long enough for readers, streams, replay and rollback. Choose maintenance from observed file distribution/write rate, not a universal weekly/monthly schedule. Schema auto-merge should not silently approve every producer change, and renaming a DataFrame column alone does not rename an existing table column safely.
 
-        # IAM role for Glue
-        glue_role = iam.Role(self, "GlueRole",
-            assumed_by=iam.ServicePrincipal("glue.amazonaws.com"),
-        )
-        data_bucket.grant_read_write(glue_role)
+For MERGE OOM, first inspect source duplicates, target scan scope, skew and task working set. If bounded batches are necessary, partition deterministically by source range/key and record progress. Repeating `limit(n).collect()` inside a loop does not implement pagination and can merge the same rows repeatedly.
 
-        # Glue job
-        glue_job = glue.Job(self, "ETLJob",
-            executable=glue.JobExecutable.python_etl(
-                glue_version=glue.GlueVersion.V4_0,
-                python_version=glue.PythonVersion.THREE_11,
-                script=glue.Code.from_asset("jobs/etl.py"),
-            ),
-            role=glue_role,
-            worker_type=glue.WorkerType.G_2X,
-            number_of_workers=10,
-        )
-```
-
-### Data Catalog Management
-
-```python
-# Unified metadata management
-def register_data_product():
-    """Register new data product in catalog"""
-
-    # 1. Create table
-    spark.sql("""
-        CREATE TABLE IF NOT EXISTS glue_catalog.analytics.daily_revenue
-        USING DELTA
-        LOCATION 's3://lake/gold/daily_revenue/'
-        TBLPROPERTIES (
-            'classification' = 'business_metrics',
-            'owner' = 'finance_team',
-            'description' = 'Daily revenue aggregates',
-            'slo_freshness_hours' = '1',
-            'slo_accuracy' = '99.99'
-        )
-    """)
-
-    # 2. Set column-level metadata
-    spark.sql("""
-        ALTER TABLE glue_catalog.analytics.daily_revenue
-        SET TBLPROPERTIES (
-            'columns.revenue.description' = 'Total daily revenue in USD',
-            'columns.date.description' = 'Business date (UTC)',
-            'columns.region.pii_type' = 'none'
-        )
-    """)
-
-    # 3. Set access control
-    spark.sql("""
-        GRANT SELECT ON TABLE glue_catalog.analytics.daily_revenue
-        TO ROLE analysts_group
-    """)
-```
-
-**Interview Tip**: "Modern big data stacks combine multiple tools: Airflow for orchestration, Spark for transformation, Delta/Iceberg for storage, AWS Glue for managed service, and unified catalogs for governance. The key is orchestrating them cohesively."
-
----
+**Readiness checks:** compatible reader/writer protocols; deterministic keys/order; retry/backfill tests; concurrent-write tests; quality/freshness signals; least-privilege access; physical retention plan; measured performance/cost; clear ownership. Maturity is demonstrated by these controls, not by table count, number of medallion layers, or petabytes stored.
 
 ## Further Learning Resources
 
-### If Interested in Topics Beyond This Guide:
+- [Spark SQL reference and examples](https://spark.apache.org/docs/3.5.7/sql-programming-guide.html)
+- [Spark SQL performance tuning](https://spark.apache.org/docs/3.5.7/sql-performance-tuning.html)
+- [Structured Streaming guide](https://spark.apache.org/docs/3.5.7/structured-streaming-programming-guide.html)
+- [Delta Lake documentation](https://docs.delta.io/)
+- [Apache Iceberg Spark documentation](https://iceberg.apache.org/docs/latest/spark-writes/)
+- [Apache Hudi documentation](https://hudi.apache.org/docs/overview/)
+- [AWS Glue runtime versions](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html)
 
-- **Deep Learning & AI**: See companion guide "ML Engineering at Scale"
-- **Vector Databases**: See "Vector Search and RAG Systems"
-- **dbt & Modern Stack**: See "Modern Data Stack Engineering"
-- **Graph Databases**: See "Knowledge Graphs and Neo4j"
-- **Streaming Orchestration**: Apache Airflow, Prefect, Dagster documentation
-- **Advanced Kubernetes**: Operator patterns, Spark on K8s
-- **Advanced Observability**: DataDog, New Relic, OpenTelemetry
-
----
-
-## Final Thoughts
-
-This guide covers **90%+ of what you need to know** to be a successful big data engineer in 2026. Master the fundamentals, practice the patterns, and understand the trade-offs. The rest comes from experience building real systems.
+Use documentation for the version you run. Practice locally with small deterministic data, then explain which conclusions still need distributed/cloud validation.
