@@ -33,6 +33,12 @@ For Glue-oriented learning, use versions that stay close to AWS Glue 5.x.
 
 AWS Glue version 5.0 supports Spark 3.5.4 and Python 3.11. AWS announced Glue 5.1 with Spark 3.5.6 and Python 3.11. For local learning, either `pyspark==3.5.4` or `pyspark==3.5.6` is a good choice.
 
+Why Python 3.11:
+
+- Glue 5.x runs Python 3.11, so local scripts run on the same Python version as Glue jobs.
+- Python 3.11 is the version this guide's PySpark 3.5.x commands were written and checked against.
+- Python 3.12 or later may work locally, but it is not tested in this guide, and it would not match Glue. Use it only if you accept that difference.
+
 References:
 
 - AWS Glue release notes: https://docs.aws.amazon.com/glue/latest/dg/release-notes.html
