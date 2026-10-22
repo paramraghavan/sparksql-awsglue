@@ -12,6 +12,8 @@ data as though it were on a single node, but under the hood, the data processing
 cluster. The most interesting thing for me is it allows me to use sql with columnnar storage - parquet, with csv, etc..
 and allows me to harness the power of hadoop without going into the details of hadoop/map-reduce.
 
+> **New to Spark?** Start with the [Spark Quickstart for SQL and Python users](help/quick101-spark/spark_quickstart/README.md). It covers local setup on Mac and Windows, PySpark examples written as SQL-style operations, and the Spark UI.
+
 # Apache Spark ?
 
 [Apache Spark](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark.html) has two main components - single
