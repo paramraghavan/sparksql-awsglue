@@ -779,7 +779,7 @@ Common fixes:
 
 - Select fewer columns early.
 - Filter early.
-- Repartition before large joins or aggregations.
+- Choose shuffle partition counts for large joins or aggregations; avoid redundant repartition shuffles.
 - Avoid skewed keys where one key has huge data.
 - Avoid `collect()` and `toPandas()` on large DataFrames.
 - Increase executor memory for real clusters.
@@ -810,8 +810,10 @@ or join by `customer_id`:
 orders.join(customers, "customer_id")
 ```
 
-Spark may send all rows for the same key to one shuffle partition. One task may get almost all rows for
-`customer_id = BIG`.
+A shuffle join normally sends rows with the same key to one shuffle partition, unless an optimization such as AQE
+skew-join splitting applies. Aggregations such as `count()` usually compute partial counts before the shuffle, so the
+final task receives partial counts rather than all original rows. A frequent key alone does not make every aggregation
+slow; operations that retain large groups, such as `collect_list`, are more vulnerable.
 
 Mental picture:
 
@@ -834,7 +836,9 @@ Useful repartitioning:
 df = df.repartition(200, "customer_id")
 ```
 
-This can help before joins or aggregations because Spark has more shuffle partitions.
+An explicit count can help when the existing shuffle has too few partitions. Spark normally inserts the required
+key-based shuffle for a join or aggregation itself, so inspect the plan before adding another one. The value `200` is
+illustrative; choose counts from data volume, task sizes, and available cores.
 
 But repartitioning by the skewed key alone may not solve one giant key:
 
@@ -853,7 +857,7 @@ df = df.repartition(200, F.rand())
 Random repartitioning can rebalance uneven physical partitions. Use it when the data is physically lopsided, not when
 one logical key is huge.
 
-Example: suppose Spark reads 10 files, but one file is much larger than the others:
+Example: suppose the DataFrame currently has four uneven execution partitions (sizes are illustrative):
 
 ```text
 Input partition 1:   50 MB
@@ -862,187 +866,389 @@ Input partition 3:   60 MB
 Input partition 4: 5000 MB
 ```
 
-If the next step is a row-level transformation or a write, random repartitioning can spread that large physical partition
-across many tasks:
+These are Spark execution partitions, not necessarily four files. Spark can split a large Parquet file into multiple
+scan partitions and combine small files into one scan partition. Check actual task input sizes before rebalancing.
+
+If the next step is an expensive row-level transformation or a write, random repartitioning can spread rows from that
+large physical partition across many downstream tasks:
 
 ```python
 balanced = df.repartition(200, F.rand())
 balanced.write.mode("overwrite").parquet(output_path)
 ```
 
-But if the next step is a join or aggregation by `customer_id`, Spark will shuffle by `customer_id` again. All rows for
-`customer_id=BIG` can still end up together. In that case, random repartitioning is only a temporary rebalance; salting,
-heavy-key isolation, AQE skew handling, or broadcast joins are better fixes.
+Plain `df.repartition(200)` also redistributes rows without grouping by a business key and is usually the simpler
+choice. `F.rand()` supplies a random hash-partitioning expression. Neither guarantees equal bytes or equal processing
+time per task, and both cost a full shuffle. Repartitioning helps downstream work; it cannot parallelize the scan task
+that must first read and emit those rows.
 
-For a truly skewed key, choose a fix based on the situation:
+A subsequent shuffle join or aggregation by `customer_id` needs distribution by that key again. Rows (or partial
+aggregation states) for `customer_id=BIG` can still converge on one partition. A broadcast join can avoid that keyed
+shuffle. Random repartitioning alone is therefore only a temporary rebalance for a later keyed shuffle.
 
-1. Handle the giant key separately.
+Choose a fix for the actual operation: salting, heavy-key isolation, and AQE skew-join handling address different cases.
 
-   First split the heavy key from the normal keys:
+See the [PySpark repartition API](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.repartition.html)
+for the column-based hash partitioning behavior.
 
-   ```python
-   orders_big = orders.where("customer_id = 'BIG'")
-   orders_normal = orders.where("customer_id <> 'BIG'")
-   ```
+### 12.3 Heavy-Key Isolation: Give Exceptional Keys A Separate Path
 
-   Then process each side with the best strategy:
+Heavy-key isolation means separating known expensive keys, choosing a strategy for each branch, then combining the
+results. It does not split a key automatically: running the same shuffle join on both branches leaves the heavy branch
+skewed.
 
-   - `orders_normal`: regular join is usually fine.
-   - `orders_big`: use salting or broadcast, depending on the other side.
+#### How To Identify Heavy Keys
 
-   ```python
-   normal_result = orders_normal.join(customers, "customer_id")
-   ```
+A heavy key has much more data or requires much more work than typical keys. Identify the key first; isolation is how
+you handle it afterward.
 
-   ### Option A: Salt the Heavy-Key Join
-
-   Use salting when the heavy-key join still needs a shuffle and the other side cannot simply be broadcast.
+1. Find unusually frequent keys:
 
    ```python
    from pyspark.sql import functions as F
 
-   salt_count = 10
-
-   orders_big_salted = orders_big.withColumn(
-       "salt",
-       (F.rand() * salt_count).cast("int")
-   )
+   key_counts = orders.groupBy("customer_id").count()
+   key_counts.orderBy(F.desc("count")).show(20, truncate=False)
    ```
 
-   This adds a random integer salt from `0` to `9` to each order row.
-
-   Example `orders_big`:
+   Example:
 
    ```text
-   order_id  customer_id  amount
-   1         BIG          100
-   2         BIG          150
-   3         BIG          200
+   customer_id   count
+   BIG           50,000,000
+   A                 12,000
+   B                 10,000
+   C                  8,000
    ```
 
-   Example `orders_big_salted`:
+   `BIG` is a candidate. There is no universal threshold; compare its size with typical keys and what one task can
+   process.
 
-   ```text
-   order_id  customer_id  amount  salt
-   1         BIG          100     3
-   2         BIG          150     8
-   3         BIG          200     1
-   ```
+2. Confirm that it causes a bottleneck. In the Spark UI, inspect the slow join stage for a few tasks with much larger
+   shuffle reads, longer durations, or more disk spill than the others. Row counts are a starting point: wide rows and
+   expensive processing also matter. For joins, inspect both inputs because many matching rows on both sides can
+   produce enormous output.
 
-   Now `customer_id=BIG` is no longer one giant join group. It is split across `(BIG, 0)`, `(BIG, 1)`, `(BIG, 2)`, and so on.
+3. Isolate confirmed heavy keys, choose a strategy such as broadcast or salting for their branch, process normal keys
+   normally, and combine the results as shown below.
 
-   If another DataFrame joins to orders by `customer_id`, it also needs salt values:
+The frequency check itself requires a shuffle, so run it on the relevant filtered data when possible. A frequent key
+may be harmless for `count()` because Spark computes partial counts before shuffling.
 
-   ```python
-   salt_values = spark.range(salt_count).withColumnRenamed("id", "salt")
-   ```
+#### Split The Heavy Key From Normal Keys
 
-   `spark.range(salt_count)` creates one column named `id` with values from `0` up to `salt_count - 1`.
-   `withColumnRenamed("id", "salt")` renames that column to `salt`.
+First split the heavy key from the normal keys. This example uses an inner equi-join:
 
-   Example `salt_values`:
+```python
+from pyspark.sql import functions as F
 
-   ```text
-   salt
-   0
-   1
-   2
-   3
-   4
-   5
-   6
-   7
-   8
-   9
-   ```
+is_heavy = F.col("customer_id").eqNullSafe("BIG")
+orders_big = orders.where(is_heavy)
+orders_normal = orders.where(~is_heavy)
+```
 
-   Then expand the other side of the join:
+`eqNullSafe("BIG")` returns `True` when the value is `"BIG"` and `False` otherwise, including when it is null.
 
-   ```python
-   customers_for_big = customers.where("customer_id = 'BIG'")
-   customers_big_expanded = customers_for_big.crossJoin(salt_values)
-   ```
+`eqNullSafe` makes these filters disjoint and exhaustive, including null customer IDs in the normal branch. The
+inner join below still drops null keys under ordinary SQL equality. Outer or null-safe joins need their own handling
+of unmatched/null rows; do not copy this split-and-union pattern blindly for them.
 
-   Example `customers_for_big`:
+Then process each side with the best strategy:
 
-   ```text
-   customer_id  customer_name
-   BIG          Big Customer
-   ```
+- `orders_normal`: regular join is usually fine.
+- `orders_big`: use salting or broadcast, depending on the other side.
 
-   Example `customers_big_expanded`:
+```python
+normal_result = orders_normal.join(customers, "customer_id")
+```
 
-   ```text
-   customer_id  customer_name    salt
-   BIG          Big Customer     0
-   BIG          Big Customer     1
-   BIG          Big Customer     2
-   ...
-   BIG          Big Customer     9
-   ```
+#### Option A: Salt the Heavy-Key Join
 
-   Now join using both columns:
+Use salting when the heavy-key join still needs a shuffle and the other side cannot simply be broadcast.
 
-   ```python
-   big_result = orders_big_salted.join(
-       customers_big_expanded,
-       ["customer_id", "salt"]
-   ).drop("salt")
-   ```
+```python
+from pyspark.sql import functions as F
 
-   This works because every customer row exists for every salt value. An order with `(customer_id=BIG, salt=3)` can join
-   to the expanded customer row with `(customer_id=BIG, salt=3)`.
+salt_count = 10
 
-   Then combine the normal-key result and heavy-key result:
+orders_big_salted = orders_big.withColumn(
+    "salt",
+    (F.rand() * salt_count).cast("int")
+)
+```
 
-   ```python
-   result = normal_result.unionByName(big_result)
-   ```
+This adds a random integer salt from `0` to `9` to each order row.
 
-   Use this carefully: expanding the other side multiplies it by `salt_count`. Expand only the heavy keys when possible
-   instead of the whole DataFrame.
+Example `orders_big`:
 
-   ### Option B: Broadcast the Small Side
+```text
+order_id  customer_id  amount
+1         BIG          100
+2         BIG          150
+3         BIG          200
+```
 
-   Use broadcast when the other side of the join is small enough to fit safely in executor memory. This is often simpler
-   than salting:
+Example `orders_big_salted`:
 
-   ```python
-   from pyspark.sql.functions import broadcast
+```text
+order_id  customer_id  amount  salt
+1         BIG          100     3
+2         BIG          150     8
+3         BIG          200     1
+```
 
-   big_result = orders_big.join(
-       broadcast(customers.where("customer_id = 'BIG'")),
-       "customer_id"
-   )
-   ```
+Now `customer_id=BIG` is no longer one giant join group. It is split across `(BIG, 0)`, `(BIG, 1)`, `(BIG, 2)`, and so on.
 
-   Then combine it with the normal result:
+If another DataFrame joins to orders by `customer_id`, it also needs salt values:
 
-   ```python
-   result = normal_result.unionByName(big_result)
-   ```
+```python
+salt_values = spark.range(salt_count).withColumnRenamed("id", "salt")
+```
 
-   Broadcast and salting are alternative strategies. Use one for the heavy-key path, not both, unless you are comparing
-   performance.
+`spark.range(salt_count)` creates one column named `id` with values from `0` up to `salt_count - 1`.
+`withColumnRenamed("id", "salt")` renames that column to `salt`.
 
-2. Increase shuffle partitions for large shuffles.
+Example `salt_values`:
 
-   ```python
-   spark.conf.set("spark.sql.shuffle.partitions", "400")
-   ```
+```text
+salt
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+```
 
-3. Let Adaptive Query Execution help if enabled.
+Then expand the other side of the join:
 
-   ```python
-   spark.conf.set("spark.sql.adaptive.enabled", "true")
-   ```
+```python
+customers_for_big = customers.where("customer_id = 'BIG'")
+customers_big_expanded = customers_for_big.crossJoin(salt_values)
+```
+
+Example `customers_for_big`:
+
+```text
+customer_id  customer_name
+BIG          Big Customer
+```
+
+Example `customers_big_expanded`:
+
+```text
+customer_id  customer_name    salt
+BIG          Big Customer     0
+BIG          Big Customer     1
+BIG          Big Customer     2
+...
+BIG          Big Customer     9
+```
+
+Now join using both columns:
+
+```python
+big_result = orders_big_salted.join(
+    customers_big_expanded,
+    ["customer_id", "salt"]
+).drop("salt")
+```
+
+This works because every customer row exists for every salt value. An order with `(customer_id=BIG, salt=3)` can join
+to the expanded customer row with `(customer_id=BIG, salt=3)`.
+
+Then combine the normal-key result and heavy-key result:
+
+```python
+result = normal_result.unionByName(big_result)
+```
+
+Use this carefully: expanding the other side multiplies it by `salt_count`. Expand only the heavy keys when possible
+instead of the whole DataFrame.
+
+#### Option B: Broadcast the Small Side
+
+Use broadcast when the other side of the join is small enough to fit safely in executor memory. This is often simpler
+than salting:
+
+```python
+from pyspark.sql.functions import broadcast
+
+big_result = orders_big.join(
+    broadcast(customers.where("customer_id = 'BIG'")),
+    "customer_id"
+)
+```
+
+Then combine it with the normal result:
+
+```python
+result = normal_result.unionByName(big_result)
+```
+
+Broadcasting the filtered customer rows avoids a key-based shuffle of the large orders branch. It still needs enough
+partitions on `orders_big` to run in parallel; use a physical rebalance there only if needed.
+
+Broadcast and salting are alternative strategies for this heavy-key path. Isolation lets normal keys keep their
+regular plan while only exceptional keys incur the special treatment.
+
+Preserve every matching customer row: duplicate keys produce multiple matches in both the original and isolated
+inner joins. If both sides have millions of rows for `BIG`, the output can contain trillions of pairs. Splitting work
+does not reduce that required output. Two branches may also scan their inputs twice; cache only if reuse justifies
+the memory/storage cost.
+
+### 12.4 AQE Skew Handling: Turn One Huge Join Task Into Several Smaller Tasks
+
+**AQE helps a skewed join by sharing one oversized join task across several tasks.** You keep the same join code and
+business key; Spark changes how the join work is executed after it sees the actual shuffle sizes.
+
+AQE means Adaptive Query Execution. It has several optimizations; this explanation focuses on its skew-join handling.
+
+#### When Is AQE Applied?
+
+AQE adjusts a Spark SQL or DataFrame query during execution, once runtime statistics are available. Defining a join
+only builds a plan; an action such as `write()` starts the work.
+
+For the shuffle join below, the sequence is:
+
+```text
+Read inputs -> Write shuffle data -> AQE checks actual sizes -> Execute the adjusted join
+```
+
+If a partition meets the skew thresholds and the join qualifies, AQE can split its join work before the downstream
+tasks start. Other AQE optimizations can combine small shuffle partitions or change the join strategy. AQE can be
+enabled without changing the plan when no eligible optimization is needed.
+
+AQE is enabled by default in Apache Spark 3.2 and later. Usually leave it enabled for batch SQL/DataFrame jobs, but
+check your session settings because cluster or job configuration can override the defaults. See the
+[Spark AQE documentation](https://spark.apache.org/docs/latest/sql-performance-tuning#adaptive-query-execution).
+
+#### Step 1: Understand The Join Without Skew Handling
+
+Suppose you join orders to customer details:
+
+```python
+joined = orders.join(customers, "customer_id", "inner")
+```
+
+Assume Spark chooses a shuffle sort-merge join, rather than a broadcast join. It sends rows with the same customer ID
+to the same destination partition so the matching orders and customer records can meet.
+
+Suppose `BIG` has 5 GB of orders, spread across many upstream tasks, while other customers have little data:
+
+```text
+After the shuffle, without skew handling:
+
+Join task 1: normal customers              40 MB -> finishes quickly
+Join task 2: normal customers              35 MB -> finishes quickly
+Join task 3: BIG orders + customer details   5 GB -> runs much longer
+Join task 4: normal customers              45 MB -> finishes quickly
+```
+
+The stage waits for task 3. Having more available executor cores does not help much while that join work remains
+assigned to just one task.
+
+#### Step 2: AQE Notices The Oversized Shuffle Partition
+
+After the upstream tasks finish writing shuffle data, Spark has actual partition-size statistics. AQE can see that one
+join partition is much bigger than the others and, if the join is eligible, change the downstream join tasks before
+launching them. It does not wait for a running join task to run out of memory.
+
+#### Step 3: Split The Orders, Repeat The Matching Customer Data
+
+Conceptually, Spark can arrange the heavy join work like this:
+
+```text
+Instead of:
+  One task: all 5 GB of BIG orders + matching BIG customer data
+
+Use, for example:
+  Task A: first  1 GB of BIG orders + matching BIG customer data
+  Task B: second 1 GB of BIG orders + matching BIG customer data
+  Task C: third  1 GB of BIG orders + matching BIG customer data
+  Task D: fourth 1 GB of BIG orders + matching BIG customer data
+  Task E: fifth  1 GB of BIG orders + matching BIG customer data
+```
+
+These sizes are illustrative. Spark splits reads of existing shuffle blocks, so five equal pieces are not guaranteed.
+Matching data from the other side is read again where needed; it is not necessarily broadcast to every executor.
+
+**Why does repeating customer data not duplicate the result incorrectly?** Each order is assigned to only one piece.
+If the customer side contains one `BIG` record, each order joins to that record once. If it contains several matching
+records, each order still gets all its original matches. The join result has the same meaning.
+
+Now several executor cores can work on `BIG` at the same time. Each task handles less data, which can reduce long waits
+and memory pressure. Extra reads of matching data are the tradeoff; speedup depends on available cores and data sizes.
+
+#### Why This Helps When Random Repartitioning Does Not
+
+```text
+Random repartition before the join:
+  Spread BIG orders out -> ordinary keyed shuffle brings BIG together again.
+
+AQE skew-join handling:
+  Keyed shuffle happens -> Spark detects the huge destination -> splits its join work.
+```
+
+Salting changes the join keys explicitly, for example from `BIG` to `(BIG, salt)`. AQE skew-join handling keeps
+`customer_id` unchanged and adjusts how Spark reads the shuffle data for the join.
+
+#### Enable It And Check The Result
+
+```python
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
+
+joined = orders.join(customers, "customer_id", "inner")
+joined.write.mode("overwrite").parquet(output_path)
+```
+
+You do not need to add random repartitioning or a salt column just to enable this optimization.
+
+Spark's upstream default skew tests require a partition to exceed both:
+
+- 5 times the median partition size: `spark.sql.adaptive.skewJoin.skewedPartitionFactor`.
+- 256 MB: `spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes`.
+
+With a 40 MB median, the relative threshold is 200 MB. A 5 GB partition exceeds both tests. Check your installed
+Spark/Glue/EMR runtime because settings and supported plans can differ. See
+[Apache Spark: Optimizing Skew Join](https://spark.apache.org/docs/latest/sql-performance-tuning#optimizing-skew-join).
+
+After the write, inspect the SQL tab's final adaptive plan for skew-join splitting, and compare task shuffle-read sizes
+and durations. Turning the settings on does not guarantee the join qualifies or that splitting occurs.
+
+#### What AQE Skew-Join Handling Cannot Fix
+
+- **Every kind of operation:** this join optimization does not automatically split a huge `groupBy`, window, or
+  `collect_list` group. Ordinary `count` and `sum` already benefit from partial aggregation.
+- **Every oversized input:** splitting depends on shuffle-block boundaries. One huge indivisible block can limit it;
+  AQE does not use this rule to split the original Parquet scan task.
+- **An enormous required result:** if `BIG` has one million matching rows on each side, the join still produces one
+  trillion pairs. Sharing the work does not reduce the number of required matches.
+
+Remember: **AQE can let several tasks join different pieces of the same heavy key, while preserving the matches.**
+
+### 12.5 Choosing A Strategy
+
+| Observed problem | Useful response | Main limit |
+|---|---|---|
+| Uneven execution partitions before row-level work or writing | `repartition(n)` or random repartition | Adds a shuffle; a later keyed shuffle can recreate skew |
+| Too few partitions across a large shuffle | Tune `spark.sql.shuffle.partitions` | More partitions cannot split one hot key by hashing alone |
+| Skewed eligible shuffle join | Enable AQE and inspect the final plan | Depends on thresholds, shuffle blocks, and join plan |
+| Known heavy keys with a small matching side | Isolate heavy keys and broadcast that side | Broadcast must fit safely in each executor |
+| Heavy-key join that still needs a shuffle | Salt only heavy keys and expand matching rows | Replication costs; output may still be huge |
+| Expensive heavy-key aggregation | Use partial/mergeable computation where valid | Must preserve aggregate semantics; some operations need a whole group |
 
 Rule:
 
 ```text
-Repartitioning helps when there are too few partitions.
-Repartitioning alone may not fix one massive skewed key.
-For one huge key, split, salt, broadcast, or handle that key separately.
+Physical imbalance -> redistribute rows for downstream tasks.
+Logical key skew  -> change how the keyed operation handles the heavy key.
+Isolation chooses a separate strategy; AQE can split eligible join work automatically.
 ```
 
 ## 13. If A Spark Job Is Slow, Where Should I Look?
