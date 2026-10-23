@@ -50,8 +50,8 @@ Beginner mental model:
 
 Install Docker before running LocalStack sections:
 
-- Mac: see `setup-mac-local-spark.md`, sections `Optional: Install Docker Desktop For LocalStack` and `Optional: Start LocalStack`.
-- Windows: see `setup-windows-local-spark.md`, sections `Optional: Install Docker Desktop For LocalStack` and `Optional: Start LocalStack`.
+- Mac: see `setup-mac-local-spark.md`, Part 2 `LocalStack In Docker (Optional)`, Steps 11 to 18.
+- Windows: see `setup-windows-local-spark.md`, Part 2 `LocalStack In Docker (Optional)`, Steps 11 to 18.
 
 The local-file PySpark lessons, monitoring lab, and config-driven CSV example run without LocalStack.
 

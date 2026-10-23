@@ -1230,6 +1230,18 @@ order_id = 2 now has status = RETURNED
 After validation, you can treat `data/output/orders_partitioned_updated` as the new dataset. In production, teams often
 write to a temporary path, validate counts and quality checks, then promote the new path using orchestration.
 
+**Note: when the temporary-path pattern is used, and why**
+
+- **Readers must never see partial data.** `mode("overwrite")` deletes the old files before the new ones finish writing. If the job fails halfway, the dataset is empty or incomplete. Writing to a new path first keeps the old data readable until the new data is good.
+- **Downstream consumers exist.** Athena, Glue jobs, dashboards, or other Spark jobs read the table while the pipeline runs. Promoting only after validation means they get either the old version or the new one, not a mix.
+- **Validation gates the release.** Row counts, null checks, duplicate keys, and schema checks run against the temporary path. A failed check stops the promotion, and the old data stays in place.
+- **Rollback is cheap.** If a bad version is promoted, point the table back to the previous path. You do not need to rebuild the data.
+- **S3 has no atomic rename.** Moving a folder on S3 is a copy followed by a delete, so it is not one step. The promotion is usually a pointer change instead: update the Glue catalog table location or a `current` pointer, which is a single metadata change.
+
+This pattern is common in scheduled batch pipelines (Airflow, Step Functions, Glue workflows) and in curated zones that feed analytics. It is less common for small, one-off local practice like this lab, where a direct overwrite is fine.
+
+Some teams avoid the pattern altogether by using a table format such as Delta, Iceberg, or Hudi. Those formats commit each write atomically and keep older versions, so a failed write never shows up to readers.
+
 ### Update A Parquet Dataset In LocalStack S3
 
 The same pattern works with LocalStack S3. Only the paths change.
@@ -1291,6 +1303,50 @@ For real row-level `UPDATE`, `DELETE`, and `MERGE`, learn one of:
 - Apache Hudi
 
 These formats add table metadata and transaction-like behavior on top of object storage.
+
+### Promote A New Dataset With A Pointer Change
+
+Moving a folder on S3 is not one step. S3 has no rename. `aws s3 mv` copies each object, then deletes the source. If the job fails partway, some files are in the new place and some are not, so readers can see a mix.
+
+Instead, write the new data to its own versioned path, validate it, and then change a small pointer that readers follow. The pointer change is one metadata update, so readers switch from the old version to the new one in a single step.
+
+**Step 1: write to a new versioned path.** The old data stays where it is:
+
+```python
+new_path = "s3a://de-lab/curated/orders/run_date=2026-01-02/"
+
+updated.write.mode("overwrite").parquet(new_path)
+```
+
+**Step 2: validate the new path.** Run the checks from section 21 against `new_path`. Stop here if they fail. The pointer still points at the old data.
+
+**Step 3: promote by changing the pointer.** There are two common ways to do it.
+
+Option A: update the Glue catalog table location. Readers that query the table through Athena or Spark read the new location:
+
+```sql
+ALTER TABLE curated.orders SET LOCATION 's3://de-lab/curated/orders/run_date=2026-01-02/'
+```
+
+For a partitioned table, each partition has its own location, so update those too. Changing only the table location does not move existing partitions.
+
+Option B: write a `_current` pointer file. Readers read the path from the file first:
+
+```bash
+echo "s3a://de-lab/curated/orders/run_date=2026-01-02/" > current_pointer.txt
+awslocal s3 cp current_pointer.txt s3://de-lab/curated/orders/_current.txt
+```
+
+```python
+current = spark.read.text("s3a://de-lab/curated/orders/_current.txt").first()[0].strip()
+orders = spark.read.parquet(current)
+```
+
+A single-object upload is all-or-nothing, so a reader sees either the old pointer or the new one.
+
+**Rollback** is the same step in reverse. Point the catalog or the `_current` file back at the previous `run_date`. The old data is still there, so nothing needs to be rebuilt.
+
+These commands are not run in this lab. They show the pattern for a team that uses the Glue catalog or a pointer file.
 
 ## 20. Incremental Loads
 
