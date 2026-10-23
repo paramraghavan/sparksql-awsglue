@@ -43,15 +43,15 @@ Beginner mental model:
 |---|---|
 | S3 bucket | LocalStack S3 bucket running inside Docker |
 | Glue Data Catalog | LocalStack Glue metadata service |
-| `awslocal s3 ...` | AWS CLI-style command pointed at LocalStack, not real AWS |
-| `awslocal glue ...` | Glue CLI-style command pointed at LocalStack, not real AWS |
+| `lstk aws s3 ...` | AWS CLI command pointed at LocalStack, not real AWS (replaces the deprecated `awslocal`) |
+| `lstk aws glue ...` | Glue CLI command pointed at LocalStack. Needs a paid LocalStack license, so the lab uses Spark's SQL catalog instead |
 | `s3a://de-lab/...` | Spark path that reads/writes LocalStack S3 |
 | Docker | The local runtime that hosts LocalStack |
 
 Install Docker before running LocalStack sections:
 
-- Mac: see `setup-mac-local-spark.md`, Part 2 `LocalStack In Docker (Optional)`, Steps 11 to 18.
-- Windows: see `setup-windows-local-spark.md`, Part 2 `LocalStack In Docker (Optional)`, Steps 11 to 18.
+- Mac: see `setup-mac-local-spark.md`, Part 2 `LocalStack (Optional)`, Steps 11 to 19.
+- Windows: see `setup-windows-local-spark.md`, Part 2 `LocalStack (Optional)`, Steps 11 to 19.
 
 The local-file PySpark lessons, monitoring lab, and config-driven CSV example run without LocalStack.
 

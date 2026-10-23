@@ -1273,7 +1273,7 @@ spark.read.parquet("s3a://de-lab/curated/orders_parquet_updated").where(
 Verify with LocalStack:
 
 ```bash
-awslocal s3 ls s3://de-lab/curated/orders_parquet_updated/ --recursive
+lstk aws s3 ls s3://de-lab/curated/orders_parquet_updated/ --recursive
 ```
 
 Important: this does not edit one Parquet file in place. It writes a new Parquet dataset with the corrected records.
@@ -1293,7 +1293,7 @@ after_delete.write.mode("overwrite").partitionBy("order_year", "category").parqu
 Delete an entire output folder from S3:
 
 ```bash
-awslocal s3 rm s3://de-lab/curated/orders_csv/ --recursive
+lstk aws s3 rm s3://de-lab/curated/orders_csv/ --recursive
 ```
 
 For real row-level `UPDATE`, `DELETE`, and `MERGE`, learn one of:
@@ -1334,7 +1334,7 @@ Option B: write a `_current` pointer file. Readers read the path from the file f
 
 ```bash
 echo "s3a://de-lab/curated/orders/run_date=2026-01-02/" > current_pointer.txt
-awslocal s3 cp current_pointer.txt s3://de-lab/curated/orders/_current.txt
+lstk aws s3 cp current_pointer.txt s3://de-lab/curated/orders/_current.txt
 ```
 
 ```python
@@ -1464,7 +1464,7 @@ Rules of thumb:
 
 Not every example in this guide uses LocalStack.
 
-All AWS-style examples in this guide are local AWS practice. They use Docker + LocalStack, not a real AWS account. Install Docker Desktop and start LocalStack before running any command that uses `awslocal` or any Spark path that starts with `s3a://de-lab/...`.
+All AWS-style examples in this guide are local AWS practice. They use Docker + LocalStack, not a real AWS account. Install Docker Desktop and start LocalStack before running any command that uses `lstk aws` or any Spark path that starts with `s3a://de-lab/...`.
 
 There are two kinds of paths:
 
@@ -1498,7 +1498,7 @@ part-00000-....snappy.parquet
 _SUCCESS
 ```
 
-LocalStack is used only when the path starts with `s3a://` or when commands use `awslocal s3 ...`.
+LocalStack is used only when the path starts with `s3a://` or when commands use `lstk aws s3 ...`.
 
 ## 25. What LocalStack Is
 
@@ -1517,7 +1517,7 @@ In this guide:
 
 - Real AWS S3 is not used.
 - LocalStack S3 runs inside Docker.
-- `awslocal s3 ...` talks to LocalStack instead of real AWS.
+- `lstk aws s3 ...` talks to LocalStack instead of real AWS.
 - Spark talks to LocalStack S3 when the path starts with `s3a://`.
 - The bucket `de-lab` is a LocalStack bucket, not a real AWS bucket.
 
@@ -1553,7 +1553,7 @@ orders.write.mode("overwrite").parquet("s3a://de-lab/curated/orders_parquet")
 You do not browse to the Docker folder directly. You inspect LocalStack S3 using AWS-style commands:
 
 ```bash
-awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
+lstk aws s3 ls s3://de-lab/curated/orders_parquet/ --recursive
 
 # Real AWS equivalent, shown for learning only:
 # aws s3 ls s3://your-real-bucket/curated/orders_parquet/ --recursive
@@ -1564,7 +1564,7 @@ To copy LocalStack output back to your project folder:
 ```bash
 mkdir -p data/downloaded/orders_parquet
 
-awslocal s3 cp \
+lstk aws s3 cp \
   s3://de-lab/curated/orders_parquet/ \
   data/downloaded/orders_parquet/ \
   --recursive
@@ -1584,14 +1584,14 @@ data/downloaded/orders_parquet/
 
 ## 26. LocalStack S3 End-To-End Example
 
-Prerequisite: Docker Desktop must be running, and LocalStack must be installed in your Python virtual environment. If you have not done that yet, use the LocalStack setup section in `setup-mac-local-spark.md` or `setup-windows-local-spark.md`.
+Prerequisite: Docker Desktop must be running, `lstk` must be installed, and you must be logged in with `lstk login`. If you have not done that yet, follow Part 2 of `setup-mac-local-spark.md` or `setup-windows-local-spark.md`.
 
 Start LocalStack:
 
 ```bash
-localstack start -d
-awslocal s3 mb s3://de-lab
-awslocal s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
+lstk start
+lstk aws s3 mb s3://de-lab
+lstk aws s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
 
 # Real AWS equivalent, shown for learning only:
 # aws s3 mb s3://your-real-unique-bucket-name
@@ -1642,7 +1642,7 @@ spark.stop()
 Verify:
 
 ```bash
-awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
+lstk aws s3 ls s3://de-lab/curated/orders_parquet/ --recursive
 
 # Real AWS equivalent, shown for learning only:
 # aws s3 ls s3://your-real-bucket/curated/orders_parquet/ --recursive
@@ -1650,10 +1650,12 @@ awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
 
 At this point, you have only created data files in LocalStack S3. You have not created a Glue table yet.
 
-To practice Glue on LocalStack end to end, use the `Self-Contained LocalStack Glue Catalog Lab` section below. That lab creates:
+To practice table metadata end to end, use the `Self-Contained LocalStack Catalog Lab` section below. That lab creates:
 
 1. The actual Parquet files in LocalStack S3.
-2. The Glue database and external table metadata in LocalStack Glue Data Catalog.
+2. A database and external table definition in Spark's SQL catalog, which follows the same pattern as the Glue Data Catalog.
+
+LocalStack's Glue service needs a paid license, so this lab does not use `lstk aws glue`.
 
 ## 27. AWS Glue Data Catalog
 
@@ -1803,14 +1805,14 @@ In real AWS, users commonly create this metadata using one of these controlled a
 For a first data engineering job, it is enough to understand the SQL DDL version first. It is the clearest bridge from
 database knowledge to data lake metadata.
 
-### Self-Contained LocalStack Glue Catalog Lab
+### Self-Contained LocalStack Catalog Lab
 
-This mini-lab creates both pieces needed for a Glue external table:
+This mini-lab creates both pieces needed for an external table:
 
 1. Actual Parquet data in LocalStack S3.
-2. Glue Catalog metadata that points to that S3 location.
+2. A table definition that points to that S3 location, stored in Spark's SQL catalog.
 
-This lab uses LocalStack Glue and LocalStack S3 running inside Docker. It does not create anything in a real AWS account.
+This lab uses LocalStack S3 running inside Docker. It does not create anything in a real AWS account. It does not use the Glue Data Catalog, because LocalStack Glue needs a paid license.
 
 Run these commands from your lab folder:
 
@@ -1822,8 +1824,8 @@ source .venv/bin/activate
 Start LocalStack:
 
 ```bash
-localstack start -d
-localstack status services
+lstk start
+lstk status
 ```
 
 Set local AWS variables for this terminal:
@@ -1838,7 +1840,7 @@ export AWS_ENDPOINT_URL=http://localhost:4566
 Create the S3 bucket:
 
 ```bash
-awslocal s3 mb s3://de-lab
+lstk aws s3 mb s3://de-lab
 
 # Real AWS equivalent, shown for learning only:
 # aws s3 mb s3://your-real-unique-bucket-name
@@ -1863,7 +1865,7 @@ EOF
 Upload raw CSV to LocalStack S3:
 
 ```bash
-awslocal s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
+lstk aws s3 cp data/input/orders.csv s3://de-lab/raw/orders/orders.csv
 
 # Real AWS equivalent, shown for learning only:
 # aws s3 cp data/input/orders.csv s3://your-real-bucket/raw/orders/orders.csv
@@ -1930,84 +1932,69 @@ spark-submit \
 Verify the Parquet files exist in LocalStack S3:
 
 ```bash
-awslocal s3 ls s3://de-lab/curated/orders_parquet/ --recursive
+lstk aws s3 ls s3://de-lab/curated/orders_parquet/ --recursive
 
 # Real AWS equivalent, shown for learning only:
 # aws s3 ls s3://your-real-bucket/curated/orders_parquet/ --recursive
 ```
 
-Now create Glue Catalog metadata in LocalStack. First create the Glue database:
+Now create the table definition. This job creates a database and a partitioned Parquet table in Spark's SQL catalog, points it at the S3 folder, and reads it back with SQL:
 
 ```bash
-awslocal glue create-database \
-  --database-input '{"Name":"curated"}'
+cat > jobs/create_orders_catalog_table.py <<'EOF'
+from pyspark.sql import SparkSession
 
-# Real AWS equivalent, shown for learning only:
-# aws glue create-database \
-#   --database-input '{"Name":"curated"}'
-```
 
-Then create a table definition file:
+def main() -> None:
+    spark = (
+        SparkSession.builder
+        .appName("create-orders-catalog-table")
+        .master("local[2]")
+        .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:4566")
+        .config("spark.hadoop.fs.s3a.access.key", "test")
+        .config("spark.hadoop.fs.s3a.secret.key", "test")
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+        .getOrCreate()
+    )
 
-```bash
-cat > /tmp/orders_glue_table.json <<'EOF'
-{
-  "Name": "orders",
-  "TableType": "EXTERNAL_TABLE",
-  "Parameters": {
-    "classification": "parquet",
-    "EXTERNAL": "TRUE"
-  },
-  "PartitionKeys": [
-    {"Name": "order_year", "Type": "int"},
-    {"Name": "category", "Type": "string"}
-  ],
-  "StorageDescriptor": {
-    "Location": "s3://de-lab/curated/orders_parquet/",
-    "InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
-    "OutputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
-    "SerdeInfo": {
-      "SerializationLibrary": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
-    },
-    "Columns": [
-      {"Name": "order_id", "Type": "int"},
-      {"Name": "customer_id", "Type": "string"},
-      {"Name": "order_date", "Type": "date"},
-      {"Name": "status", "Type": "string"},
-      {"Name": "amount", "Type": "double"}
-    ]
-  }
-}
+    spark.sql("CREATE DATABASE IF NOT EXISTS curated")
+
+    spark.sql("""
+    CREATE TABLE IF NOT EXISTS curated.orders (
+      order_id INT,
+      customer_id STRING,
+      order_date DATE,
+      status STRING,
+      amount DOUBLE
+    )
+    USING parquet
+    PARTITIONED BY (order_year INT, category STRING)
+    LOCATION 's3a://de-lab/curated/orders_parquet/'
+    """)
+
+    # Register the partition folders that already exist in S3.
+    spark.sql("MSCK REPAIR TABLE curated.orders")
+
+    spark.sql("SELECT * FROM curated.orders ORDER BY order_id").show(truncate=False)
+    spark.stop()
+
+
+if __name__ == "__main__":
+    main()
 EOF
 ```
 
-Create the table:
+Run the job. It uses the same packages as the other S3 jobs:
 
 ```bash
-awslocal glue create-table \
-  --database-name curated \
-  --table-input file:///tmp/orders_glue_table.json
-
-# Real AWS equivalent, shown for learning only:
-# aws glue create-table \
-#   --database-name curated \
-#   --table-input file:///tmp/orders_glue_table.json
+spark-submit \
+  --master "local[2]" \
+  --packages "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262" \
+  jobs/create_orders_catalog_table.py
 ```
 
-Verify the table metadata:
-
-```bash
-awslocal glue get-table \
-  --database-name curated \
-  --name orders
-
-# Real AWS equivalent, shown for learning only:
-# aws glue get-table \
-#   --database-name curated \
-#   --name orders
-```
-
-Important: `awslocal glue create-table` creates Glue Catalog metadata only. It does not create Parquet files. The files are created by the Spark job and live in LocalStack S3 at:
+Important: the `CREATE TABLE` statement stores metadata only. It does not create Parquet files. Spark keeps this catalog for the length of the job, so the table is created and queried in the same run. A persistent metastore, such as the Glue Data Catalog in AWS, keeps the table between runs. The Parquet files are created by the Spark job and live in LocalStack S3 at:
 
 ```text
 s3://de-lab/curated/orders_parquet/
@@ -2020,7 +2007,7 @@ LocalStack S3:
   s3://de-lab/curated/orders_parquet/
   actual Parquet data files
 
-LocalStack Glue Data Catalog:
+Spark SQL catalog (the lab's stand-in for the Glue Data Catalog):
   database: curated
   table: orders
   metadata pointing to the S3 location above
@@ -2160,6 +2147,66 @@ The exact command depends on the query engine and table format. The important id
 ```text
 S3 folder exists does not always mean Glue partition metadata exists.
 ```
+
+### Register And Remove Partitions
+
+Files in S3 are not enough for a query to see them. The query engine reads only the partitions that the catalog lists. A new folder such as `order_year=2027/` returns zero rows until its partition is registered. The query does not raise an error, so the problem is easy to miss.
+
+**Register one partition.** Use the folder path as the `LOCATION`:
+
+```sql
+ALTER TABLE curated.orders ADD IF NOT EXISTS PARTITION (order_year=2027, category='books')
+LOCATION 's3://de-lab/curated/orders_parquet/order_year=2027/category=books/'
+```
+
+**Register every missing partition.** Scan the table location and add each partition that is not in the catalog:
+
+```sql
+MSCK REPAIR TABLE curated.orders
+```
+
+`MSCK REPAIR TABLE` is fine for labs, backfills, and tables with a few partitions. It lists the whole table location and adds partitions one at a time, so it becomes slow when a table has thousands of partitions. For a scheduled pipeline, register each new partition right after the job writes it, with `ALTER TABLE ... ADD PARTITION` in Spark or Athena. In AWS Glue, use the `BatchCreatePartition` API, or run a Glue crawler on a schedule. Use `MSCK REPAIR TABLE` for catch-up work.
+
+**Remove one partition.** Removing a partition from the catalog does not delete its files when the table is external. Those are two separate steps:
+
+```sql
+-- 1. Remove the catalog entry first.
+ALTER TABLE curated.orders DROP IF EXISTS PARTITION (order_year=2027, category='books');
+```
+
+```bash
+# 2. Then delete the files in S3.
+lstk aws s3 rm s3://de-lab/curated/orders_parquet/order_year=2027/category=books/ --recursive
+```
+
+Drop the catalog entry first. If you delete the files first, queries can point at folders that no longer exist.
+
+To delete the files from PySpark instead of the AWS CLI, use Hadoop's filesystem API through Spark. Run this in the same session that has the S3 settings:
+
+```python
+# 1. Remove the catalog entry first.
+spark.sql("ALTER TABLE curated.orders DROP IF EXISTS PARTITION (order_year=2027, category='books')")
+
+# 2. Delete the partition folder in S3 with Hadoop's filesystem API.
+jvm = spark.sparkContext._jvm
+hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+
+path = jvm.org.apache.hadoop.fs.Path("s3a://de-lab/curated/orders_parquet/order_year=2027/category=books")
+fs = path.getFileSystem(hadoop_conf)
+fs.delete(path, True)  # True = delete recursively
+```
+
+`spark.sparkContext._jvm` and `_jsc` are internal Spark APIs. They work in the PySpark versions in this guide, but they are not a public interface. I tested the same delete locally on a folder on disk; I have not run it against LocalStack S3.
+
+**Remove stale entries.** If a folder was deleted but its catalog entry remains, Spark can remove the stale entry:
+
+```sql
+MSCK REPAIR TABLE curated.orders SYNC PARTITIONS;
+```
+
+Athena's `MSCK REPAIR TABLE` only adds partitions, so use `ALTER TABLE ... DROP PARTITION` there. In AWS Glue, use the `BatchDeletePartition` API or the Glue console.
+
+I tested these Spark SQL commands on local files with Spark 4.0.1, using an external table. The check was: before `ADD PARTITION`, the 2027 query returned 0 rows; after it, the query returned 1 row. Dropping the partition left the files on disk. I have not tested these commands against LocalStack S3, Athena, or the Glue Data Catalog.
 
 ### When To Use Glue Data Catalog
 

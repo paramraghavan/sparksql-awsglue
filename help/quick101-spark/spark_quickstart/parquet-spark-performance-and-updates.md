@@ -1156,8 +1156,8 @@ After validation, promote the replacement partition.
 For a local or LocalStack learning lab:
 
 ```bash
-awslocal s3 rm s3://de-lab/trusted/orders/order_month=2025-09/ --recursive
-awslocal s3 cp s3://de-lab/tmp/orders/order_month=2025-09/ \
+lstk aws s3 rm s3://de-lab/trusted/orders/order_month=2025-09/ --recursive
+lstk aws s3 cp s3://de-lab/tmp/orders/order_month=2025-09/ \
   s3://de-lab/trusted/orders/order_month=2025-09/ \
   --recursive
 ```

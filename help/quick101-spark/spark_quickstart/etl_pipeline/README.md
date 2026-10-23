@@ -259,15 +259,15 @@ services:
 ### LocalStack Bucket Setup
 
 ```bash
-awslocal s3 mb s3://demo-landing
-awslocal s3 mb s3://demo-ingested
-awslocal s3 mb s3://demo-rejected
+lstk aws s3 mb s3://demo-landing
+lstk aws s3 mb s3://demo-ingested
+lstk aws s3 mb s3://demo-rejected
 ```
 
 ### Upload A Test File
 
 ```bash
-awslocal s3 cp sample_files/simple_ingestion/customers.csv \
+lstk aws s3 cp sample_files/simple_ingestion/customers.csv \
   s3://demo-landing/customers/customers.csv
 ```
 
@@ -275,7 +275,7 @@ In production, that upload triggers Lambda automatically. In a beginner local
 demo, it is okay to invoke Lambda manually first:
 
 ```bash
-awslocal lambda invoke \
+lstk aws lambda invoke \
   --function-name ingestion-lambda \
   --payload file://events/s3_object_created.json \
   /tmp/lambda-response.json

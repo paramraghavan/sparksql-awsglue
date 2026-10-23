@@ -9,7 +9,7 @@ The guide has three parts:
 | Part | What you get | Required? |
 |---|---|---|
 | Part 1: Local Spark | Java, Python, PySpark, and a working Spark job | Yes |
-| Part 2: LocalStack | A fake AWS account in Docker with S3 and Glue | Optional, needed for the S3 examples |
+| Part 2: LocalStack | A fake AWS account, started with the `lstk` CLI | Optional, needed for the S3 examples |
 | Part 3: Troubleshooting | Common errors and fixes | Use when something breaks |
 
 Do Part 1 first. Come back to Part 2 when you reach the LocalStack S3 examples in `pyspark-101-examples.md`.
@@ -23,11 +23,13 @@ Do Part 1 first. Come back to Part 2 when you reach the LocalStack S3 examples i
 | Python | 3.11 | Matches AWS Glue 5.x |
 | PySpark | 3.5.6 | Close to AWS Glue 5.x |
 | Docker Desktop | Current stable | Runs LocalStack |
+| `lstk` | Current | Starts LocalStack and runs AWS commands against it |
 
 References:
 
 - AWS Glue release notes: https://docs.aws.amazon.com/glue/latest/dg/release-notes.html
 - PySpark installation: https://spark.apache.org/docs/3.5.6/api/python/getting_started/install.html
+- LocalStack `lstk` docs: https://docs.localstack.cloud/aws/developer-tools/running-localstack/lstk/
 - LocalStack S3 docs: https://docs.localstack.cloud/aws/services/s3/
 - LocalStack Glue docs: https://docs.localstack.cloud/aws/services/glue/
 
@@ -102,10 +104,8 @@ cd C:\spark-glue-local-lab
 ## Step 4: Install PySpark And The Python Libraries
 
 ```powershell
-python -m pip install pyspark==3.5.6 pandas pyarrow boto3 awscli-local jupyterlab ipykernel
+python -m pip install pyspark==3.5.6 pandas pyarrow boto3 jupyterlab ipykernel
 ```
-
-`awscli-local` gives you the `awslocal` command, which you use in Part 2.
 
 Check that PySpark installed:
 
@@ -298,18 +298,18 @@ Your local Spark setup is ready. Open `pyspark-101-examples.md` next. Run the ex
 
 ---
 
-# Part 2: LocalStack In Docker (Optional)
+# Part 2: LocalStack (Optional)
 
-LocalStack is a local AWS simulator. It runs as a Docker container and listens on `http://localhost:4566`. Your Spark jobs and `awslocal` commands send their S3 requests to that address, so you can practice S3 without a real AWS account.
+LocalStack is a local AWS simulator. It runs in a Docker container and listens on `http://localhost:4566`. Your Spark jobs and AWS commands send their requests to that address, so you can practice S3 and Glue without a real AWS account.
 
 ```text
 data\output\...   -> a normal folder on your PC
 s3a://de-lab/...  -> a fake S3 bucket inside the LocalStack container
 ```
 
-LocalStack is not a Python library. The only Python package this part needs is `awscli-local`, which you installed in Step 4.
+You use the `lstk` command to start and manage LocalStack, and `aws` with the `localstack` profile to run AWS commands against it.
 
-Recent LocalStack versions need a free auth token before they start. Get the token first (Step 12).
+Note: the older `awslocal` command is deprecated. Use `lstk aws` instead, as shown below.
 
 ## Step 11: Start Docker Desktop
 
@@ -324,64 +324,71 @@ Recent LocalStack versions need a free auth token before they start. Get the tok
 
    If this shows a table, even an empty one, Docker is ready.
 
-## Step 12: Get A Free LocalStack Auth Token
+## Step 12: Install lstk And The AWS CLI
 
-1. Sign up at `https://app.localstack.cloud/sign-up?plan=free`, or sign in if you have an account.
-2. Find your auth token on the account page and copy it.
-3. Keep the token private. Do not paste it into this guide, a repository, or chat.
-4. Set the token in your PowerShell window. Replace the placeholder with your token:
+Install the AWS CLI from the MSI installer:
 
-   ```powershell
-   $env:LOCALSTACK_AUTH_TOKEN = "paste-your-token-here"
-   ```
-
-   This setting lasts only for the current PowerShell window. Run it again in each new window.
-
-Check that the token is set. This prints only the length, not the token:
-
-```powershell
-$env:LOCALSTACK_AUTH_TOKEN.Length
+```text
+https://awscli.amazonaws.com/AWSCLIV2.msi
 ```
 
-A number greater than 0 means the token is set. An empty result means it is not set in this window.
+Install `lstk` by following the Windows instructions in the LocalStack docs:
 
-## Step 13: Start The LocalStack Container
-
-Run this in the same PowerShell window where you set the token. The first run downloads the image, which can take a few minutes:
-
-```powershell
-docker run -d `
-  --name localstack-main `
-  -e "LOCALSTACK_AUTH_TOKEN=$env:LOCALSTACK_AUTH_TOKEN" `
-  -p 127.0.0.1:4566:4566 `
-  -p 127.0.0.1:4510-4559:4510-4559 `
-  localstack/localstack
+```text
+https://docs.localstack.cloud/aws/developer-tools/running-localstack/lstk/
 ```
 
-The backtick at the end of each line continues the command in PowerShell.
-
-Use the image named exactly `localstack/localstack`. Similar names such as `localstack-light`, `localstack-full`, `localstack-pro`, and the Lambda or Snowflake images are different.
-
-## Step 14: Check That LocalStack Is Running
-
-Check the container:
+Close PowerShell and open a new window. Check both:
 
 ```powershell
-docker ps --filter name=localstack-main
-docker logs localstack-main
+lstk --version
+aws --version
 ```
 
-The container should show `Up`. The logs show the services starting.
-
-Check the endpoint:
+## Step 13: Log In With lstk
 
 ```powershell
-Invoke-RestMethod http://localhost:4566/_localstack/health
+lstk login
 ```
 
-The response lists the services, including `s3` and `glue`.
+Follow the prompts. If you do not have an account yet, sign up for free at `https://app.localstack.cloud/sign-up?plan=free`. `lstk` stores your credentials in Windows, so you do not need to paste the token anywhere in this guide.
 
-If the container exits, the logs explain why. The most common cause is a missing token. The message is `License activation failed ... No credentials were found`. Go back to Step 12, set the token in the same PowerShell window, and run the `docker run` command again.
+Recent LocalStack versions need this login before they start.
+
+## Step 14: Start LocalStack
+
+```powershell
+lstk start
+lstk status
+```
+
+`lstk start` runs the LocalStack container for you. `lstk status` shows whether it is running and which resources exist.
+
+Stop and restart it with:
+
+```powershell
+lstk stop
+lstk restart
+```
+
+## Step 15: Set Up The LocalStack AWS Profile
+
+```powershell
+lstk setup aws
+```
+
+This adds a `localstack` profile to your AWS config and credentials files. The profile points AWS commands at LocalStack instead of real AWS. Run the command again with `--force` if you need to overwrite an existing `localstack` profile.
+
+## Step 16: Check That LocalStack Is Running
+
+Check the services:
+
+```powershell
+lstk status
+Invoke-RestMethod http://localhost:4566/_localstack/health | ConvertTo-Json -Depth 5
+```
+
+The health response lists the services. The free plan includes `s3`. Glue needs a paid LocalStack license, so this lab uses Spark's SQL catalog for table metadata instead (see Table Metadata Without A Glue License after Step 18).
 
 ### LocalStack Service URLs
 
@@ -393,16 +400,10 @@ All AWS services share one address, `http://localhost:4566`. You do not need a s
 | Health | `http://localhost:4566/_localstack/health` | See which services are running |
 | Info | `http://localhost:4566/_localstack/info` | See the LocalStack version |
 | S3 object (path style) | `http://localhost:4566/de-lab/raw/orders/orders.csv` | Fetch an uploaded file, once the bucket exists |
-| S3 bucket list | `awslocal s3 ls` | List buckets |
-| Glue | `awslocal glue get-databases` | List Glue databases (Glue has no browser page) |
+| S3 bucket list | `lstk aws s3 ls` | List buckets |
+| Glue | Not on the free plan | Use the Spark SQL catalog after Step 18 |
 
-The `s3a://de-lab/...` paths in Spark use the same endpoint through the `spark.hadoop.fs.s3a.endpoint` setting from Step 17. The `path.style.access` setting makes Spark put the bucket name in the URL path, which is the form in the table above.
-
-Check which services are running:
-
-```powershell
-Invoke-RestMethod http://localhost:4566/_localstack/health | ConvertTo-Json -Depth 5
-```
+The `s3a://de-lab/...` paths in Spark use the same endpoint through the `spark.hadoop.fs.s3a.endpoint` setting in Step 18. The `path.style.access` setting makes Spark put the bucket name in the URL path, which is the form in the table above.
 
 Check the LocalStack version:
 
@@ -410,32 +411,7 @@ Check the LocalStack version:
 Invoke-RestMethod http://localhost:4566/_localstack/info | ConvertTo-Json -Depth 5
 ```
 
-Fetch an uploaded file. Run this after Step 16 uploads it:
-
-```powershell
-curl.exe -s http://localhost:4566/de-lab/raw/orders/orders.csv
-```
-
-List the Glue databases:
-
-```powershell
-awslocal glue get-databases
-```
-
-## Step 15: Set The AWS Environment Variables
-
-These values are fake and only work with LocalStack. Run this once. They are saved for your Windows user:
-
-```powershell
-[Environment]::SetEnvironmentVariable("AWS_ACCESS_KEY_ID", "test", "User")
-[Environment]::SetEnvironmentVariable("AWS_SECRET_ACCESS_KEY", "test", "User")
-[Environment]::SetEnvironmentVariable("AWS_DEFAULT_REGION", "us-east-1", "User")
-[Environment]::SetEnvironmentVariable("AWS_ENDPOINT_URL", "http://localhost:4566", "User")
-```
-
-Close and reopen PowerShell so the new values load.
-
-## Step 16: Create The Bucket And Upload The Input Files
+## Step 17: Create The Bucket And Upload The Input Files
 
 Activate the lab environment, then create the `de-lab` bucket:
 
@@ -443,16 +419,22 @@ Activate the lab environment, then create the `de-lab` bucket:
 cd C:\spark-glue-local-lab
 .\.venv\Scripts\Activate.ps1
 
-awslocal s3 mb s3://de-lab
-awslocal s3 ls
+lstk aws s3 mb s3://de-lab
+lstk aws s3 ls
 ```
 
 Upload the input files:
 
 ```powershell
-awslocal s3 cp data\input\orders.csv s3://de-lab/raw/orders/orders.csv
-awslocal s3 cp data\input\customers.json s3://de-lab/raw/customers/customers.json
-awslocal s3 ls s3://de-lab/raw/ --recursive
+lstk aws s3 cp data\input\orders.csv s3://de-lab/raw/orders/orders.csv
+lstk aws s3 cp data\input\customers.json s3://de-lab/raw/customers/customers.json
+lstk aws s3 ls s3://de-lab/raw/ --recursive
+```
+
+Fetch an uploaded file to check the URL pattern:
+
+```powershell
+curl.exe -s http://localhost:4566/de-lab/raw/orders/orders.csv
 ```
 
 To copy anything from LocalStack back to your PC:
@@ -460,15 +442,40 @@ To copy anything from LocalStack back to your PC:
 ```powershell
 New-Item -ItemType Directory -Force data\downloaded\orders_parquet
 
-awslocal s3 cp `
+lstk aws s3 cp `
   s3://de-lab/curated/orders_parquet/ `
   data\downloaded\orders_parquet\ `
   --recursive
 ```
 
-## Step 17: Read And Write S3 From Spark
+## Step 18: Read And Write S3 From Spark
 
 Spark needs the Hadoop AWS libraries to read `s3a://` paths. Spark downloads them when you pass `--packages`. The first run can take a while.
+
+**Why `s3a://` and not `s3://`?** On EMR, `s3://` works because EMR ships its own S3 driver (EMRFS) and the AWS libraries. Open-source Spark on your PC has no `s3://` driver. The open-source option is `s3a://`, which comes from the `hadoop-aws` jar and its AWS SDK dependency, `aws-java-sdk-bundle`. Without those jars, Spark fails with `No FileSystem for scheme`. The `--packages` option downloads both jars. The `spark.hadoop.fs.s3a.endpoint` setting then points Spark at LocalStack instead of AWS. EMRFS needs no endpoint setting because it always talks to AWS.
+
+**The same session on EMR.** The transformation code stays the same. The session setup and the paths change:
+
+| Setting | This lab (LocalStack) | EMR |
+|---|---|---|
+| Creating the session | `SparkSession.builder` with `master("local[2]")` | `SparkSession.builder.getOrCreate()`. Some EMR notebooks create `spark` for you |
+| Hadoop AWS jars | `--packages` downloads them | Already on the cluster, so there is no `--packages` |
+| S3 scheme | `s3a://de-lab/...` | `s3://your-real-bucket/...` (EMRFS) |
+| Endpoint | `spark.hadoop.fs.s3a.endpoint` = `http://localhost:4566` | Not set, because EMR talks to AWS |
+| Credentials | `test` / `test` access keys | IAM role attached to the cluster or job |
+| Path style | `path.style.access` = `true` | Not needed |
+| Table metadata | Spark SQL catalog table over the S3 folder | `spark.table("curated.orders_raw")`, if the cluster uses the Glue Data Catalog as its metastore |
+
+The same job on EMR looks like this:
+
+```python
+spark = SparkSession.builder.appName("orders-on-emr").getOrCreate()
+
+orders = spark.read.option("header", True).csv("s3://your-real-bucket/raw/orders/orders.csv")
+orders_from_glue = spark.table("curated.orders_raw")
+```
+
+The exact setup depends on how your team configures the cluster, so check with your platform team before you rely on the Glue table lookup.
 
 Create `C:\spark-glue-local-lab\jobs\localstack_s3_etl.py` with this content:
 
@@ -534,31 +541,55 @@ spark-submit `
 Check the output in LocalStack:
 
 ```powershell
-awslocal s3 ls s3://de-lab/curated/ --recursive
+lstk aws s3 ls s3://de-lab/curated/ --recursive
 ```
 
-## Step 18: Stop, Restart, Or Remove LocalStack
+## Step 19: Stop Or Remove LocalStack
 
-Stop the container when you finish:
+Stop LocalStack when you finish:
 
 ```powershell
-docker stop localstack-main
+lstk stop
 ```
 
-Start it again later. Set the token in the new PowerShell window first, then start the container:
+Start it again later with `lstk start`.
+
+Download anything you need from LocalStack S3 before you remove it. Check the `lstk` help for how to remove the emulator and its data:
 
 ```powershell
-$env:LOCALSTACK_AUTH_TOKEN = "paste-your-token-here"
-docker start localstack-main
+lstk --help
 ```
 
-To delete the container and everything stored in it:
+### Remove The LocalStack AWS Profile (Optional)
 
-```powershell
-docker rm -f localstack-main
-```
+`lstk` has no command that deletes the `localstack` profile. `lstk logout` removes only your login credentials. To remove the profile, edit two files by hand. Both are in your user folder, `%USERPROFILE%\.aws`.
 
-Download anything you need from LocalStack S3 before you delete the container.
+1. Back up both files first:
+
+   ```powershell
+   Copy-Item $HOME\.aws\config $HOME\.aws\config.bak
+   Copy-Item $HOME\.aws\credentials $HOME\.aws\credentials.bak
+   ```
+
+2. Open `$HOME\.aws\config` in Notepad and delete the `[profile localstack]` block:
+
+   ```powershell
+   notepad $HOME\.aws\config
+   ```
+
+3. Open `$HOME\.aws\credentials` in Notepad and delete the `[localstack]` block:
+
+   ```powershell
+   notepad $HOME\.aws\credentials
+   ```
+
+4. Check that the profile is gone:
+
+   ```powershell
+   aws configure list-profiles
+   ```
+
+   `localstack` should not appear in the list. To set it up again, run `lstk setup aws`.
 
 ## Lesson: Update Data On S3 By Rewriting It
 
@@ -567,7 +598,7 @@ S3 is object storage, not a database. Spark does not change one row inside a CSV
 Delete a folder:
 
 ```powershell
-awslocal s3 rm s3://de-lab/curated/orders_csv/ --recursive
+lstk aws s3 rm s3://de-lab/curated/orders_csv/ --recursive
 ```
 
 Update by rewrite, in the PySpark shell or a job:
@@ -592,9 +623,37 @@ updated.write.mode("overwrite").partitionBy("order_year", "category").parquet(
 
 For row-level `UPDATE`, `DELETE`, and `MERGE` in production, use a table format such as Apache Iceberg, Delta Lake, or Apache Hudi. Plain CSV and Parquet folders in S3 do not behave like database tables.
 
+### Table Metadata Without A Glue License
+
+LocalStack's Glue service needs a paid license, so this lab uses Spark's built-in SQL catalog for table metadata. Run these lines in a PySpark session, for example `pyspark --master "local[2]"` with the S3 settings from Step 18:
+
+```python
+spark.sql("CREATE DATABASE IF NOT EXISTS curated")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS curated.orders_raw (
+  order_id INT,
+  customer_id STRING,
+  order_date STRING,
+  status STRING,
+  category STRING,
+  amount DOUBLE
+)
+USING csv
+OPTIONS (header 'true')
+LOCATION 's3a://de-lab/raw/orders/'
+""")
+
+spark.sql("SELECT status, COUNT(*) AS order_count FROM curated.orders_raw GROUP BY status").show()
+```
+
+The table is metadata only. The data stays in S3. Spark keeps this catalog in the current session, so run the `CREATE` lines again after you restart Spark. Point `LOCATION` at a folder that holds only this dataset.
+
 ## Lesson: AWS Glue Data Catalog
 
-The Glue Data Catalog maps S3 files to table definitions. Tools such as Athena, Glue Spark jobs, and EMR use it to find and read the data. Read these sections in `pyspark-101-examples.md`:
+The Glue Data Catalog maps S3 files to table definitions. Tools such as Athena, Glue Spark jobs, and EMR use it to find and read the data. Spark's SQL catalog does the same job for practice, as shown above.
+
+LocalStack's Glue service needs a paid license, so the `lstk aws glue ...` commands are not part of this free lab. Read these sections in `pyspark-101-examples.md`:
 
 - `AWS Glue Data Catalog`
 - `Can Glue Do Create, Read, Update, Delete?`
@@ -616,31 +675,34 @@ The Glue Data Catalog maps S3 files to table definitions. Tools such as Athena, 
 
 **`No FileSystem for scheme s3a`**
 
-- Run `spark-submit` with the `--packages` option from Step 17.
+- Run `spark-submit` with the `--packages` option from Step 18.
 - The first run needs an internet connection so Spark can download the packages.
 
-**`awslocal` is not recognized (or `command not found`)**
+**`awslocal` is deprecated, or `lstk` is not recognized**
 
-- `awslocal` is installed only inside the lab's virtual environment. Turn the environment on first:
+- Use `lstk aws` instead of `awslocal`, for example `lstk aws s3 ls`.
+- If `lstk` is not recognized, install it again following the Step 12 link, then open a new PowerShell window.
 
-  ```powershell
-  cd C:\spark-glue-local-lab
-  .\.venv\Scripts\Activate.ps1
-  awslocal --version
-  ```
+**`No AWS profile found`**
 
-- Run `.\.venv\Scripts\Activate.ps1` again in every new PowerShell window before you use `awslocal`.
-- If `awslocal` is still missing after you activate the environment, run `python -m pip install awscli-local` inside the environment.
+- Run `lstk setup aws` (Step 15).
+
+**`License activation failed` or the container exits with code 55**
+
+- Run `lstk login` (Step 13), then `lstk start` again.
+
+**`Table or view not found: curated.orders_raw`**
+
+- Spark's catalog lives only in the current session. Run the `CREATE` lines from the Table Metadata section again.
+
+**`Glue service is not included in your LocalStack license`**
+
+- Glue needs a paid LocalStack license. Use the Spark SQL catalog instead.
 
 **`Connection refused localhost:4566`**
 
-- LocalStack is not running. Check `docker ps --filter name=localstack-main`.
-- If the container is missing, run the command in Step 13.
-- Check that Docker Desktop is running.
-
-**The container exits with code 55 and mentions `LOCALSTACK_AUTH_TOKEN`**
-
-- The token is missing from the PowerShell window where you ran `docker run`. Check it with `$env:LOCALSTACK_AUTH_TOKEN.Length`. Go back to Step 12.
+- LocalStack is not running. Run `lstk status`, then `lstk start` if needed.
+- Check that Docker Desktop is running with `docker ps`.
 
 **PowerShell says script activation is blocked**
 
@@ -652,8 +714,8 @@ The Glue Data Catalog maps S3 files to table definitions. Tools such as Athena, 
 
 **`AccessDenied` or credential errors**
 
-- Use `test` for the access key and secret key with LocalStack.
-- Check `spark.hadoop.fs.s3a.access.key` and `spark.hadoop.fs.s3a.secret.key` in your job.
+- Use `test` for the access key and secret key in the Spark job (Step 18).
+- Check `spark.hadoop.fs.s3a.access.key` and `spark.hadoop.fs.s3a.secret.key`.
 
 ---
 
