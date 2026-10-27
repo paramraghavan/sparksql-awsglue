@@ -35,8 +35,9 @@ For SQL users, the easiest way to learn PySpark is to map familiar SQL operation
 
 ### PySpark To SQL Cheat Sheet
 
+
 | SQL                       | PySpark                                                |
-|---------------------------|--------------------------------------------------------|
+| ------------------------- | ------------------------------------------------------ |
 | `select a, b from t`      | `df.select("a", "b")`                                  |
 | `where amount > 100`      | `df.where(F.col("amount") > 100)`                      |
 | `group by category`       | `df.groupBy("category").agg(...)`                      |
@@ -48,7 +49,11 @@ For SQL users, the easiest way to learn PySpark is to map familiar SQL operation
 | `row_number() over (...)` | `F.row_number().over(Window...)`                       |
 | `create table as select`  | `df.write.saveAsTable(...)` or `df.write.parquet(...)` |
 
+For guidance on choosing either style, see [When to use Spark SQL vs DataFrame functions](#when-to-use-spark-sql-vs-pyspark-dataframe-functions) after the sample data.
+
 ## 3. Setup Pattern Used In Examples
+
+`F` below is an alias for `pyspark.sql.functions`, the module containing built-in Spark column functions. `Window` defines window specifications, and `SparkSession` is the entry point for working with Spark.
 
 ```python
 from pyspark.sql import SparkSession
@@ -179,33 +184,284 @@ group by category
 
 Before (the Python list of tuples above) and after `orders = spark.createDataFrame(...)`:
 
-| order_id | customer_id | order_date | status | category | amount |
-|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 |
+
+| order_id | customer_id | order_date | status    | category    | amount |
+| -------- | ----------- | ---------- | --------- | ----------- | ------ |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   |
+| 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99 |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75  |
 
 After `customers = spark.createDataFrame(...)`:
 
-| customer_id | customer_name | state | segment |
-|---|---|---|---|
-| C001 | Asha | CA | retail |
-| C002 | Ben | NY | business |
-| C003 | Cara | TX | retail |
-| C004 | Dev | WA | retail |
+
+| customer_id | customer_name | state | segment  |
+| ----------- | ------------- | ----- | -------- |
+| C001        | Asha          | CA    | retail   |
+| C002        | Ben           | NY    | business |
+| C003        | Cara          | TX    | retail   |
+| C004        | Dev           | WA    | retail   |
 
 **SQL view example.** The `spark.sql(...)` query groups `orders` by `category`:
 
-| category | order_count | total_amount |
-|---|---|---|
-| books | 2 | 50.5 |
-| electronics | 2 | 399.98 |
-| grocery | 2 | 61.0 |
+
+| category    | order_count | total_amount |
+| ----------- | ----------- | ------------ |
+| books       | 2           | 50.5         |
+| electronics | 2           | 399.98       |
+| grocery     | 2           | 61.0         |
 
 Each category row sums only that category's orders. The view is temporary, so it disappears when the Spark session ends.
+
+### When to Use Spark SQL vs PySpark DataFrame Functions
+
+**Choose the style your team can most easily read, write, and review. If you already know SQL, start with Spark SQL for relational business logic.** Window functions, CASE WHEN, joins, and aggregations often read naturally as SQL. Use DataFrame functions where Python makes the pipeline simpler, especially for reusable rules, dynamic column lists, and file input/output. Both styles support these transformations.
+
+Both interfaces use Spark's structured query engine and optimizer. Equivalent built-in expressions can produce the same execution plan; neither interface is automatically faster. `spark.sql(...)` returns a DataFrame, so you can freely combine them. See the [Spark SQL and DataFrame guide](https://spark.apache.org/docs/3.5.6/sql-programming-guide.html).
+
+
+| Decision factor        | Spark SQL is a good fit when…                                                         | DataFrame functions are a good fit when…                                            |
+| ---------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Familiarity with SQL   | You or the reviewers already think in SELECT, CASE, JOIN, GROUP BY, and window clauses | The team is more comfortable with Python expressions and method chains               |
+| Readability            | A query or a few named CTEs show the business logic clearly                            | Named DataFrames and small helper functions make each step easier to follow          |
+| Ease of use            | You can express the transformation directly without generating SQL dynamically         | You need read/write options, schema handling, or columns selected from configuration |
+| Reuse                  | Shared SQL queries or views fit the team's workflow                                    | The same validation/cleanup rule must be applied across many columns or datasets     |
+| Review and maintenance | Analysts and SQL developers will own the rules                                         | Python developers will maintain a reusable ingestion framework                       |
+| Existing project style | The surrounding transformations are already clear SQL                                  | The surrounding code is already a clear DataFrame pipeline                           |
+
+**A practical starting point for SQL users:** read files with the DataFrame API, register a temporary view, express business rules in SQL, then use the returned DataFrame to validate or write the result. Use `F.expr` or `selectExpr` for a short SQL expression inside a DataFrame pipeline.
+
+Choose locally within a job: a window calculation can stay in SQL while a configurable validation step uses DataFrame functions. Avoid switching styles for every small expression, and split long SQL queries or long method chains into named steps. The shortest code is not always the easiest to maintain.
+
+**Example: the same CASE WHEN and window in both styles.** Run sections 3–4 first, including the sample `orders` DataFrame. These examples label orders of at least 100 as HIGH and number orders newest-first for each customer.
+
+Spark SQL:
+
+```python
+orders.createOrReplaceTempView("orders_sql_demo")
+
+ranked_sql = spark.sql("""
+SELECT
+    order_id,
+    customer_id,
+    amount,
+    CASE WHEN amount >= 100 THEN 'HIGH' ELSE 'STANDARD' END AS amount_band,
+    ROW_NUMBER() OVER (
+        PARTITION BY customer_id
+        ORDER BY to_date(order_date) DESC NULLS LAST, order_id DESC
+    ) AS rn
+FROM orders_sql_demo
+""")
+```
+
+PySpark DataFrame functions:
+
+```python
+from pyspark.sql import Window
+from pyspark.sql import functions as F
+
+latest_first = Window.partitionBy("customer_id").orderBy(
+    F.to_date("order_date").desc_nulls_last(), F.col("order_id").desc()
+)
+ranked_df = (
+    orders
+    .withColumn("amount_band",
+                F.when(F.col("amount") >= 100, F.lit("HIGH"))
+                 .otherwise(F.lit("STANDARD")))
+    .withColumn("rn", F.row_number().over(latest_first))
+    .select("order_id", "customer_id", "amount", "amount_band", "rn")
+)
+```
+
+Both keep all six sample rows. Only order 2 has the HIGH band. The secondary ordering by `order_id` breaks same-date ties in this sample; real pipelines need an agreed source version and a unique tie-breaker.
+
+**Combine the styles:** apply DataFrame operations to the SQL result:
+
+```python
+latest_orders = ranked_sql.filter(F.col("rn") == 1)
+latest_orders.orderBy("customer_id").show()
+```
+
+Expected latest orders: C001 → 3, C002 → 5, C003 → 4, C004 → 6. This selects the latest order of any status, including CANCELLED or RETURNED. Filtering to COMPLETE before ranking would answer a different business question.
+
+For a single SQL expression, use `F.expr` directly:
+
+```python
+orders.select(
+    "order_id",
+    F.expr("CASE WHEN amount >= 100 THEN 'HIGH' ELSE 'STANDARD' END")
+     .alias("amount_band"),
+).show()
+```
+
+Useful habits:
+
+- Prefer built-in Spark expressions (`F.when`, `F.sum`, `F.to_date`, SQL functions) before writing a Python UDF. A Python helper that builds a Column expression still uses native Spark operations; it is not a row-by-row Python UDF.
+- Specify tie-breakers and the intended window frame. A running total over rows may need `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, or `.rowsBetween(...)`, to avoid peer-group behavior.
+- Make null/default handling explicit. In the CASE example, a null amount takes the ELSE branch; add a separate missing-value rule if that is not intended.
+- A temporary view belongs to its Spark session; creating one does not copy, persist, or register the data in Glue.
+- Use `ranked_sql.explain("formatted")` and `ranked_df.explain("formatted")` when comparing execution plans. Syntax alone does not remove shuffle, sorting, or skew costs.
+
+#### UDF: custom Python logic and its cost
+
+A **user-defined function (UDF)** lets you apply custom logic that built-in Spark expressions cannot conveniently express. A regular scalar Python UDF, created with `F.udf`, evaluates Python logic for each input row processed by that expression. It can add substantial overhead on large datasets.
+
+1. **Row-wise logic and data transfer:** Spark moves input values from an executor's JVM to a separate Python worker process and returns the results. Serialization, inter-process transfer, and Python function calls add cost. Transfers can be batched; this does not imply one JVM-to-Python round trip per row.
+2. **Python runtime requirement:** Executors are JVM processes. The machines/containers running Python UDF tasks must also have a compatible Python interpreter and the UDF's dependencies available. Spark launches Python workers as needed and normally reuses them (`spark.python.worker.reuse=true`); it does not launch an interpreter for every row. Installing dependencies only on the submitting laptop is insufficient for remote executors.
+3. **Optimization limits:** Spark still schedules and manages the computation, but its SQL optimizer generally cannot inspect arbitrary Python logic as it can built-in expressions. The Python boundary and reduced optimization opportunities can make a UDF slower than an equivalent native expression. Writing the call inside SQL does not remove that Python cost.
+
+**Prefer built-in functions first:** use `F.when` for conditional logic, `F.upper`/`F.trim` for text, and native date, array, or aggregation functions where possible. A Python helper that returns these Column expressions is not a Python UDF and does not run that helper once per row.
+
+Use a Python UDF when necessary custom logic or a Python library cannot reasonably be expressed with built-ins. Handle nulls, specify the return type, and benchmark representative data. Spark may retry or reevaluate work, so do not rely on a UDF being called exactly once or use it for per-row external writes.
+
+**Simple example: uppercase a name using a Python UDF.** This demonstrates how a UDF works; for this task, the built-in Spark function below is the preferred choice.
+
+Run in an existing `spark` session:
+
+```python
+from pyspark.sql import functions as F
+from pyspark.sql.types import StringType
+
+
+def uppercase_name(name):
+    if name is None:
+        return None
+    return name.upper()  # Python str.upper()
+
+
+uppercase_name_udf = F.udf(uppercase_name, StringType(), useArrow=False)
+
+name_samples = spark.createDataFrame([
+    (1, "Asha"),
+    (2, "ben"),
+    (3, None),
+], "customer_id long, customer_name string")
+
+uppercased = name_samples.withColumn(
+    "name_upper_udf", uppercase_name_udf(F.col("customer_name"))
+)
+uppercased.orderBy("customer_id").show()
+```
+
+| customer_id | customer_name | name_upper_udf |
+|---|---|---|
+| 1 | Asha | ASHA |
+| 2 | ben | BEN |
+| 3 | NULL | NULL |
+
+`uppercase_name` is a normal Python function. `F.udf` wraps it as a Spark Column expression with a string return type. `withColumn` applies it to the name column; `show()` triggers execution. The null check prevents calling `.upper()` on `None`.
+
+**Preferred alternative: `pyspark.sql.functions.upper`.** Because `F` aliases `pyspark.sql.functions`, use `F.upper` directly:
+
+```python
+uppercased_builtin = name_samples.withColumn(
+    "name_upper", F.upper(F.col("customer_name"))
+)
+uppercased_builtin.orderBy("customer_id").show()
+```
+
+This produces the same uppercase values for the sample and handles nulls automatically. **`F.upper` is generally faster and can be much faster on large datasets** because it uses Spark's native expression engine without Python UDF serialization, data transfer, or per-row Python calls. Use this UDF only to learn the mechanism; use the built-in for ordinary uppercase conversion.
+
+Pandas UDFs process batches using Arrow and can reduce overhead for suitable vectorized logic. Arrow-optimized scalar UDFs improve data transfer but still apply scalar Python logic; neither option automatically makes arbitrary Python code as efficient as a built-in expression.
+
+References: [Python UDF API](https://spark.apache.org/docs/3.5.6/api/python/reference/pyspark.sql/api/pyspark.sql.functions.udf.html), [Python worker configuration](https://spark.apache.org/docs/3.5.6/configuration.html#runtime-environment), and [Arrow/Pandas UDFs](https://spark.apache.org/docs/3.5.6/api/python/user_guide/sql/arrow_pandas.html).
+
+#### What does `F` mean?
+
+```python
+from pyspark.sql import functions as F
+```
+
+`F` is a conventional alias for the **`pyspark.sql.functions` module**. The import above is equivalent to `import pyspark.sql.functions as F`. It lets you write `F.col`, `F.when`, and `F.sum` without importing each function separately. `F` is not a DataFrame or a Spark session.
+
+
+| Expression                              | Kind                                            | Meaning                                          |
+| --------------------------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| `F.col("amount")`                       | Built-in function returning a Column expression | Reference the amount column                      |
+| `F.lit("UNKNOWN")`                      | Built-in function returning a Column expression | Create a constant value                          |
+| `F.upper("status")`                     | Built-in function returning a Column expression | Uppercase values from the status column          |
+| `orders.withColumn(...)`                | DataFrame method                                | Return a DataFrame with an added/replaced column |
+| `F.col("amount").cast("decimal(12,2)")` | Column method                                   | Convert the column expression to another type    |
+| `orders.show()`                         | DataFrame action                                | Execute the plan and display rows                |
+
+The DataFrame method controls the operation; the `F.*` expression describes a calculation inside it. For example, `orders.withColumn("source", F.lit("orders"))` adds the constant string `orders`; `F.col("orders")` would instead reference a column named `orders`.
+
+#### More DataFrame examples and when to use them
+
+Run these after the sample `orders` and `customers` DataFrames in section 4. They complement the SQL/window examples above.
+
+**1. Standardize several source fields before applying business rules.** Use DataFrame functions for ingestion cleanup and type conversion:
+
+```python
+prepared_orders = (
+    orders
+    .withColumn("status", F.coalesce(F.upper(F.trim("status")), F.lit("UNKNOWN")))
+    .withColumn("order_date", F.to_date("order_date", "yyyy-MM-dd"))
+    .withColumn("amount", F.col("amount").cast("decimal(12,2)"))
+    .withColumn("source_system", F.lit("orders_feed"))
+)
+prepared_orders.select("order_id", "status", "order_date", "amount", "source_system").show()
+```
+
+This preserves six rows, converts the dates and amounts, and adds `source_system`. The fallback handles null statuses; empty strings need a separate rule. This sample assumes valid dates/numbers. Real ingestion should classify parse failures explicitly rather than silently accepting nulls or relying on a particular ANSI setting.
+
+**2. Build reusable data-quality expressions.** Use Python helpers when the same rule applies to multiple columns or datasets:
+
+```python
+def has_required_value(column_name):
+    value = F.col(column_name)
+    return value.isNotNull() & (F.length(F.trim(value.cast("string"))) > 0)
+
+checked_orders = orders.withColumn(
+    "keys_present",
+    has_required_value("order_id") & has_required_value("customer_id"),
+)
+accepted_orders = checked_orders.filter(F.col("keys_present"))
+rejected_orders = checked_orders.filter(~F.col("keys_present"))
+```
+
+All six sample rows have both keys, so accepted = 6 and rejected = 0. The helper also rejects blank/whitespace values. It builds a native Spark Column expression; it does not execute a Python function once per row. This checks key presence, not uniqueness or whether the customer exists.
+
+**3. Select columns from configuration.** Use DataFrame methods when the column list changes by dataset:
+
+```python
+selected_columns = ["order_id", "customer_id", "amount"]  # for example, from validated config
+selected_orders = prepared_orders.select(*selected_columns).withColumn(
+    "dataset", F.lit("orders")
+)
+selected_orders.show()
+```
+
+`*selected_columns` expands the Python list into select arguments. This is useful for reusable ingestion jobs and avoids constructing SQL strings for each column list. Validate that configured columns exist before running the transformation.
+
+**4. Chain a join, filter, and aggregation in one Python pipeline.** Use this when it fits naturally with existing DataFrame-based code:
+
+```python
+state_totals = (
+    prepared_orders
+    .join(customers.select("customer_id", "state"), on="customer_id", how="left")
+    .filter(F.col("status") == "COMPLETE")
+    .groupBy("state")
+    .agg(
+        F.count("*").alias("order_count"),
+        F.sum("amount").alias("total_amount"),
+    )
+)
+state_totals.orderBy("state").show()
+```
+
+Expected results:
+
+
+| state | order_count | total_amount |
+| ----- | ----------- | ------------ |
+| CA    | 1           | 35.50        |
+| NY    | 2           | 399.98       |
+| TX    | 1           | 42.25        |
+
+The customer lookup must have one row per `customer_id` for these totals; duplicate lookup keys can multiply orders. Unmatched customers remain in the left join and produce a null state group if their orders pass the filter. The same logic can be written in SQL—use whichever is easier for your team to maintain.
 
 ## 5. Read Files
 
@@ -270,14 +526,15 @@ order_id,customer_id,order_date,status,category,amount
 
 After, `orders` is a DataFrame. Spark scanned the file to guess the types, so `order_date` became `date` and `order_id` became `integer`:
 
-| order_id | customer_id | order_date | status | category | amount |
-|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 |
+
+| order_id | customer_id | order_date | status    | category    | amount |
+| -------- | ----------- | ---------- | --------- | ----------- | ------ |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   |
+| 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99 |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75  |
 
 **Read CSV with an explicit schema.** The same file is read with `orders_schema`. The table values match the table above, but `order_date` is now a `string` because the schema says so. Spark did not guess the types. Section 7 converts `order_date` to a date.
 
@@ -289,12 +546,13 @@ After, `orders` is a DataFrame. Spark scanned the file to guess the types, so `o
 
 After, `customers` is a DataFrame with one row per object. In this run the columns came out alphabetically (`segment` before `state`), not in the order they appear in the file. Use `select(...)` when you need a fixed column order.
 
-| customer_id | customer_name | segment | state |
-|---|---|---|---|
-| C001 | Asha | retail | CA |
-| C002 | Ben | business | NY |
-| C003 | Cara | retail | TX |
-| C004 | Dev | retail | WA |
+
+| customer_id | customer_name | segment  | state |
+| ----------- | ------------- | -------- | ----- |
+| C001        | Asha          | retail   | CA    |
+| C002        | Ben           | business | NY    |
+| C003        | Cara          | retail   | TX    |
+| C004        | Dev           | retail   | WA    |
 
 **Read Parquet and read from LocalStack S3** need files that the sample run did not create, so no output is shown for them. Parquet keeps its schema in the file, so no `inferSchema` is needed.
 
@@ -369,29 +627,29 @@ These calls read a DataFrame and print information about it. They do not change 
    |-- category: string
    |-- amount: double
   ```
-
 - **`orders.columns`** returns the names as a list: `['order_id', 'customer_id', 'order_date', 'status', 'category', 'amount']`.
 - **`orders.dtypes`** returns each name with its type: `[('order_id', 'bigint'), ('customer_id', 'string'), ..., ('amount', 'double')]`. Python integers become `bigint`, so the type differs from the CSV read above.
 - **`orders.count()`** returns `6`, the number of rows.
 - **`orders.limit(5).show()`** prints only the first five rows:
 
-  | order_id | customer_id | order_date | status | category | amount |
-  |---|---|---|---|---|---|
-  | 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 |
-  | 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 |
-  | 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 |
-  | 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 |
-  | 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 |
 
+  | order_id | customer_id | order_date | status    | category    | amount |
+  | -------- | ----------- | ---------- | --------- | ----------- | ------ |
+  | 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   |
+  | 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99 |
+  | 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   |
+  | 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  |
+  | 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  |
 - **`orders.describe("amount").show()`** computes summary statistics for one column:
 
-  | summary | amount |
-  |---|---|
-  | count | 6 |
-  | mean | 85.24666666666667 |
-  | stddev | 109.55538337601976 |
-  | min | 15.0 |
-  | max | 299.99 |
+
+  | summary | amount             |
+  | ------- | ------------------ |
+  | count   | 6                  |
+  | mean    | 85.24666666666667  |
+  | stddev  | 109.55538337601976 |
+  | min     | 15.0               |
+  | max     | 299.99             |
 
 **`orders.where("amount > 100").explain()`** prints the query plan instead of rows. It is not captured in the sample output.
 
@@ -428,14 +686,15 @@ Before, `orders` is the table from section 4. The `amount` column is a `double`,
 
 After the chain, the output has these columns: `order_id`, `customer_id`, `order_date` (now a `date`), `status`, `category`, `order_amount` (renamed from `amount`), and `order_year` (added).
 
-| order_id | customer_id | order_date | status | category | order_amount | order_year |
-|---|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 | 2026 |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 | 2026 |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 | 2026 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 | 2026 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 | 2026 |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 | 2026 |
+
+| order_id | customer_id | order_date | status    | category    | order_amount | order_year |
+| -------- | ----------- | ---------- | --------- | ----------- | ------------ | ---------- |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5         | 2026       |
+| 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99       | 2026       |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0         | 2026       |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25        | 2026       |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99        | 2026       |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75        | 2026       |
 
 - `withColumnRenamed` changes the name only. The values are unchanged.
 - `cast("double")` changes the type. Here `amount` was already a `double`, so the values do not change.
@@ -466,38 +725,42 @@ The input is the `orders` table from section 4 (6 rows). Each filter keeps only 
 
 **`orders.where(F.col("status") == "COMPLETE")`** keeps 4 rows (orders 1, 2, 4, 5):
 
-| order_id | customer_id | order_date | status | category | amount |
-|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 |
+
+| order_id | customer_id | order_date | status   | category    | amount |
+| -------- | ----------- | ---------- | -------- | ----------- | ------ |
+| 1        | C001        | 2026-01-01 | COMPLETE | books       | 35.5   |
+| 2        | C002        | 2026-01-01 | COMPLETE | electronics | 299.99 |
+| 4        | C003        | 2026-01-02 | COMPLETE | grocery     | 42.25  |
+| 5        | C002        | 2026-01-03 | COMPLETE | electronics | 99.99  |
 
 **`orders.where(F.col("amount") >= 100)`** keeps 1 row (order 2):
 
-| order_id | customer_id | order_date | status | category | amount |
-|---|---|---|---|---|---|
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 |
+
+| order_id | customer_id | order_date | status   | category    | amount |
+| -------- | ----------- | ---------- | -------- | ----------- | ------ |
+| 2        | C002        | 2026-01-01 | COMPLETE | electronics | 299.99 |
 
 **`orders.where(F.col("category").isin("books", "grocery"))`** keeps 4 rows (orders 1, 3, 4, 6):
 
-| order_id | customer_id | order_date | status | category | amount |
-|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 |
+
+| order_id | customer_id | order_date | status    | category | amount |
+| -------- | ----------- | ---------- | --------- | -------- | ------ |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books    | 35.5   |
+| 3        | C001        | 2026-01-02 | CANCELLED | books    | 15.0   |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery  | 42.25  |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery  | 18.75  |
 
 **`orders.where(~(F.col("status") == "CANCELLED"))`** removes the one cancelled order and keeps 5 rows (orders 1, 2, 4, 5, 6).
 
 **`orders.where("status = 'COMPLETE' and amount >= 25")`** uses SQL text and keeps 4 rows (orders 1, 2, 4, 5):
 
-| order_id | customer_id | order_date | status | category | amount |
-|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 |
+
+| order_id | customer_id | order_date | status   | category    | amount |
+| -------- | ----------- | ---------- | -------- | ----------- | ------ |
+| 1        | C001        | 2026-01-01 | COMPLETE | books       | 35.5   |
+| 2        | C002        | 2026-01-01 | COMPLETE | electronics | 299.99 |
+| 4        | C003        | 2026-01-02 | COMPLETE | grocery     | 42.25  |
+| 5        | C002        | 2026-01-03 | COMPLETE | electronics | 99.99  |
 
 A filter never changes column values. It only removes rows. Each filter returns a new DataFrame, so `orders` itself is unchanged.
 
@@ -526,14 +789,15 @@ end as amount_bucket
 
 The input is the `orders` table from section 4. The `when` conditions are checked in order, and the first one that is true wins.
 
-| order_id | customer_id | order_date | status | category | amount | amount_bucket |
-|---|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 | medium |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 | high |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 | low |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 | medium |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 | medium |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 | low |
+
+| order_id | customer_id | order_date | status    | category    | amount | amount_bucket |
+| -------- | ----------- | ---------- | --------- | ----------- | ------ | ------------- |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   | medium        |
+| 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99 | high          |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   | low           |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  | medium        |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  | medium        |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75  | low           |
 
 `amount_bucket` is the only new column. Order 1 gets `medium` because 35.5 is at least 25 but under 100. Order 3 gets `low` because 15.0 is under 25. Put the most specific conditions first, because `>= 25` would also match everything at or above 100.
 
@@ -541,12 +805,13 @@ The input is the `orders` table from section 4. The `when` conditions are checke
 
 Each example below starts from the same `orders` DataFrame:
 
-| order_id | customer_id | status | amount | category |
-|---|---|---|---|---|
-| 1 | 101 | COMPLETE | 25.0 | books |
-| 2 | NULL | COMPLETE | 40.0 | toys |
-| 3 | 103 | NULL | NULL | books |
-| 4 | 104 | PENDING | 0.0 | NULL |
+
+| order_id | customer_id | status   | amount | category |
+| -------- | ----------- | -------- | ------ | -------- |
+| 1        | 101         | COMPLETE | 25.0   | books    |
+| 2        | NULL        | COMPLETE | 40.0   | toys     |
+| 3        | 103         | NULL     | NULL   | books    |
+| 4        | 104         | PENDING  | 0.0    | NULL     |
 
 ### `orders.na.drop()`
 
@@ -558,9 +823,10 @@ orders.na.drop()
 
 After:
 
-| order_id | customer_id | status | amount | category |
-|---|---|---|---|---|
-| 1 | 101 | COMPLETE | 25.0 | books |
+
+| order_id | customer_id | status   | amount | category |
+| -------- | ----------- | -------- | ------ | -------- |
+| 1        | 101         | COMPLETE | 25.0   | books    |
 
 Rows 2, 3, and 4 are removed because each has at least one null.
 
@@ -574,11 +840,12 @@ orders.na.drop(subset=["customer_id", "order_id"])
 
 After:
 
-| order_id | customer_id | status | amount | category |
-|---|---|---|---|---|
-| 1 | 101 | COMPLETE | 25.0 | books |
-| 3 | 103 | NULL | NULL | books |
-| 4 | 104 | PENDING | 0.0 | NULL |
+
+| order_id | customer_id | status   | amount | category |
+| -------- | ----------- | -------- | ------ | -------- |
+| 1        | 101         | COMPLETE | 25.0   | books    |
+| 3        | 103         | NULL     | NULL   | books    |
+| 4        | 104         | PENDING  | 0.0    | NULL     |
 
 Row 2 is removed because its `customer_id` is null. Rows 3 and 4 stay even though they have other nulls.
 
@@ -592,12 +859,13 @@ orders.na.fill({"status": "UNKNOWN", "amount": 0.0})
 
 After:
 
-| order_id | customer_id | status | amount | category |
-|---|---|---|---|---|
-| 1 | 101 | COMPLETE | 25.0 | books |
-| 2 | NULL | COMPLETE | 40.0 | toys |
-| 3 | 103 | UNKNOWN | 0.0 | books |
-| 4 | 104 | PENDING | 0.0 | NULL |
+
+| order_id | customer_id | status   | amount | category |
+| -------- | ----------- | -------- | ------ | -------- |
+| 1        | 101         | COMPLETE | 25.0   | books    |
+| 2        | NULL        | COMPLETE | 40.0   | toys     |
+| 3        | 103         | UNKNOWN  | 0.0    | books    |
+| 4        | 104         | PENDING  | 0.0    | NULL     |
 
 Row 3's null `status` becomes `UNKNOWN`, and its null `amount` becomes `0.0`. `customer_id` and `category` stay null because they were not listed.
 
@@ -611,12 +879,13 @@ df = orders.withColumn("amount", F.coalesce(F.col("amount"), F.lit(0.0)))
 
 After:
 
-| order_id | customer_id | status | amount | category |
-|---|---|---|---|---|
-| 1 | 101 | COMPLETE | 25.0 | books |
-| 2 | NULL | COMPLETE | 40.0 | toys |
-| 3 | 103 | NULL | 0.0 | books |
-| 4 | 104 | PENDING | 0.0 | NULL |
+
+| order_id | customer_id | status   | amount | category |
+| -------- | ----------- | -------- | ------ | -------- |
+| 1        | 101         | COMPLETE | 25.0   | books    |
+| 2        | NULL        | COMPLETE | 40.0   | toys     |
+| 3        | 103         | NULL     | 0.0    | books    |
+| 4        | 104         | PENDING  | 0.0    | NULL     |
 
 Only the `amount` column changes. Row 3 now looks like a real $0.00 order, so sums and averages will count it.
 
@@ -630,12 +899,13 @@ df = orders.withColumn("has_customer", F.col("customer_id").isNotNull())
 
 After:
 
-| order_id | customer_id | status | amount | category | has_customer |
-|---|---|---|---|---|---|
-| 1 | 101 | COMPLETE | 25.0 | books | true |
-| 2 | NULL | COMPLETE | 40.0 | toys | false |
-| 3 | 103 | NULL | NULL | books | true |
-| 4 | 104 | PENDING | 0.0 | NULL | true |
+
+| order_id | customer_id | status   | amount | category | has_customer |
+| -------- | ----------- | -------- | ------ | -------- | ------------ |
+| 1        | 101         | COMPLETE | 25.0   | books    | true         |
+| 2        | NULL        | COMPLETE | 40.0   | toys     | false        |
+| 3        | 103         | NULL     | NULL   | books    | true         |
+| 4        | 104         | PENDING  | 0.0    | NULL     | true         |
 
 ## 11. Aggregations
 
@@ -667,23 +937,25 @@ The input is the `orders` table from section 4. `groupBy` collapses each group o
 
 **Category summary.** Before, there are 6 order rows. After, there are 3 rows, one per category:
 
-| category | order_count | customer_count | total_amount | avg_amount | min_amount | max_amount |
-|---|---|---|---|---|---|---|
-| books | 2 | 1 | 50.5 | 25.25 | 15.0 | 35.5 |
-| electronics | 2 | 1 | 399.98 | 199.99 | 99.99 | 299.99 |
-| grocery | 2 | 2 | 61.0 | 30.5 | 18.75 | 42.25 |
+
+| category    | order_count | customer_count | total_amount | avg_amount | min_amount | max_amount |
+| ----------- | ----------- | -------------- | ------------ | ---------- | ---------- | ---------- |
+| books       | 2           | 1              | 50.5         | 25.25      | 15.0       | 35.5       |
+| electronics | 2           | 1              | 399.98       | 199.99     | 99.99      | 299.99     |
+| grocery     | 2           | 2              | 61.0         | 30.5       | 18.75      | 42.25      |
 
 `order_count` counts all rows in the group, including the cancelled order. `customer_count` counts distinct customers, so the two `books` orders from C001 count as 1.
 
 **Group by two columns.** After `groupBy("status", "category")`, there is one row per status and category pair:
 
-| status | category | total_amount |
-|---|---|---|
-| COMPLETE | books | 35.5 |
-| COMPLETE | electronics | 399.98 |
-| CANCELLED | books | 15.0 |
-| COMPLETE | grocery | 42.25 |
-| RETURNED | grocery | 18.75 |
+
+| status    | category    | total_amount |
+| --------- | ----------- | ------------ |
+| COMPLETE  | books       | 35.5         |
+| COMPLETE  | electronics | 399.98       |
+| CANCELLED | books       | 15.0         |
+| COMPLETE  | grocery     | 42.25        |
+| RETURNED  | grocery     | 18.75        |
 
 ## 12. Joins
 
@@ -733,27 +1005,29 @@ The inputs are `orders` (6 rows) and `customers` (4 rows) from section 4. Every 
 
 **Inner join** (`orders.join(customers, "customer_id", "inner")`) keeps only rows that match on both sides. The join key `customer_id` appears once, first in the output:
 
-| customer_id | order_id | order_date | status | category | amount | customer_name | state | segment |
-|---|---|---|---|---|---|---|---|---|
-| C001 | 1 | 2026-01-01 | COMPLETE | books | 35.5 | Asha | CA | retail |
-| C001 | 3 | 2026-01-02 | CANCELLED | books | 15.0 | Asha | CA | retail |
-| C002 | 2 | 2026-01-01 | COMPLETE | electronics | 299.99 | Ben | NY | business |
-| C003 | 4 | 2026-01-02 | COMPLETE | grocery | 42.25 | Cara | TX | retail |
-| C002 | 5 | 2026-01-03 | COMPLETE | electronics | 99.99 | Ben | NY | business |
-| C004 | 6 | 2026-01-03 | RETURNED | grocery | 18.75 | Dev | WA | retail |
+
+| customer_id | order_id | order_date | status    | category    | amount | customer_name | state | segment  |
+| ----------- | -------- | ---------- | --------- | ----------- | ------ | ------------- | ----- | -------- |
+| C001        | 1        | 2026-01-01 | COMPLETE  | books       | 35.5   | Asha          | CA    | retail   |
+| C001        | 3        | 2026-01-02 | CANCELLED | books       | 15.0   | Asha          | CA    | retail   |
+| C002        | 2        | 2026-01-01 | COMPLETE  | electronics | 299.99 | Ben           | NY    | business |
+| C003        | 4        | 2026-01-02 | COMPLETE  | grocery     | 42.25  | Cara          | TX    | retail   |
+| C002        | 5        | 2026-01-03 | COMPLETE  | electronics | 99.99  | Ben           | NY    | business |
+| C004        | 6        | 2026-01-03 | RETURNED  | grocery     | 18.75  | Dev           | WA    | retail   |
 
 **Left join** (`orders.join(customers, "customer_id", "left")`) keeps every order. Orders with no matching customer would show nulls in the customer columns. This sample has none, so the output matches the inner join.
 
 **Join with different column names** (`orders.alias("o").join(customers.alias("c"), ...).select("o.*", ...)`) returns the same six rows, but keeps only the order columns plus the three selected customer columns. Here, `customer_id` appears once because `o.*` includes it.
 
-| order_id | customer_id | order_date | status | category | amount | customer_name | state | segment |
-|---|---|---|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 | Asha | CA | retail |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 | Asha | CA | retail |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 | Ben | NY | business |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 | Cara | TX | retail |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 | Ben | NY | business |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 | Dev | WA | retail |
+
+| order_id | customer_id | order_date | status    | category    | amount | customer_name | state | segment  |
+| -------- | ----------- | ---------- | --------- | ----------- | ------ | ------------- | ----- | -------- |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   | Asha          | CA    | retail   |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   | Asha          | CA    | retail   |
+| 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99 | Ben           | NY    | business |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  | Cara          | TX    | retail   |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  | Ben           | NY    | business |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75  | Dev           | WA    | retail   |
 
 **Broadcast join** (`F.broadcast(customers)`) returns the same rows as the left join. The broadcast is a hint that sends the small `customers` table to every executor. It does not change the result, only how Spark runs the join.
 
@@ -768,15 +1042,16 @@ orders.dropDuplicates(["order_id"])
 
 **Before**, `orders` has an extra copy of order 1 added to the end:
 
-| order_id | customer_id | order_date | status | category | amount |
-|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 |
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 |
+
+| order_id | customer_id | order_date | status    | category    | amount |
+| -------- | ----------- | ---------- | --------- | ----------- | ------ |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   |
+| 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99 |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75  |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   |
 
 **After `dropDuplicates()`** removes rows that match on every column. Here that removes the extra order 1, leaving 6 rows. The row order is not guaranteed.
 
@@ -786,18 +1061,20 @@ For a deterministic choice, use the window pattern in section 14. It keeps the r
 
 **Before**, `updated` has two versions of order 1:
 
-| order_id | status | updated_at |
-|---|---|---|
-| 1 | COMPLETE | 2026-01-05 10:00:00 |
-| 1 | RETURNED | 2026-01-06 09:00:00 |
-| 2 | COMPLETE | 2026-01-04 08:00:00 |
+
+| order_id | status   | updated_at          |
+| -------- | -------- | ------------------- |
+| 1        | COMPLETE | 2026-01-05 10:00:00 |
+| 1        | RETURNED | 2026-01-06 09:00:00 |
+| 2        | COMPLETE | 2026-01-04 08:00:00 |
 
 **After** `row_number()` over `order_id` ordered by `updated_at` descending, filtered to `rn = 1` and then `drop("rn")`:
 
-| order_id | status | updated_at |
-|---|---|---|
-| 1 | RETURNED | 2026-01-06 09:00:00 |
-| 2 | COMPLETE | 2026-01-04 08:00:00 |
+
+| order_id | status   | updated_at          |
+| -------- | -------- | ------------------- |
+| 1        | RETURNED | 2026-01-06 09:00:00 |
+| 2        | COMPLETE | 2026-01-04 08:00:00 |
 
 The newest version of order 1 (`RETURNED`) is kept and the older one is dropped.
 
@@ -857,38 +1134,41 @@ The input is the `orders` table from section 4. A window function computes a val
 
 **Row number** (`row_number` partitioned by `customer_id`, ordered by `order_date` descending, filtered to `rn = 1`). Each customer keeps only their latest order. Order 1 and order 3 are both C001 orders; order 3 is later, so it is kept.
 
-| order_id | customer_id | order_date | status | category | amount | rn |
-|---|---|---|---|---|---|---|
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 | 1 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 | 1 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 | 1 |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 | 1 |
+
+| order_id | customer_id | order_date | status    | category    | amount | rn |
+| -------- | ----------- | ---------- | --------- | ----------- | ------ | -- |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   | 1  |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  | 1  |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  | 1  |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75  | 1  |
 
 The `rn` column is still in the output. Add `.drop("rn")` if you do not want it.
 
 **Running total** (`sum` over rows from the start of each customer's partition up to the current row). Each row shows the total so far for its customer:
 
-| order_id | customer_id | order_date | status | category | amount | running_amount |
-|---|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 | 35.5 |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 | 50.5 |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 | 299.99 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 | 399.98 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 | 42.25 |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 | 18.75 |
+
+| order_id | customer_id | order_date | status    | category    | amount | running_amount |
+| -------- | ----------- | ---------- | --------- | ----------- | ------ | -------------- |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   | 35.5           |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   | 50.5           |
+| 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99 | 299.99         |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  | 399.98         |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  | 42.25          |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75  | 18.75          |
 
 Every row is kept. C001's second row shows 50.5 because 35.5 + 15.0 = 50.5.
 
 **Rank within category** (`dense_rank` partitioned by `category`, ordered by `amount` descending). Rank 1 is the largest amount in each category:
 
-| order_id | customer_id | order_date | status | category | amount | amount_rank |
-|---|---|---|---|---|---|---|
-| 1 | C001 | 2026-01-01 | COMPLETE | books | 35.5 | 1 |
-| 3 | C001 | 2026-01-02 | CANCELLED | books | 15.0 | 2 |
-| 2 | C002 | 2026-01-01 | COMPLETE | electronics | 299.99 | 1 |
-| 5 | C002 | 2026-01-03 | COMPLETE | electronics | 99.99 | 2 |
-| 4 | C003 | 2026-01-02 | COMPLETE | grocery | 42.25 | 1 |
-| 6 | C004 | 2026-01-03 | RETURNED | grocery | 18.75 | 2 |
+
+| order_id | customer_id | order_date | status    | category    | amount | amount_rank |
+| -------- | ----------- | ---------- | --------- | ----------- | ------ | ----------- |
+| 1        | C001        | 2026-01-01 | COMPLETE  | books       | 35.5   | 1           |
+| 3        | C001        | 2026-01-02 | CANCELLED | books       | 15.0   | 2           |
+| 2        | C002        | 2026-01-01 | COMPLETE  | electronics | 299.99 | 1           |
+| 5        | C002        | 2026-01-03 | COMPLETE  | electronics | 99.99  | 2           |
+| 4        | C003        | 2026-01-02 | COMPLETE  | grocery     | 42.25  | 1           |
+| 6        | C004        | 2026-01-03 | RETURNED  | grocery     | 18.75  | 2           |
 
 `dense_rank` gives tied amounts the same rank and does not skip numbers afterward. Use `row_number` when every row needs a different number.
 
@@ -990,103 +1270,115 @@ Use this when JSON has arrays.
 
 **Date functions.** The input is `orders`. Each date function adds a column:
 
-| order_id | order_date | order_ts | order_year | order_month | order_yyyymm | next_day |
-|---|---|---|---|---|---|---|
-| 1 | 2026-01-01 | 2026-01-01 12:00:00 | 2026 | 1 | 202601 | 2026-01-02 |
-| 2 | 2026-01-01 | 2026-01-01 12:00:00 | 2026 | 1 | 202601 | 2026-01-02 |
-| 3 | 2026-01-02 | 2026-01-02 12:00:00 | 2026 | 1 | 202601 | 2026-01-03 |
-| 4 | 2026-01-02 | 2026-01-02 12:00:00 | 2026 | 1 | 202601 | 2026-01-03 |
-| 5 | 2026-01-03 | 2026-01-03 12:00:00 | 2026 | 1 | 202601 | 2026-01-04 |
-| 6 | 2026-01-03 | 2026-01-03 12:00:00 | 2026 | 1 | 202601 | 2026-01-04 |
+
+| order_id | order_date | order_ts            | order_year | order_month | order_yyyymm | next_day   |
+| -------- | ---------- | ------------------- | ---------- | ----------- | ------------ | ---------- |
+| 1        | 2026-01-01 | 2026-01-01 12:00:00 | 2026       | 1           | 202601       | 2026-01-02 |
+| 2        | 2026-01-01 | 2026-01-01 12:00:00 | 2026       | 1           | 202601       | 2026-01-02 |
+| 3        | 2026-01-02 | 2026-01-02 12:00:00 | 2026       | 1           | 202601       | 2026-01-03 |
+| 4        | 2026-01-02 | 2026-01-02 12:00:00 | 2026       | 1           | 202601       | 2026-01-03 |
+| 5        | 2026-01-03 | 2026-01-03 12:00:00 | 2026       | 1           | 202601       | 2026-01-04 |
+| 6        | 2026-01-03 | 2026-01-03 12:00:00 | 2026       | 1           | 202601       | 2026-01-04 |
 
 The table shows only the columns this example creates, plus `order_id` and `order_date`. `to_timestamp` joins the date with `12:00:00`, `date_format` gives `202601`, and `date_add` adds one day.
 
 **String operations.** The input is `customers`. Before:
 
-| customer_id | customer_name | state | segment |
-|---|---|---|---|
-| C001 | Asha | CA | retail |
-| C002 | Ben | NY | business |
-| C003 | Cara | TX | retail |
-| C004 | Dev | WA | retail |
+
+| customer_id | customer_name | state | segment  |
+| ----------- | ------------- | ----- | -------- |
+| C001        | Asha          | CA    | retail   |
+| C002        | Ben           | NY    | business |
+| C003        | Cara          | TX    | retail   |
+| C004        | Dev           | WA    | retail   |
 
 After `upper`, `trim(upper(...))`, and `substring(..., 1, 1)`:
 
-| customer_id | customer_name | state | segment | customer_name_upper | state_clean | first_char |
-|---|---|---|---|---|---|---|
-| C001 | Asha | CA | retail | ASHA | CA | A |
-| C002 | Ben | NY | business | BEN | NY | B |
-| C003 | Cara | TX | retail | CARA | TX | C |
-| C004 | Dev | WA | retail | DEV | WA | D |
+
+| customer_id | customer_name | state | segment  | customer_name_upper | state_clean | first_char |
+| ----------- | ------------- | ----- | -------- | ------------------- | ----------- | ---------- |
+| C001        | Asha          | CA    | retail   | ASHA                | CA          | A          |
+| C002        | Ben           | NY    | business | BEN                 | NY          | B          |
+| C003        | Cara          | TX    | retail   | CARA                | TX          | C          |
+| C004        | Dev           | WA    | retail   | DEV                 | WA          | D          |
 
 **Split and concatenate.** `concat_ws("-", "state", "customer_id")` builds one key column:
 
-| customer_id | customer_name | state | segment | customer_key |
-|---|---|---|---|---|
-| C001 | Asha | CA | retail | CA-C001 |
-| C002 | Ben | NY | business | NY-C002 |
-| C003 | Cara | TX | retail | TX-C003 |
-| C004 | Dev | WA | retail | WA-C004 |
+
+| customer_id | customer_name | state | segment  | customer_key |
+| ----------- | ------------- | ----- | -------- | ------------ |
+| C001        | Asha          | CA    | retail   | CA-C001      |
+| C002        | Ben           | NY    | business | NY-C002      |
+| C003        | Cara          | TX    | retail   | TX-C003      |
+| C004        | Dev           | WA    | retail   | WA-C004      |
 
 **Union with `unionByName`.** The sample uses two small DataFrames, because `df_2025` and `df_2026` are placeholders in the doc. Before:
 
+
 | order_id | category | amount |
-|---|---|---|
-| 1 | books | 10.0 |
+| -------- | -------- | ------ |
+| 1        | books    | 10.0   |
 
 and, with the columns in a different order:
 
+
 | order_id | amount | category |
-|---|---|---|
-| 2 | 20.0 | grocery |
+| -------- | ------ | -------- |
+| 2        | 20.0   | grocery  |
 
 After `df_2025.unionByName(df_2026)`, the rows are stacked and matched by column name, not by position:
 
+
 | order_id | category | amount |
-|---|---|---|
-| 1 | books | 10.0 |
-| 2 | grocery | 20.0 |
+| -------- | -------- | ------ |
+| 1        | books    | 10.0   |
+| 2        | grocery  | 20.0   |
 
 **Union with `allowMissingColumns=True`.** The two inputs have different columns. Before, `df_old` has `order_id` and `category`. `df_new` also has `status`. After the union, the missing `status` value for the old row is `NULL`:
 
-| order_id | category | status |
-|---|---|---|
-| 1 | books | NULL |
-| 2 | books | COMPLETE |
+
+| order_id | category | status   |
+| -------- | -------- | -------- |
+| 1        | books    | NULL     |
+| 2        | books    | COMPLETE |
 
 **Pivot.** The input is `orders` grouped by `customer_id`, with one column per category. Missing combinations are filled with `0`:
 
+
 | customer_id | books | electronics | grocery |
-|---|---|---|---|
-| C001 | 50.5 | 0.0 | 0.0 |
-| C002 | 0.0 | 399.98 | 0.0 |
-| C003 | 0.0 | 0.0 | 42.25 |
-| C004 | 0.0 | 0.0 | 18.75 |
+| ----------- | ----- | ----------- | ------- |
+| C001        | 50.5  | 0.0         | 0.0     |
+| C002        | 0.0   | 399.98      | 0.0     |
+| C003        | 0.0   | 0.0         | 42.25   |
+| C004        | 0.0   | 0.0         | 18.75   |
 
 Pivot column order is not guaranteed. Customer rows also come out in no particular order.
 
 **Explode.** Before, `events` has one row per session, with an array in each row:
 
-| session_id | events |
-|---|---|
-| 1 | [view, cart, buy] |
-| 2 | [view] |
+
+| session_id | events            |
+| ---------- | ----------------- |
+| 1          | [view, cart, buy] |
+| 2          | [view]            |
 
 After `explode("events")`, each array element becomes its own row. Session 1 has three rows, and session 2 has one:
 
+
 | session_id | event |
-|---|---|
-| 1 | view |
-| 1 | cart |
-| 1 | buy |
-| 2 | view |
+| ---------- | ----- |
+| 1          | view  |
+| 1          | cart  |
+| 1          | buy   |
+| 2          | view  |
 
 ## 16. CRUD In Spark vs CRUD In Databases
 
 SQL/database users usually think of CRUD like this:
 
+
 | Database CRUD      | SQL example                      | Spark/file-lake equivalent                                         |
-|--------------------|----------------------------------|--------------------------------------------------------------------|
+| ------------------ | -------------------------------- | ------------------------------------------------------------------ |
 | Create             | `insert into table ...`          | Write a new dataset or append files                                |
 | Read               | `select * from table`            | Read CSV, JSON, Parquet, or a catalog table                        |
 | Update             | `update table set ... where ...` | Read old data, create corrected DataFrame, write replacement files |
@@ -1124,8 +1416,9 @@ orders.coalesce(1).write.mode("overwrite").option("header", True).csv(
 
 Save modes:
 
+
 | Mode        | Meaning                               |
-|-------------|---------------------------------------|
+| ----------- | ------------------------------------- |
 | `overwrite` | Replace existing output path          |
 | `append`    | Add new files to existing output path |
 | `error`     | Fail if output exists                 |
@@ -1468,10 +1761,11 @@ All AWS-style examples in this guide are local AWS practice. They use Docker + L
 
 There are two kinds of paths:
 
+
 | Path style                            | Where it writes                                    | Example                               |
-|---------------------------------------|----------------------------------------------------|---------------------------------------|
+| ------------------------------------- | -------------------------------------------------- | ------------------------------------- |
 | `data/input/...` or `data/output/...` | Your local computer, inside the lab/project folder | `data/output/orders_parquet`          |
-| `s3a://de-lab/...`                    | The LocalStack S3 bucket named `de-lab`            | `s3a://de-lab/curated/orders_parquet` |
+| `s3a://de-lab/...`                    | The LocalStack S3 bucket named`de-lab`             | `s3a://de-lab/curated/orders_parquet` |
 
 If your lab folder is `~/spark-glue-local-lab`, then this code:
 
@@ -1667,15 +1961,16 @@ Catalog stores metadata about those files.
 
 SQL mental model:
 
-| Database concept        | Glue Data Catalog equivalent                                      |
-|-------------------------|-------------------------------------------------------------------|
-| Database/schema         | Glue database                                                     |
-| Table definition        | Glue table                                                        |
-| Columns and data types  | Glue table schema                                                 |
-| External table location | S3 path such as `s3://company-curated/orders/`                    |
-| Partition metadata      | Known partition folders such as `order_year=2026/category=books/` |
-| `CREATE EXTERNAL TABLE` | Create metadata that points to files outside the catalog          |
-| `DROP TABLE`            | Delete the table metadata, not necessarily the S3 files           |
+
+| Database concept        | Glue Data Catalog equivalent                                     |
+| ----------------------- | ---------------------------------------------------------------- |
+| Database/schema         | Glue database                                                    |
+| Table definition        | Glue table                                                       |
+| Columns and data types  | Glue table schema                                                |
+| External table location | S3 path such as`s3://company-curated/orders/`                    |
+| Partition metadata      | Known partition folders such as`order_year=2026/category=books/` |
+| `CREATE EXTERNAL TABLE` | Create metadata that points to files outside the catalog         |
+| `DROP TABLE`            | Delete the table metadata, not necessarily the S3 files          |
 
 ### What Is An External Table?
 
@@ -2261,8 +2556,9 @@ AWS Glue Data Catalog is a central metadata repository for data lake tables. For
 
 Short answer: yes for some meanings of CRUD, but not like an OLTP database.
 
+
 | CRUD Meaning               | Glue Can Help? | Explanation                                                       |
-|----------------------------|----------------|-------------------------------------------------------------------|
+| -------------------------- | -------------- | ----------------------------------------------------------------- |
 | Create a dataset           | Yes            | Glue Spark writes files/tables to S3                              |
 | Read a dataset             | Yes            | Glue Spark reads S3, JDBC, catalog tables                         |
 | Update metadata            | Yes            | Glue Data Catalog APIs update databases/tables/partitions         |

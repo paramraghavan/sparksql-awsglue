@@ -15,12 +15,14 @@ Raw files → data quality checks → trusted data → optional transformations 
 ## Start Here
 
 1. Set up local Spark using the [macOS guide](setup-mac-local-spark.md) or [Windows guide](setup-windows-local-spark.md). Complete the local-file job before adding LocalStack.
-2. Work through the [PySpark 101 examples](pyspark-101-examples.md). Start with local files, then practice SQL-to-DataFrame operations, joins, window functions, data quality, and Parquet output.
+2. If you already know SQL, start with [PySpark for SQL users](sql_and_pyspark.md), a SQL-first exercise with expected results. Then work through the [PySpark 101 examples](pyspark-101-examples.md). Start with local files, then practice SQL-to-DataFrame operations, joins, window functions, data quality, and Parquet output.
 3. Apply those skills using the [beginner use cases](spark-new-user-use-cases.md), then read the [S3 ingestion pipeline walkthrough](etl_pipeline_walkthrough.md) for an introduction to S3 events, Lambda, SSM, and Spark submission.
 4. Read the [PySpark pipeline production design](pyspark-pipeline-production-design.md) for data zones, quality rules, optional transformations, load strategies, and configuration.
 5. Explore [Parquet performance and updates](parquet-spark-performance-and-updates.md) and the [Glue/Iceberg guide](aws_glue_iceberg/README.md) when you are ready for file layout, transactional tables, and multiple query engines.
 
 Use the [remote Jupyter guide](setup-jupyter-remote-access.md) only if you want to access a notebook running on one computer from another computer on your home network.
+
+For API selection and matching window/CASE examples, see [Spark SQL vs PySpark DataFrame functions](pyspark-101-examples.md#when-to-use-spark-sql-vs-pyspark-dataframe-functions).
 
 ## Guide Index
 
@@ -29,6 +31,7 @@ Use the [remote Jupyter guide](setup-jupyter-remote-access.md) only if you want 
 | [macOS setup](setup-mac-local-spark.md) | Java, Python, PySpark, a first job, optional LocalStack, and notebooks |
 | [Windows setup](setup-windows-local-spark.md) | Local Spark and optional LocalStack using PowerShell |
 | [Remote Jupyter access](setup-jupyter-remote-access.md) | JupyterLab, password setup, network access, and troubleshooting |
+| [PySpark for SQL users](sql_and_pyspark.md) | SQL-first PySpark workflow: views, validation, CASE, CTEs, joins, windows, parameters, and Parquet output |
 | [PySpark 101 examples](pyspark-101-examples.md) | DataFrames, SQL, joins, windows, data quality, partitioning, and file writes |
 | [Beginner use cases](spark-new-user-use-cases.md) | Ingestion and SQL-style transformation patterns |
 | [Parquet performance and updates](parquet-spark-performance-and-updates.md) | File sizing, reads, slow jobs, partition updates, and table formats |
