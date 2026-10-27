@@ -528,11 +528,65 @@ if __name__ == "__main__":
     main()
 ```
 
-Run it:
+### Before Running: `--master` And `--deploy-mode`
+
+`spark-submit` launches the Python job. These options answer two different questions:
+
+| Option | What it controls | Default when not otherwise configured |
+|---|---|---|
+| `--master` | Where Spark runs the work: locally or through a cluster manager | `local[*]` for Spark 3.5.6 |
+| `--deploy-mode` | Where the **driver** runs: the process coordinating the job | `client` |
+
+Common `--master` values:
+
+| Value | Meaning |
+|---|---|
+| `local` | One worker thread on your Mac |
+| `local[2]` | Two worker threads on your Mac; used in this lab |
+| `local[*]` | As many worker threads as available logical CPU cores |
+| `yarn` | Use a configured Hadoop YARN cluster, such as EMR on EC2 |
+| `spark://host:7077` | Connect to a Spark standalone cluster |
+| `k8s://host:443` | Connect to a configured Kubernetes cluster |
+
+These are execution targets, independent of whether your files are on local disk or S3.
+
+**`--deploy-mode` accepts two values: `client` (default) and `cluster`.** selects the execution target.
+
+- **`client`:** The driver runs on the submitting machine. Here, that is your Mac, with logs in the terminal. With a remote cluster, task execution can still be remote.
+- **`cluster`:** The cluster manager launches the driver inside the cluster. This needs a supported, configured cluster; it cannot be used with `--master local[...]`. Spark standalone does not support Python applications in cluster deploy mode.
+
+For this lab, use **`--master "local[2]" --deploy-mode client`**. Omitting `--deploy-mode` gives the same behavior unless configuration changes its default. The flag is `--deploy-mode`, not `--deploy`.
+
+**Defaults can be overridden.** `spark-defaults.conf` can set `spark.master` and `spark.submit.deployMode`; `MASTER` can also supply a master when none is configured. This script's `.master("local[2]")` explicitly sets the application master too. Remove that builder line when adapting the script so `--master` selects the target. Cluster deploy mode also needs driver-side settings, paths, and credentials suited to that environment.
+
+See [Spark 3.5.6 submission options](https://spark.apache.org/docs/3.5.6/submitting-applications.html) and the [Spark 3.5.6 master fallback](https://github.com/apache/spark/blob/v3.5.6/core/src/main/scala/org/apache/spark/deploy/SparkSubmitArguments.scala#L42). Use `spark-submit --help` for the installed version's options.
+
+### Do I Need `--packages` If The JARs Are Already Installed?
+
+**Only omit `--packages` when compatible JARs are already available on the Spark JVM classpaths that need them.** A classpath tells Java where to load libraries. Shell `PATH` locates commands such as `spark-submit`; placing JARs in a directory on `PATH` does not load them into Spark.
+
+| Execution setup | Where the S3A libraries must be available |
+|---|---|
+| `--master "local[2]" --deploy-mode client` | The local Spark JVM on your Mac |
+| Remote cluster, `--deploy-mode client` | The submitting machine's driver **and** cluster executors |
+| Remote cluster, `--deploy-mode cluster` | The cluster-hosted driver **and** executors; local client JARs alone are insufficient |
+
+For the S3A connector, `hadoop-aws` must match the runtime's Hadoop version, with its compatible AWS SDK. This lab uses Hadoop 3.3.4 and AWS SDK bundle 1.12.262. Check versions before reusing these coordinates on another Spark distribution.
+
+- **JARs already on every required classpath:** You can omit `--packages`. Examples include a correctly provisioned Spark installation or cluster/container image. Avoid adding conflicting copies.
+- **JARs downloaded into a Maven/Ivy cache only:** Keep `--packages`. It resolves the coordinates, reuses cached artifacts where available, and adds/distributes the libraries for the job. Being cached does not automatically put them on Spark's classpath.
+- **JAR files downloaded manually:** Use `--jars /absolute/path/hadoop-aws-3.3.4.jar,/absolute/path/aws-java-sdk-bundle-1.12.262.jar` instead, with paths accessible to the submission process. Spark adds/distributes these JARs; `--jars` does not resolve missing transitive dependencies.
+
+**For this Mac lab, keep the `--packages` line below** unless you have explicitly installed the matching libraries on Spark's classpath. Deploy mode alone does not supply S3A dependencies. `hadoop-aws` also declares the AWS SDK bundle as a dependency; listing both coordinates here makes the lab's versions explicit.
+
+See [Spark dependency distribution](https://spark.apache.org/docs/3.5.6/submitting-applications.html#advanced-dependency-management) and [Hadoop 3.3.4 S3A setup](https://hadoop.apache.org/docs/r3.3.4/hadoop-aws/tools/hadoop-aws/index.html#getting_started).
+
+Run it (put Spark options before the Python filename):
 
 ```bash
 spark-submit \
   --master "local[2]" \
+  --deploy-mode client \
   --packages "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262" \
   jobs/localstack_s3_etl.py
 ```
