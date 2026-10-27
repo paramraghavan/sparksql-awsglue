@@ -1,99 +1,68 @@
-# Spark Quickstart For SQL And Python Users
+# Spark Quickstart for SQL and Python Users
 
-This folder is a jumpstart for developers who already know SQL and Python and need to contribute to a PySpark data engineering project quickly.
+Learn the PySpark skills needed to read, validate, transform, and publish data. This guide assumes you already know basic SQL and Python.
 
-The goal is not to memorize every Spark API. The goal is to learn the working mental model used in real projects:
-
-```text
-raw files -> PySpark DQ -> trusted baseline data -> optional transformations -> cataloged tables
-```
-
-## Recommended Study Order
-
-1. Set up Spark locally.
-   - Mac: `setup-mac-local-spark.md`
-   - Windows: `setup-windows-local-spark.md`
-2. Work through `pyspark-101-examples.md`.
-   - Start with local files.
-   - Learn DataFrame operations by mapping them to SQL.
-   - Practice Parquet, partitioning, joins, window functions, DQ, and update-by-rewrite.
-3. Complete the [Spark UI and History Server lab](spark-ui-history-server-lab.md).
-   - Run slow, straggler, and failed jobs; compare the live UI with recorded history.
-   - Learn when to use the YARN ResourceManager UI on a cluster.
-   - For a full Hadoop cluster, follow the [self-contained Hadoop/YARN setup](setup-hadoop-yarn-local-lab.md) using WSL2 or a macOS Linux VM.
-4. Use `setup-jupyter-remote-access.md` if you want notebook access from another computer on your home network.
-5. Read `pyspark-ingestion-transformation-architecture.md`.
-   - This explains raw, rejected, trusted, transformed, Lambda, SSM, Spark jobs, and Glue Data Catalog.
-6. Run [the config-driven CSV example](etl_config_driven/README.md).
-   - This is a plain-Python example of configuration and DQ; it does not run a Spark pipeline.
-
-## AWS Practice Uses Docker And LocalStack
-
-All AWS-style practice in this quickstart is local practice.
-
-You do not need a real AWS account for these lessons. When the notes show AWS-style services such as S3 or Glue Data Catalog, the lab uses:
+The main data flow is:
 
 ```text
-Docker Desktop -> LocalStack container -> local AWS-like services
+Raw files → data quality checks → trusted data → optional transformations → tables for querying
+                 ↓
+           Rejected records
 ```
 
-Beginner mental model:
+**Data quality (DQ)** checks identify missing keys, invalid values, duplicates, and other records that need attention. Cataloged tables describe where data lives and how to read it; the catalog does not store the rows.
 
-| Term in the notes | What it means in this quickstart |
+## Start Here
+
+1. Set up local Spark using the [macOS guide](setup-mac-local-spark.md) or [Windows guide](setup-windows-local-spark.md). Complete the local-file job before adding LocalStack.
+2. Work through the [PySpark 101 examples](pyspark-101-examples.md). Start with local files, then practice SQL-to-DataFrame operations, joins, window functions, data quality, and Parquet output.
+3. Apply those skills using the [beginner use cases](spark-new-user-use-cases.md), then read the [S3 ingestion pipeline walkthrough](etl_pipeline_walkthrough.md) for an introduction to S3 events, Lambda, SSM, and Spark submission.
+4. Read the [PySpark pipeline production design](pyspark-pipeline-production-design.md) for data zones, quality rules, optional transformations, load strategies, and configuration.
+5. Explore [Parquet performance and updates](parquet-spark-performance-and-updates.md) and the [Glue/Iceberg guide](aws_glue_iceberg/README.md) when you are ready for file layout, transactional tables, and multiple query engines.
+
+Use the [remote Jupyter guide](setup-jupyter-remote-access.md) only if you want to access a notebook running on one computer from another computer on your home network.
+
+## Guide Index
+
+| Guide | What it covers |
 |---|---|
-| S3 bucket | LocalStack S3 bucket running inside Docker |
-| Glue Data Catalog | LocalStack Glue metadata service |
-| `lstk aws s3 ...` | AWS CLI command pointed at LocalStack, not real AWS (replaces the deprecated `awslocal`) |
-| `lstk aws glue ...` | Glue CLI command pointed at LocalStack. Needs a paid LocalStack license, so the lab uses Spark's SQL catalog instead |
-| `s3a://de-lab/...` | Spark path that reads/writes LocalStack S3 |
-| Docker | The local runtime that hosts LocalStack |
+| [macOS setup](setup-mac-local-spark.md) | Java, Python, PySpark, a first job, optional LocalStack, and notebooks |
+| [Windows setup](setup-windows-local-spark.md) | Local Spark and optional LocalStack using PowerShell |
+| [Remote Jupyter access](setup-jupyter-remote-access.md) | JupyterLab, password setup, network access, and troubleshooting |
+| [PySpark 101 examples](pyspark-101-examples.md) | DataFrames, SQL, joins, windows, data quality, partitioning, and file writes |
+| [Beginner use cases](spark-new-user-use-cases.md) | Ingestion and SQL-style transformation patterns |
+| [Parquet performance and updates](parquet-spark-performance-and-updates.md) | File sizing, reads, slow jobs, partition updates, and table formats |
+| [S3 ingestion pipeline walkthrough](etl_pipeline_walkthrough.md) | S3 → Lambda → SSM → Spark flow, minimal customer-ingestion code, and a LocalStack setup outline |
+| [PySpark pipeline production design](pyspark-pipeline-production-design.md) | Raw, rejected, trusted, and transformed zones; Spark execution, quality rules, load patterns, and configuration |
+| [Glue, Iceberg, Athena, and Redshift](aws_glue_iceberg/README.md) | Catalogs, snapshots, CRUD, PySpark upserts, and shared lake tables |
 
-Install Docker before running LocalStack sections:
+The pipeline guide introduces the orchestration pattern; the architecture guide expands the processing design. They contain illustrative code and configuration, rather than a complete deployed application. Create or supply the supporting job files, sample inputs, and AWS resources before running the examples.
 
-- Mac: see `setup-mac-local-spark.md`, Part 2 `LocalStack (Optional)`, Steps 11 to 19.
-- Windows: see `setup-windows-local-spark.md`, Part 2 `LocalStack (Optional)`, Steps 11 to 19.
+## Local Files, LocalStack, and Real AWS
 
-The local-file PySpark lessons, monitoring lab, and config-driven CSV example run without LocalStack.
-
-## What Each File Is For
-
-| File or folder | Purpose |
+| Learning activity | What you need |
 |---|---|
-| `setup-mac-local-spark.md` | Install Java, Python, PySpark, LocalStack, and run a first local Spark job on macOS |
-| `setup-windows-local-spark.md` | Same setup path for Windows and PowerShell |
-| `setup-jupyter-remote-access.md` | Install JupyterLab first, then Jupyter Notebook if needed, and access it from another PC with a password |
-| [spark-ui-history-server-lab.md](spark-ui-history-server-lab.md) | macOS/Windows monitoring commands, bounded slow/failure exercises, and YARN access |
-| [setup-hadoop-yarn-local-lab.md](setup-hadoop-yarn-local-lab.md) | Complete single-node Linux Hadoop/YARN installation for WSL2/macOS VMs, Spark submission, and monitoring |
-| [monitoring_lab.py](monitoring_lab.py) | Runnable local Spark teaching scenarios with event logging |
-| `pyspark-101-examples.md` | Main PySpark study guide for SQL/database users |
-| `spark-new-user-use-cases.md` | How to approach simple ingestion and large SQL-style join transformations in PySpark |
-| `parquet-spark-performance-and-updates.md` | Separate note on Parquet, Spark file sizing, reads, slow jobs, partition updates, and Delta/Iceberg/Hudi concepts |
-| `pyspark-ingestion-transformation-architecture.md` | Architecture diagrams and concepts for ingestion, DQ, trusted, transformed, Lambda, SSM, and Glue |
-| `etl_config_driven/` | Runnable plain-Python CSV example of configuration and DQ |
+| Local-file PySpark examples | Local Spark setup; no AWS account or LocalStack |
+| LocalStack S3 exercises | Docker and the optional LocalStack setup in your operating system's guide |
+| Spark SQL catalog exercises | A configured Spark session; the setup guides use this for metadata practice without LocalStack Glue |
+| AWS examples in the pipeline and Glue/Iceberg guides | The AWS resources, permissions, and runtime configuration specified by that guide |
 
-## Learning Outcomes
+For the LocalStack exercises:
 
-After completing this folder, a new contributor should be able to:
+- `lstk aws s3 ...` sends commands to the local emulator.
+- `s3a://de-lab/...` reaches LocalStack when Spark uses the lab's endpoint configuration. The URI alone does not select LocalStack.
+- LocalStack Glue availability depends on the license; the setup guides provide Spark SQL catalog exercises as an alternative.
 
-- Read CSV, JSON, and Parquet with PySpark.
-- Explain `local[2]`, actions vs transformations, partitions, and `part-*` files.
-- Translate common SQL into PySpark DataFrame operations.
-- Apply beginner DQ rules and write rejected records.
-- Write trusted Parquet output and explain why Parquet is preferred over CSV for curated data.
-- Explain why plain S3 Parquet is not an OLTP database table.
-- Describe incremental load vs full load patterns.
-- Explain what AWS Glue Data Catalog stores and what it does not store.
-- Understand why Lambda submits work, while Spark jobs perform DQ and transformations.
+The local labs do not require a real AWS account. The AWS reference sections describe real service behavior and are not automatically reproduced by the local emulator.
 
-## Production Versus Training Shortcut
+## What You Should Be Able to Do
 
-Some examples intentionally keep the code small so learners can understand the flow in one sitting. The docs call out where a production system would use stronger patterns such as:
+After the core lessons, you should be able to:
 
-- idempotent ingestion,
-- schema contracts,
-- partition repair or partition registration,
-- CloudWatch metrics and alerts,
-- IAM and Lake Formation permissions,
-- Apache Iceberg, Hudi, or Delta Lake for row-level update/delete/merge behavior.
+- Read CSV, JSON, and Parquet, and translate common SQL into DataFrame operations.
+- Explain `local[2]`, transformations versus actions, partitions, and `part-*` output files.
+- Validate records and write trusted and rejected outputs.
+- Describe incremental versus full loads and the roles of orchestration and Spark processing.
+- Explain what Glue Catalog stores and how plain Parquet differs from transactional Iceberg tables.
 
-Use the quickstart to build the mental model first, then use the production notes to understand what changes in real AWS projects.
+The examples keep code small for learning. For production, consider retry-safe ingestion, schema validation, partition management, monitoring, access controls, and the table format's transaction and maintenance requirements.

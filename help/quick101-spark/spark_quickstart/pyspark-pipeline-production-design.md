@@ -4,18 +4,6 @@ This document describes a simple data engineering architecture using PySpark and
 
 The goal is to ingest raw files, perform basic data quality checks, save clean baseline data to a trusted bucket, and optionally transform the trusted data into a transformed bucket.
 
-Runnable local implementation:
-
-```text
-pipeline_demo/
-```
-
-Start with:
-
-```text
-pipeline_demo/README.md
-```
-
 ## 1. Architecture Diagram
 
 ```mermaid
