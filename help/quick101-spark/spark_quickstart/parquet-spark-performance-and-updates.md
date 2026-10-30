@@ -298,18 +298,74 @@ Avoid:
 
 ```text
 too many tiny files -> slow listing, planning, and task overhead
-one giant file      -> poor parallelism
+one giant file      -> may limit parallelism depending on row-group/split layout
 ```
 
-Useful patterns:
+Three settings control different things:
+
+| Setting | Plain meaning |
+|---|---|
+| `repartition(...)` | How Spark divides the work among tasks |
+| `write.partitionBy("order_month")` | Which month folder each row is written into |
+| `maxRecordsPerFile` | The maximum number of rows in each output file |
+
+**Example 1: Limit rows per file**
+
+```python
+df.write.option("maxRecordsPerFile", 500000).parquet(path)
+```
+
+This means: "Write at most 500,000 rows into each Parquet file. Then start another file."
+
+Suppose one task receives 3 million rows:
+
+```text
+1 task -> 6 files, each containing 500,000 rows
+```
+
+That task still writes its files itself. Creating six files does not create six parallel writer tasks.
+Also, 500,000 rows is not a fixed number of MB: wide rows take more space, and compression changes file size.
+
+**Example 2: Put each month's rows together before writing**
 
 ```python
 df.repartition("order_month").write.partitionBy("order_month").parquet(path)
 ```
 
+`repartition("order_month")` sends all rows for the same month to the same execution partition. One writer task
+therefore handles that month's rows. A task may handle several months too.
+
+If October contains 100 GB and November contains 1 GB, October's writer task can take much longer. Adding
+`maxRecordsPerFile` creates more files for October, but the same task still writes them.
+
+**Example 3: Let multiple tasks help write a large month**
+
 ```python
-df.write.option("maxRecordsPerFile", 500000).parquet(path)
+(
+    df.repartition(16)
+    .write
+    .partitionBy("order_month")
+    .option("maxRecordsPerFile", 500000)
+    .parquet(path)
+)
 ```
+
+Here, `repartition(16)` spreads rows across 16 execution partitions without grouping all rows by month.
+Multiple tasks can write files into the same `order_month=...` folder. Each file still has at most 500,000 rows.
+Choose the partition count for your data and cluster; 16 is only an example. This shuffle adds work and can create
+many small files when each task contains many different months, so compare the resulting file sizes and runtime.
+
+Remember:
+
+```text
+More output files does not automatically mean more parallel writer tasks.
+A row limit does not guarantee a file size in MB.
+```
+
+For reads, a large Parquet file can sometimes be split among several tasks using its internal row groups.
+Check the Spark UI's scan tasks before assuming that one large file means one reader task.
+
+For a measured decision about a partition column and proof of pruning, see sections 13.2 and 13.3.
 
 ### 5.4 Decision Guide
 
@@ -1289,6 +1345,287 @@ Rule:
 If one task is much slower than others, suspect skew or an oversized partition.
 If every task is slow, suspect too much data, too many columns, expensive transformations, or poor file layout.
 ```
+
+### 13.1 Read The Plan With `DataFrame.explain()`
+
+Start with the actual query you want to optimize. These examples use classic PySpark 3.5 APIs; check
+`spark.version` and your Glue/EMR runtime for supported features and defaults.
+
+```python
+from pyspark.sql import functions as F
+
+orders = spark.read.parquet("s3://bucket/orders/")
+query = (
+    orders
+    .where((F.col("order_month") == "2026-10") & (F.col("amount") > 100))
+    .groupBy("customer_id")
+    .agg(F.sum("amount").alias("total_amount"))
+)
+
+query.explain()                  # Physical plan
+query.explain(mode="formatted")  # Operator tree with numbered details
+query.explain(mode="extended")   # Parsed, analyzed, optimized, and physical plans
+query.explain(mode="cost")       # Logical-plan statistics/estimates, when available
+```
+
+`explain()` prints a plan; it does not execute the query to measure duration. Planning may still list files or fetch
+metadata. Cost estimates can be missing or inaccurate; they are not measured elapsed time.
+See the [PySpark explain API](https://spark.apache.org/docs/3.5.6/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.explain.html).
+
+Read a physical-plan branch from its scan upward toward the result. A simplified, illustrative plan could be:
+
+```text
+HashAggregate [customer_id], [sum(amount)]
++- Exchange hashpartitioning(customer_id, 200)
+   +- HashAggregate [customer_id], [partial_sum(amount)]
+      +- Filter (amount > 100)
+         +- FileScan parquet [customer_id, amount, order_month]
+            PartitionFilters: [isnotnull(order_month), (order_month = 2026-10)]
+            PushedFilters: [IsNotNull(amount), GreaterThan(amount,100)]
+            ReadSchema: struct<customer_id:bigint,amount:double>
+```
+
+Interpret it as: prune month folders, read required Parquet columns, apply the amount filter, partially aggregate,
+shuffle by customer, then finish the aggregation. The partition column can come from folder names and therefore be
+absent from `ReadSchema`. Names and formatting differ between file-source versions and runtimes.
+
+| Plan evidence | What it tells you / what to investigate |
+|---|---|
+| `PartitionFilters` | Predicates available to prune storage partitions; inspect which column they reference |
+| `PushedFilters` | Filters passed to the reader; this alone does not prove files or row groups were skipped |
+| `ReadSchema` | Physical data columns requested from Parquet; check whether unnecessarily wide data is read |
+| `Exchange hashpartitioning(...)` | Shuffle by key; often required for joins/aggregations, but repeated shuffles merit review |
+| `Exchange SinglePartition` | Work gathered into one execution partition; check whether the operation requires it |
+| `SortMergeJoin`, `Sort` | Sorting/shuffle work; compare with an eligible broadcast join when one input is small |
+| `BroadcastHashJoin`, `BroadcastExchange` | A side is broadcast; confirm its actual size fits executor memory |
+| `BatchEvalPython`, `ArrowEvalPython` | Python execution boundary; consider equivalent built-in Spark expressions |
+| `InMemoryTableScan`, `InMemoryRelation` | Cached relation in the plan; confirm block residency in the Storage tab |
+| `AdaptiveSparkPlan isFinalPlan=false` | Initial adaptive plan; runtime decisions may change it |
+
+A `Filter` above the scan can remain even when pushdown occurs; Spark may still need to check rows for correctness.
+An `Exchange` is not automatically a problem: distributed `groupBy` often needs one.
+
+Run the real action, then inspect its executed plan and metrics in the Spark UI SQL tab. For example:
+
+```python
+query.write.mode("errorifexists").parquet("s3://bucket/scratch/customer_totals_run_001/")
+```
+
+Use a fresh scratch path. A write or `count()` can add operators beyond the DataFrame's displayed plan. Inspect the
+UI execution for that action rather than assuming a later `query.explain()` shows the write's final adaptive plan.
+The [Spark UI guide](https://spark.apache.org/docs/3.5.6/web-ui.html#sql-tab) describes executed plans and SQL metrics.
+
+### 13.2 Does This Column Need Storage Partitioning?
+
+First distinguish three different things:
+
+| Kind | Example | Purpose |
+|---|---|---|
+| Storage partition | `write.partitionBy("order_month")` | Creates folders for future partition pruning |
+| Execution partition | `repartition(200, "customer_id")` | Redistributes current work through a shuffle |
+| Cached partition | A persisted block shown in the Storage tab | Reuses computed data within the application |
+
+`repartition("customer_id")` does not create customer folders. `partitionBy("order_month")` does not guarantee that a
+later customer join avoids a shuffle. Cache does not change the source folder layout.
+
+There is no plan flag saying "partition this column." Choose from measured query patterns:
+
+1. **Check recurring filters.** If most queries request one month from years of history, month is a useful candidate.
+   A column used only in a join or `groupBy` is not automatically a good folder key.
+2. **Check selectivity.** Would the filter exclude a substantial fraction of stored bytes? A region filter that selects
+   95% of data offers little pruning benefit even if region has low cardinality.
+3. **Check cardinality and combinations.** Count expected folders across all partition keys. Date plus country can
+   create many more folders than either alone. Unique IDs and timestamps usually create excessive small partitions.
+4. **Check bytes and skew per value.** A daily layout for 20 MB/day creates small folders; monthly may be better.
+   Hundreds of GB/month can justify finer dates or several files per month. These are examples, not thresholds.
+5. **Compare candidate layouts on a representative workload.** Write to a new test path, validate results, and measure
+   scan bytes/files, listing time, elapsed time, and write/maintenance cost before changing production layout.
+
+Profile a candidate on a bounded historical period first:
+
+```python
+# profiling_df is a representative DataFrame with a candidate order_month column.
+profiling_df.agg(
+    F.approx_count_distinct("order_month").alias("approx_months"),
+    F.count("*").alias("rows"),
+    F.sum(F.when(F.col("order_month").isNull(), 1).otherwise(0)).alias("null_months"),
+).show()
+
+profiling_df.groupBy("order_month").count().orderBy(F.desc("count")).show(20)
+```
+
+These actions cost scans and aggregation work. Row counts reveal imbalance but do not measure compressed bytes.
+Use file sizes/storage inventory for bytes per folder, and inspect small as well as large folders. Avoid collecting
+millions of candidate values to the driver.
+
+If the table is already small, or most queries read all dates, partitioning may add overhead with little benefit.
+For high-cardinality lookup filters, test sorting/clustering within broader partitions instead.
+
+### 13.3 How To Prove Storage Partitions Are Being Used
+
+For a catalog table, inspect its declared partition columns and registered partitions:
+
+```python
+spark.sql("DESCRIBE TABLE EXTENDED analytics.orders").show(200, truncate=False)
+spark.sql("SHOW PARTITIONS analytics.orders").show(20, truncate=False)
+```
+
+These commands depend on catalog/table support; `SHOW PARTITIONS` may still enumerate extensive metadata.
+For a plain path, inspect `key=value` folders and the inferred schema. Reading the table root normally discovers
+partition columns. When reading a subdirectory, preserve the root with `basePath`:
+
+```python
+root = "s3://bucket/orders/"
+one_month = (
+    spark.read.option("basePath", root)
+    .parquet(root + "order_month=2026-10/")
+)
+one_month.printSchema()
+```
+
+A subpath already restricts input paths; that restriction need not appear as an equality in `PartitionFilters`.
+Also, `recursiveFileLookup=true` disables partition inference. See
+[Spark partition discovery](https://spark.apache.org/docs/3.5.6/sql-data-sources-parquet.html#partition-discovery) and
+[generic file-source options](https://spark.apache.org/docs/3.5.6/sql-data-sources-generic-options.html#recursive-file-lookup).
+
+For a root read, verify a direct filter on the stored partition column:
+
+```python
+orders = spark.read.parquet(root)
+filtered = orders.where(F.col("order_month") == "2026-10")
+filtered.select("customer_id", "amount").explain(mode="formatted")
+```
+
+Look for the month equality in `PartitionFilters`, not just `isnotnull(order_month)`. Then execute the representative
+query and compare its scan metrics with the baseline. Fewer files/bytes read confirms the practical saving; plan text
+alone cannot quantify it. SQL scan metrics vary by runtime. For join-driven pruning, you may see
+`dynamicpruningexpression(...)`; verify its runtime effect as well.
+
+If pruning is missing or ineffective, check:
+
+- The column is actually a partition key in the folders/catalog, and catalog partitions are current.
+- The predicate uses the right column and matching type. A filter on `event_ts` may not imply a filter on a separately
+  stored `order_month`; supply the month predicate explicitly alongside the exact timestamp range.
+- A Python UDF or unnecessary transformation is hiding the partition predicate from Spark.
+- Most partitions really match, or cached data is serving the query instead of a fresh file scan.
+
+`df.rdd.getNumPartitions()` counts execution partitions in classic PySpark. It does not count storage folders or prove
+pruning. `df.inputFiles()` is a best-effort relation file list, not a reliable record of files actually scanned after
+pruning. Prefer runtime scan metrics for that question.
+
+For Glue DynamicFrames, apply a catalog partition predicate at the reader:
+
+```python
+orders_dyf = glueContext.create_dynamic_frame.from_catalog(
+    database="analytics",
+    table_name="orders",
+    push_down_predicate="order_month='2026-10'",
+)
+```
+
+This filters catalog partitions before reading S3 files. For very large catalogs, partition indexes with
+`catalogPartitionPredicate` can reduce catalog listing work; its predicate syntax differs from `push_down_predicate`.
+Do not assume a later DynamicFrame filter avoids the initial listing/read. See
+[AWS Glue read pushdown](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-pushdown.html).
+
+### 13.4 Have We Cached The DataFrame, And Is It Reused?
+
+Cache an expensive shared intermediate when multiple actions reuse it and the saved recomputation outweighs cache
+population, memory, and disk costs. A DataFrame variable alone does not cache anything.
+
+Filter/select the shared data first, then persist it:
+
+```python
+from pyspark import StorageLevel
+
+shared = (
+    orders.where(F.col("order_month") == "2026-10")
+    .select("customer_id", "amount")
+    .persist(StorageLevel.MEMORY_AND_DISK_DESER)
+)
+
+print(shared.is_cached)     # Persistence requested on this DataFrame
+print(shared.storageLevel)  # Configured storage policy, not current resident bytes
+
+try:
+    shared.count()          # Materialize all partitions; an extra full action
+    shared.createOrReplaceTempView("shared_orders")
+    print(spark.catalog.isCached("shared_orders"))  # Named-view cache registration
+
+    totals = shared.groupBy("customer_id").agg(F.sum("amount").alias("total_amount"))
+    totals.explain(mode="formatted")  # Look for InMemoryTableScan
+    totals.show(20)
+    shared.where(F.col("amount") > 1000).count()  # Another consumer
+finally:
+    shared.unpersist(blocking=True)
+```
+
+An initial full `count()` is useful for demonstration or explicitly warming a cache; the first real full consumer
+can populate it instead. `show()` or `take()` may populate only some partitions.
+Persistence is lazy and a cache can be partially populated, evicted, or lost with an executor.
+`MEMORY_AND_DISK_DESER` permits disk storage; "cached" does not mean all data fits in RAM.
+
+Check three separate pieces of evidence:
+
+| Question | Evidence |
+|---|---|
+| Was persistence requested? | `shared.is_cached` and `shared.storageLevel` |
+| Were blocks materialized, and where are they stored? | Spark UI Storage tab: cached partitions, fraction cached, memory size, disk size |
+| Does this downstream query use the cached relation? | `InMemoryTableScan` in its plan, plus executed-query metrics showing avoided upstream work |
+
+`InMemoryRelation` can display the original scan beneath it as the cache-building lineage; this does not by itself mean
+that the scan ran again. Missing blocks may be recomputed, so inspect execution and residency together.
+
+For named tables/views, `spark.catalog.isCached("shared_orders")` checks cache registration, as shown inside the
+`try` block while `shared` is persisted. This API takes a table/view name, not a Python variable name. It does not
+prove all blocks are resident. See the APIs for
+[storageLevel](https://spark.apache.org/docs/3.5.6/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.storageLevel.html)
+and [isCached](https://spark.apache.org/docs/3.5.6/api/python/reference/pyspark.sql/api/pyspark.sql.Catalog.isCached.html).
+
+Avoid caching every intermediate, caching a huge table before selective filters, or caching for a single cheap action.
+A faster second run alone is not proof of Spark cache reuse: filesystem/OS caches, JVM warm-up, and changed cluster
+load also affect timings. Reuse the shared persisted DataFrame and check each consumer's plan. Cache is temporary
+application state, not durable output or an automatic result cache for every Python variable.
+
+### 13.5 More PySpark Performance Improvements: Match The Fix To Evidence
+
+| Observed evidence | Improvement to test |
+|---|---|
+| Wide scan with mostly unused columns | Select required columns and keep filters expressible with built-in Spark functions |
+| Repeated Python evaluation | Replace row-wise Python UDFs with built-in expressions where equivalent; benchmark vectorized alternatives if needed |
+| Large join inputs | Filter/project inputs and verify key uniqueness; accidental many-to-many joins can multiply output |
+| Small dimension plus expensive shuffle join | Test a supported broadcast strategy after checking actual size and executor headroom |
+| Long tail of shuffle tasks | Inspect skew and spill; use the strategies in section 12 rather than blindly adding partitions |
+| Too few large shuffle tasks | Tune `spark.sql.shuffle.partitions` for data/cores; check AQE's final partition sizes |
+| Excessive small scan tasks/listing | Compact tiny files; changing shuffle partitions does not compact source files |
+| Repeated scans for logging/debugging | Remove unnecessary `count()`/`show()` actions or persist an expensive reused intermediate |
+| Poor size estimates/join choice | Inspect catalog statistics; refresh supported table/column stats with `ANALYZE TABLE` when appropriate |
+| Driver memory pressure | Keep results distributed; bound `collect()`/`toPandas()` and write large outputs |
+
+Check active settings instead of copying tuning values blindly:
+
+```python
+print("Spark:", spark.version)
+for key in (
+    "spark.sql.adaptive.enabled",
+    "spark.sql.adaptive.coalescePartitions.enabled",
+    "spark.sql.shuffle.partitions",
+    "spark.sql.files.maxPartitionBytes",
+    "spark.sql.autoBroadcastJoinThreshold",
+):
+    print(key, spark.conf.get(key))
+```
+
+Input split bytes, shuffle partition count, storage folders, and output file size are separate controls. Increasing
+executor memory will not fix every scan, skew, Python, or driver bottleneck. See
+[Spark SQL tuning](https://spark.apache.org/docs/3.5.6/sql-performance-tuning.html) for configuration scope and AQE.
+
+For each change, keep the same input snapshot, cluster size, output semantics, and action. Compare results as well as
+wall time, scanned bytes/files, shuffle bytes, spill, task-duration distribution, and output file sizes. Repeat enough
+to distinguish an improvement from normal variation. Measure cache population plus all consumers when judging cache
+benefit; measure listing and write cost when judging a new partition layout. A bare `count()` can prune columns and
+avoid expensive expressions, so benchmark the workload you actually intend to run.
+
 
 ## 14. Updating September 2025 Parquet Data
 
