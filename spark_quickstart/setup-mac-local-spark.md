@@ -298,7 +298,7 @@ find data/output/orders_etl -maxdepth 5 -type f | sort
 Your local Spark setup is ready. Open the examples file next:
 
 ```text
-/Users/paramraghavan/dev/sparksql-awsglue/help/quick101-spark/spark_quickstart/pyspark-101-examples.md
+/Users/paramraghavan/dev/sparksql-awsglue/spark_quickstart/pyspark-101-examples.md
 ```
 
 Run the examples from your lab folder, with the virtual environment on.

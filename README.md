@@ -14,7 +14,7 @@ and allows me to harness the power of hadoop without going into the details of h
 
 ## Quickstart
 
-Start with the [Spark Quickstart for SQL and Python Users](help/quick101-spark/spark_quickstart/README.md). Follow its learning path for local setup on macOS or Windows, PySpark examples, optional LocalStack practice, ingestion pipelines, Parquet, and Glue/Iceberg concepts.
+Start with the [Spark Quickstart for SQL and Python Users](spark_quickstart/README.md). Follow its learning path for local setup on macOS or Windows, PySpark examples, optional LocalStack practice, ingestion pipelines, Parquet, and Glue/Iceberg concepts.
 
 # Apache Spark ?
 

@@ -501,7 +501,7 @@ The quickstart's loan-score example adds a useful habit: write the output contra
 
 Example failure: joining two dates of pricing on loan_id alone can multiply rows and leak future prices into an earlier score. Adding distinct() afterward can hide the symptom without fixing the business rule. Begin with one complete date/key slice, retaining matching lookup rows; independent random samples can miss or invent join issues. Use full-data reconciliation before publication.
 
-[Practice: large-table join planning](../../help/quick101-spark/spark_quickstart/spark-new-user-use-cases.md#before-you-write-pyspark-analysis-checklist).
+[Practice: large-table join planning](../../spark_quickstart/spark-new-user-use-cases.md#before-you-write-pyspark-analysis-checklist).
 
 ## 8. Partitioning and Shuffling
 
@@ -882,10 +882,10 @@ A configuration-driven framework can separate platform code from dataset-owned s
 
 | Quickstart resource | Best use |
 | --- | --- |
-| [SQL-to-PySpark examples](../../help/quick101-spark/spark_quickstart/pyspark-101-examples.md#2-sql-to-pyspark-mental-model) | Hands-on syntax practice; use the runtime and correctness notes in this guide. |
-| [Ingestion architecture](../../help/quick101-spark/spark_quickstart/pyspark-ingestion-transformation-architecture.md#1-architecture-diagram) | Accepted/rejected/trusted/transformed boundaries and submission flow. |
-| [Parquet layout and statistics](../../help/quick101-spark/spark_quickstart/parquet-spark-performance-and-updates.md#4-where-minmax-metadata-is-stored) | Deeper explanation of column chunks, row groups and pruning. |
-| [Configuration-driven demo](../../help/quick101-spark/spark_quickstart/etl_config_driven/README.md) | A real plain-Python/local-CSV demo of ownership/config boundaries; not a distributed Spark or AWS integration test. |
+| [SQL-to-PySpark examples](../../spark_quickstart/pyspark-101-examples.md#2-sql-to-pyspark-mental-model) | Hands-on syntax practice; use the runtime and correctness notes in this guide. |
+| [Ingestion architecture](../../spark_quickstart/pyspark-ingestion-transformation-architecture.md#1-architecture-diagram) | Accepted/rejected/trusted/transformed boundaries and submission flow. |
+| [Parquet layout and statistics](../../spark_quickstart/parquet-spark-performance-and-updates.md#4-where-minmax-metadata-is-stored) | Deeper explanation of column chunks, row groups and pruning. |
+| [Configuration-driven demo](../../spark_quickstart/etl_config_driven/README.md) | A real plain-Python/local-CSV demo of ownership/config boundaries; not a distributed Spark or AWS integration test. |
 
 The quickstart is learning material, not a production contract. Some README paths refer to a pipeline_demo folder that is not present; use the actual resources linked above. Its separate ingestion README is a design sketch with embedded snippets, not a complete deployed pipeline. LocalStack service coverage depends on version/edition; a simulated AWS response does not validate real Glue, IAM, SSM or Spark behavior.
 

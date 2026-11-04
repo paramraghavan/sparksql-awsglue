@@ -207,7 +207,7 @@ details.check > p { margin: 6px 0 2px; }
 <section class="start" id="start">
   <h2>Set up the lab</h2>
   <p>Spark, Jupyter and LocalStack all run on the Mac Ultra. Your own computer only shows the notebook in a browser. Spark reaches LocalStack at <code>localhost</code>, which means the Mac, so nothing else needs to be exposed.</p>
-  <p class="callout">Installation is already written up, so these steps point to the guides in <code>help/quick101-spark/spark_quickstart/</code> in the sparksql-awsglue repo. Step numbers refer to <code>setup-mac-local-spark.md</code>.</p>
+  <p class="callout">Installation is already written up, so these steps point to the guides in <code>spark_quickstart/</code> in the sparksql-awsglue repo. Step numbers refer to <code>setup-mac-local-spark.md</code>.</p>
   <ol class="steps">
     <li>
       <h3>Check the Python environment</h3>
@@ -686,7 +686,7 @@ table dropped; files still in S3: 4</pre></div><div class="checks"><h3>Check you
 <span class="tn">spark</span><span class="to">.</span><span class="tn">sql</span><span class="tp">(</span><span class="ts2">"DROP TABLE glue_catalog.lab.demo PURGE"</span><span class="tp">)</span>
 </code></pre></div><div class="out"><div class="out-head"><span>Output from a real run</span></div><pre>now     : [(1, 100), (2, 999)]
 earlier : [(1, 100), (2, 200)]</pre></div><div class="checks"><h3>Check your understanding</h3><details class="check"><summary>Is Iceberg an alternative to Parquet?</summary><p>No. Parquet is a file format, and Iceberg is a table format that usually stores its rows in Parquet files.</p></details><details class="check"><summary>What makes an Iceberg write visible to readers?</summary><p>The commit that moves the catalog pointer to a new metadata file. Files alone change nothing.</p></details><details class="check"><summary>Does a <code>SELECT</code> create a snapshot?</summary><p>No. It only reads the current metadata and data files.</p></details></div>
-  <p class="src">Full reference: <code>help/quick101-spark/spark_quickstart/aws_glue_iceberg/AWS_Glue_Iceberg_Athena_Redshift_PySpark_Notes.md</code>. That guide's examples use the real services, and it notes they haven't been run against an AWS account.</p>
+  <p class="src">Full reference: <code>spark_quickstart/aws_glue_iceberg/AWS_Glue_Iceberg_Athena_Redshift_PySpark_Notes.md</code>. That guide's examples use the real services, and it notes they haven't been run against an AWS account.</p>
 </section>
 <p class="next-tab" data-js><a class="btn-primary" href="#questions">Go to the questions</a></p>
 </div>
